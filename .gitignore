@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+
+# Production/build output
+dist/
+build/
+.vite/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+*.secret
+*.secrets
+*.credentials
+*.credential
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cert
+id_rsa*
+id_ed25519*
+
+# Runtime uploads and generated user media
+uploads/**
+!uploads/
+!uploads/.gitkeep
+
+# Logs and diagnostics
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local databases, dumps, and caches
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+*.backup
+.cache/
+.tmp/
+tmp/
+temp/
+coverage/
+
+# Platform and editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Deploy/provider local state
+.vercel/
+.netlify/
