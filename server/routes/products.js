@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'node:path';
 import Product from '../models/Product.js';
 import { requireUser } from './auth.js';
+import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 
 const router = express.Router();
 
@@ -30,10 +31,6 @@ function splitList(value) {
 
 function toBoolean(value) {
   return value === true || value === 'true' || value === 'on' || value === '1';
-}
-
-function normalizeTryOnModel(value) {
-  return value === 'vto-unrestricted' ? 'vto-unrestricted' : 'gpt-image-2';
 }
 
 function readableError(value, fallback = 'Request failed') {
@@ -873,6 +870,7 @@ function draftToExternalProduct(draft, fallbackQuery = '') {
     badge: 'Amazon',
     description: cleanDescription(draft.description),
     tags: draft.tags || [],
+    tryOnModel: inferTryOnModel(draft),
     colors: [],
     imageUrl,
     isNewArrival: true

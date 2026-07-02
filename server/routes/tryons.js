@@ -9,6 +9,7 @@ import Product from '../models/Product.js';
 import TryOn from '../models/TryOn.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
+import { inferTryOnModel } from '../utils/tryOnModel.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -96,7 +97,7 @@ function virtualTryOnTrialModel() {
 }
 
 function tryOnModelForProduct(product) {
-  return product?.tryOnModel === 'vto-unrestricted' ? 'vto-unrestricted' : 'gpt-image-2';
+  return inferTryOnModel(product);
 }
 
 function imageQuality() {
@@ -385,7 +386,16 @@ function firstGeneratedImageUrl(value, depth = 0) {
   return '';
 }
 
-async function generatedBytesFromUrl(url) {
+function shortUrlForLog(url = '') {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return 'generated image URL';
+  }
+}
+
+async function generatedBytesFromUrl(url, timer) {
   if (/^data:image\//i.test(url)) {
     const [, metadata = '', base64 = ''] = url.match(/^data:([^;]+);base64,(.+)$/i) || [];
     if (!base64) throw new Error('Generated image data URI was invalid');
@@ -394,12 +404,31 @@ async function generatedBytesFromUrl(url) {
       mimetype: metadata || 'image/png'
     };
   }
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('Could not download generated trial image');
-  return {
-    bytes: Buffer.from(await response.arrayBuffer()),
-    mimetype: response.headers.get('content-type') || 'image/png'
-  };
+
+  let lastStatus = '';
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(url, {
+      headers: {
+        accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'user-agent': 'Mozilla/5.0 FitLook generated image fetcher'
+      }
+    });
+    if (response.ok) {
+      return {
+        bytes: Buffer.from(await response.arrayBuffer()),
+        mimetype: response.headers.get('content-type') || 'image/png'
+      };
+    }
+    lastStatus = `${response.status} ${response.statusText}`.trim();
+    timer?.mark('generated image download retry', {
+      attempt,
+      status: lastStatus,
+      url: shortUrlForLog(url)
+    });
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 900 * (attempt + 1)));
+  }
+
+  throw new Error(`Could not download generated try-on image from ${shortUrlForLog(url)} (${lastStatus || 'request failed'})`);
 }
 
 async function callFalVirtualTryOnTrial({ personDataUri, garmentDataUri, prompt, aspectRatio, timer }) {
@@ -474,7 +503,7 @@ async function callFalVirtualTryOnProduct({ user, product, timer }) {
     const result = await waitForFalResult(submission, vtoTimer);
     const generatedUrl = firstGeneratedImageUrl(result);
     if (!generatedUrl) throw new Error(`FAL returned no image. Response keys: ${Object.keys(result || {}).join(', ')}`);
-    const { bytes, mimetype } = await generatedBytesFromUrl(generatedUrl);
+    const { bytes, mimetype } = await generatedBytesFromUrl(generatedUrl, timer);
     timer?.mark('vto generated image downloaded', {
       outputKb: Math.round(bytes.length / 1024),
       aspectRatio: ratio.label
@@ -588,15 +617,27 @@ function externalProductFromBody(value = {}) {
     name: String(value.name || 'Amazon product').trim(),
     brand: String(value.brand || 'Amazon').trim(),
     category: String(value.category || 'clothing').trim(),
+    description: String(value.description || '').trim(),
+    tags: Array.isArray(value.tags) ? value.tags : [],
+    tryOnModel: inferTryOnModel(value),
     imageUrl,
     image: { remoteUrl: imageUrl }
   };
 }
 
 async function saveGeneratedExternalTryOn({ user, product, timer }) {
-  const { bytes, prompt } = await callFalImageEdit({ user, product, timer });
-  const filename = `tryon-external-${Date.now()}-${Math.round(Math.random() * 1e9)}.png`;
-  const image = await saveUserCacheFile({ user, bytes, filename, mimetype: 'image/png' });
+  const selectedModel = tryOnModelForProduct(product);
+  timer?.mark('external try-on model selected', { selectedModel });
+  const generated = selectedModel === 'vto-unrestricted'
+    ? await callFalVirtualTryOnProduct({ user, product, timer })
+    : {
+        ...(await callFalImageEdit({ user, product, timer })),
+        mimetype: 'image/png',
+        model: imageModel(),
+        quality: imageQuality()
+      };
+  const filename = `tryon-external-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
+  const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   timer?.mark('external try-on saved', { path: image.path });
 
   return ExternalTryOn.create({
@@ -608,9 +649,9 @@ async function saveGeneratedExternalTryOn({ user, product, timer }) {
     category: product.category,
     imageUrl: product.imageUrl,
     provider: 'fal',
-    model: imageModel(),
-    quality: imageQuality(),
-    prompt,
+    model: generated.model,
+    quality: generated.quality,
+    prompt: generated.prompt,
     tokenCost: chargedTokenCost(),
     image
   });
@@ -790,7 +831,7 @@ router.post('/vto-trial', requireUser, upload.fields([{ name: 'person', maxCount
     });
 
     const trial = await callFalVirtualTryOnTrial({ personDataUri, garmentDataUri, prompt, aspectRatio: req.body?.aspectRatio, timer });
-    const { bytes, mimetype } = await generatedBytesFromUrl(trial.generatedUrl);
+    const { bytes, mimetype } = await generatedBytesFromUrl(trial.generatedUrl, timer);
     const filename = `tryon-vto-trial-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(mimetype)}`;
     const image = await saveUserCacheFile({ user: req.user, bytes, filename, mimetype });
     timer.end({ payloadVariant: trial.payloadVariant, outputKb: Math.round(bytes.length / 1024), path: image.path });
