@@ -183,7 +183,6 @@ function Header({ user, setUser }) {
               <a href="/search?gender=women">For Women</a>
               <a href="/search?newArrival=true">New Arrivals</a>
               <a href="/how-it-works">How it Works</a>
-              <a href="/admin">Admin</a>
             </nav>
           </div>
           <div className="header-search" role="search">
@@ -214,7 +213,7 @@ function Footer() {
           </div>
           <FooterCol title="Shop" links={[['All Products', '/search'], ['Men', '/search?gender=men'], ['Women', '/search?gender=women'], ['New Arrivals', '/search?newArrival=true'], ['Sale', '/sale'], ['Gift Cards', '/gift-cards']]} />
           <FooterCol title="Company" links={[['About Us', '/about'], ['How it Works', '/how-it-works'], ['Careers', '/careers'], ['Blog', '/blog'], ['Press', '/press']]} />
-          <FooterCol title="Help" links={[['FAQ', '/support'], ['Shipping', '/support'], ['Returns & Exchanges', '/support'], ['Track Order', '/support'], ['Contact Us', '/contact'], ['Admin', '/admin']]} />
+          <FooterCol title="Help" links={[['FAQ', '/support'], ['Shipping', '/support'], ['Returns & Exchanges', '/support'], ['Track Order', '/support'], ['Contact Us', '/contact']]} />
           <div className="newsletter"><h3>Join Our Community</h3><p>Subscribe to get new arrivals and token offers.</p><form className="newsletter-form"><input type="email" placeholder="Enter your email" /><button>Sign Up</button></form></div>
         </div>
         <div className="footer-bottom"><div>© 2024 FitLook. All rights reserved.</div><div className="legal"><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/accessibility">Accessibility</a></div></div>
@@ -300,7 +299,6 @@ function ProductCard({ product, locked = false, tryOn, canTryOn = false, tryOnLo
           {hasDiscount && <span className="was">{formatMoney(product.compareAtPrice, product.currency)}</span>}
           {discount && <span className="off">{discount}</span>}
         </div>
-        <div className="swatches">{(product.colors?.length ? product.colors : ['#c7bbae', '#39433e', '#d8ccc6']).slice(0, 4).map((color) => <span style={{ background: color }} key={color} />)}</div>
       </div>
     </>
   );
@@ -366,8 +364,8 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
   const allowTryOnTrial = Boolean(user) && !continueWithoutTryOn && (tryOnMode || hasSearchIntent);
   const shouldAutoGenerate = Boolean(user) && !continueWithoutTryOn && hasSearchIntent && !tryOnMode;
   const trialProducts = state.products.slice(0, 4);
-  const visibleProducts = allowTryOnTrial ? trialProducts : user ? state.products : state.products.slice(0, 4);
-  const lockedProducts = allowTryOnTrial ? state.products.slice(4, 12) : user ? [] : state.products.slice(4, 12);
+  const visibleProducts = allowTryOnTrial ? trialProducts : state.products;
+  const lockedProducts = allowTryOnTrial ? state.products.slice(4, 12) : [];
   const title = tryOnMode ? 'AI Try-On' : q || category || brand || gender || (newArrival ? 'New Arrivals' : 'All Products');
 
   const generateTryOn = async (product) => {
@@ -406,17 +404,6 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
         <div className="results-main">
           <div className="results-head">
             <div><h1>{title}</h1><p className="count">{state.loading ? 'Searching...' : `${state.total} Products`}</p></div>
-            <form className="toolbar" action="/search">
-              <input type="hidden" name="q" value={q} />
-              {newArrival && <input type="hidden" name="newArrival" value={newArrival} />}
-              <select name="sort" defaultValue={sort} aria-label="Sort products">
-                <option value="">Most Relevant</option>
-                <option value="newest">Newest</option>
-                <option value="price-asc">Price: Low to High</option>
-                <option value="price-desc">Price: High to Low</option>
-              </select>
-              <button>Apply</button>
-            </form>
           </div>
           {state.loading && <StatusPanel text="Finding products..." />}
           {state.error && <StatusPanel text={state.error} />}
@@ -875,9 +862,15 @@ function TokenPage({ user }) {
 }
 
 function FilterPanel({ facets, values }) {
+  const resetSearch = new URLSearchParams();
+  ['q', 'category', 'gender', 'newArrival'].forEach((key) => {
+    if (values[key]) resetSearch.set(key, values[key]);
+  });
+  const resetHref = `/search${resetSearch.toString() ? `?${resetSearch}` : ''}`;
+
   return (
     <aside className="filters">
-      <div className="filter-head"><h2>Filters</h2><a href="/search">Reset</a></div>
+      <div className="filter-head"><h2>Filters</h2><a href={resetHref}>Reset</a></div>
       <form className="filter-form" action="/search">
         <input name="q" defaultValue={values.q} placeholder="Search keyword" />
         <select name="category" defaultValue={values.category}>
@@ -1025,10 +1018,6 @@ function ProductPage({ id, user, setUser }) {
                 {productTags.map((tag) => <a href={`/search?q=${encodeURIComponent(tag)}`} key={tag}>{tag}</a>)}
               </div>
             )}
-            <div className="detail-swatches">
-              <span>Colors</span>
-              <div className="swatches">{(product.colors?.length ? product.colors : ['#c7bbae', '#39433e', '#d8ccc6']).slice(0, 6).map((color) => <span style={{ background: color }} key={color} title={color} />)}</div>
-            </div>
             <div className="product-actions">
               {product.affiliateLink && <a className="button" href={product.affiliateLink} target="_blank" rel="noreferrer">Shop Brand ↗</a>}
               {user ? (
@@ -1054,225 +1043,6 @@ function ProductPage({ id, user, setUser }) {
   );
 }
 
-function AdminPage() {
-  const formRef = useRef(null);
-  const [adminKey, setAdminKey] = useState(localStorage.getItem('fitlook_admin_key') || '');
-  const [message, setMessage] = useState('');
-  const [previewImage, setPreviewImage] = useState('');
-  const [refresh, setRefresh] = useState(0);
-  const state = useProducts({ limit: 96, sort: 'newest', refresh });
-  const categoryDistribution = useMemo(() => {
-    if (state.facets.categoryCounts?.length) {
-      return state.facets.categoryCounts
-        .map((item) => ({ category: item.category || 'uncategorized', count: item.count || 0 }))
-        .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
-    }
-    const counts = new Map();
-    state.products.forEach((product) => {
-      const category = product.category || 'uncategorized';
-      counts.set(category, (counts.get(category) || 0) + 1);
-    });
-    return [...counts.entries()]
-      .map(([category, count]) => ({ category, count }))
-      .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
-  }, [state.facets.categoryCounts, state.products]);
-
-  const saveKey = (value) => {
-    setAdminKey(value);
-    localStorage.setItem('fitlook_admin_key', value);
-  };
-
-  const setField = (name, value) => {
-    const field = formRef.current?.elements.namedItem(name);
-    if (!field || value === undefined || value === null || value === '') return;
-    field.value = Array.isArray(value) ? value.join(', ') : value;
-  };
-
-  const previewAffiliate = async () => {
-    const form = formRef.current;
-    const affiliateLink = form?.elements.namedItem('affiliateLink')?.value;
-    if (!affiliateLink) {
-      setMessage('Paste an affiliate link first.');
-      return;
-    }
-    setMessage('Fetching product details...');
-    try {
-      const data = await api('/products/preview-link', {
-        method: 'POST',
-        body: JSON.stringify({ affiliateLink }),
-        headers: { 'x-admin-key': adminKey }
-      });
-      const draft = data.draft || {};
-      ['affiliateLink', 'name', 'brand', 'category', 'gender', 'price', 'compareAtPrice', 'currency', 'rating', 'ratingCount', 'description', 'tags', 'remoteImageUrl', 'sourceUrl'].forEach((name) => setField(name, draft[name]));
-      if (draft.remoteImageUrl) setPreviewImage(draft.remoteImageUrl);
-      setMessage('Draft filled. Review it, adjust anything missing, then save.');
-    } catch (err) {
-      setMessage(err.message);
-    }
-  };
-
-  const submit = async (event) => {
-    event.preventDefault();
-    setMessage('Uploading product...');
-    try {
-      const form = event.currentTarget;
-      await api('/products', { method: 'POST', body: new FormData(form), headers: { 'x-admin-key': adminKey } });
-      form.reset();
-      setPreviewImage('');
-      setMessage('Product uploaded.');
-      setRefresh((value) => value + 1);
-    } catch (err) {
-      setMessage(err.message);
-    }
-  };
-
-  const removeProduct = async (id) => {
-    if (!window.confirm('Remove this product from the catalog?')) return;
-    setMessage('Removing product...');
-    try {
-      await api(`/products/${id}`, { method: 'DELETE', headers: { 'x-admin-key': adminKey } });
-      setMessage('Product removed.');
-      setRefresh((value) => value + 1);
-    } catch (err) {
-      setMessage(err.message);
-    }
-  };
-
-  const updateTryOnModel = async (id, tryOnModel) => {
-    setMessage('Updating try-on model...');
-    try {
-      await api(`/products/${id}/tryon-model`, {
-        method: 'PATCH',
-        body: JSON.stringify({ tryOnModel }),
-        headers: { 'x-admin-key': adminKey }
-      });
-      setMessage('Try-on model updated.');
-      setRefresh((value) => value + 1);
-    } catch (err) {
-      setMessage(err.message);
-    }
-  };
-
-  const rebuildCategories = async () => {
-    setMessage('Rebuilding product categories...');
-    try {
-      const data = await api('/products/recategorize', { method: 'POST', headers: { 'x-admin-key': adminKey } });
-      setMessage(`Categories rebuilt. Updated ${data.updated || 0} of ${data.checked || 0} products.`);
-      setRefresh((value) => value + 1);
-    } catch (err) {
-      setMessage(err.message);
-    }
-  };
-
-  return (
-    <main className="admin-layout wrap">
-      <section className="admin-head">
-        <div>
-          <p className="kicker">Admin Panel</p>
-          <h1>Upload real products.</h1>
-          <p className="lead">Products added here go straight into MongoDB and appear in home, search, filters, and locked try-on rows.</p>
-        </div>
-        <label className="field admin-key"><span>Admin key</span><input value={adminKey} onChange={(event) => saveKey(event.target.value)} placeholder="Enter admin key" /></label>
-      </section>
-
-      <section className="admin-grid">
-        <form className="admin-card admin-form" onSubmit={submit} ref={formRef}>
-          <h2>New Product</h2>
-          <div className="affiliate-import">
-            <label className="field"><span>Affiliate link</span><input name="affiliateLink" type="url" placeholder="https://brand.com/product-page" /></label>
-            <button type="button" onClick={previewAffiliate}>Fetch Details</button>
-          </div>
-          <input name="remoteImageUrl" type="hidden" />
-          <input name="sourceUrl" type="hidden" />
-          <input name="currency" type="hidden" defaultValue="USD" />
-          {previewImage && <div className="link-preview"><img src={previewImage} alt="" /><div><strong>Remote image found</strong><span>This image URL will be linked directly unless you upload another one.</span></div></div>}
-          <label className="field"><span>Name</span><input name="name" required placeholder="Linen Blend Shirt" /></label>
-          <label className="field"><span>Brand</span><input name="brand" required placeholder="Zara" /></label>
-          <div className="two-col">
-            <label className="field"><span>Category</span><input name="category" required placeholder="shirts" /></label>
-            <label className="field"><span>Gender</span><select name="gender" defaultValue="men"><option value="men">Men</option><option value="women">Women</option><option value="unisex">Unisex</option></select></label>
-          </div>
-          <div className="two-col">
-            <label className="field"><span>Price</span><input name="price" type="number" step="0.01" min="0" required placeholder="29.99" /></label>
-            <label className="field"><span>Compare price</span><input name="compareAtPrice" type="number" step="0.01" min="0" placeholder="49.99" /></label>
-          </div>
-          <div className="two-col">
-            <label className="field"><span>Rating</span><input name="rating" type="number" step="0.1" min="0" max="5" defaultValue="4.5" /></label>
-            <label className="field"><span>Rating count</span><input name="ratingCount" type="number" min="0" defaultValue="0" /></label>
-          </div>
-          <label className="field"><span>Badge</span><input name="badge" placeholder="New" /></label>
-          <label className="field"><span>Try-on model</span><select name="tryOnModel" defaultValue="gpt-image-2"><option value="gpt-image-2">GPT Image 2</option><option value="vto-unrestricted">FAL VTO unrestricted</option></select></label>
-          <label className="field"><span>Description</span><textarea name="description" rows="4" placeholder="Short product description" /></label>
-          <label className="field"><span>Tags</span><input name="tags" placeholder="linen, casual, summer" /></label>
-          <label className="field"><span>Colors</span><input name="colors" placeholder="#d9c8b4, #123323, white" /></label>
-          <label className="upload-box"><input name="image" type="file" accept="image/*" /><span><span className="upload-icon">↑</span><span className="upload-title">Upload product image</span><span className="upload-help">Optional if the affiliate link found an image.</span></span></label>
-          <div className="checks">
-            <label><input name="isFeatured" type="checkbox" /> Featured</label>
-            <label><input name="isNewArrival" type="checkbox" defaultChecked /> New arrival</label>
-          </div>
-          <button className="submit">Upload Product</button>
-          {message && <p className="form-message">{message}</p>}
-        </form>
-
-        <section className="admin-card">
-          <div className="section-head admin-catalog-head">
-            <h2>Catalog</h2>
-            <div><button type="button" onClick={rebuildCategories}>Rebuild Categories</button><span className="count">{state.total} active</span></div>
-          </div>
-          {state.loading && <StatusPanel text="Loading catalog..." />}
-          {state.error && <StatusPanel text={state.error} />}
-          {!state.loading && !state.error && categoryDistribution.length > 0 && <CategoryDistribution items={categoryDistribution} total={state.total || state.products.length} />}
-          {!state.loading && !state.error && state.products.length === 0 && <EmptyProducts />}
-          <div className="admin-products">
-            {state.products.map((product) => (
-              <article className="admin-product" key={product.id}>
-                <img src={product.imageUrl || asset('hero-room.png')} alt={product.name} />
-                <div>
-                  <h3>{product.name}</h3>
-                  <p>{product.brand} · {product.category} · {formatMoney(product.price || 0, product.currency)}</p>
-                  {product.affiliateLink && <a className="admin-affiliate" href={product.affiliateLink} target="_blank" rel="noreferrer">Affiliate link</a>}
-                </div>
-                <div className="admin-product-actions">
-                  <label>
-                    <span>Try-on model</span>
-                    <select value={product.tryOnModel || 'gpt-image-2'} onChange={(event) => updateTryOnModel(product.id, event.target.value)}>
-                      <option value="gpt-image-2">GPT Image 2</option>
-                      <option value="vto-unrestricted">FAL VTO</option>
-                    </select>
-                  </label>
-                  <button type="button" onClick={() => removeProduct(product.id)}>Remove</button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      </section>
-    </main>
-  );
-}
-
-function CategoryDistribution({ items, total }) {
-  return (
-    <div className="category-distribution" aria-label="Category distribution">
-      <div className="distribution-head">
-        <h3>Category Distribution</h3>
-        <span>{total} loaded</span>
-      </div>
-      <div className="distribution-list">
-        {items.map((item) => {
-          const percent = total ? Math.round((item.count / total) * 100) : 0;
-          return (
-            <div className="distribution-item" key={item.category}>
-              <div><strong>{item.category}</strong><span>{item.count} products · {percent}%</span></div>
-              <div className="distribution-bar"><span style={{ width: `${Math.max(percent, 4)}%` }} /></div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function StatusPanel({ text }) {
   return <div className="status-panel">{text}</div>;
 }
@@ -1281,8 +1051,8 @@ function EmptyProducts({ search }) {
   return (
     <div className="empty-products">
       <h3>No real products yet.</h3>
-      <p>{search ? `Nothing matched "${search}". Upload products in the admin panel or try a different search.` : 'Upload products in the admin panel and they will appear here automatically.'}</p>
-      <a className="button" href="/admin">Open Admin</a>
+      <p>{search ? `Nothing matched "${search}". Try a different search or browse the latest products.` : 'Products will appear here as soon as the catalog is available.'}</p>
+      <a className="button" href="/search">Browse Products</a>
     </div>
   );
 }
@@ -1422,7 +1192,6 @@ function App() {
     if ((path === '/signup' || path === '/login') && user) return <SearchPage user={user} setUser={setUser} />;
     if (path === '/signup') return <AuthPage mode="signup" setUser={setUser} />;
     if (path === '/login') return <AuthPage mode="login" setUser={setUser} />;
-    if (path === '/admin') return <AdminPage />;
     if (path === '/how-it-works') return <HowItWorks user={user} />;
     if (pageMeta[path]) return <InfoPage meta={pageMeta[path]} user={user} />;
     return <InfoPage meta={['Not Found', 'This page is not available yet.', 'Use the navigation to continue shopping with FitLook.', 'hero-room.png']} user={user} ctaLabel="Back to Shop" ctaHref="/search" />;

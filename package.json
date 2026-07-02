@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "admin:dev": "vite --config admin/vite.config.js --host 0.0.0.0",
+    "admin:build": "vite build --config admin/vite.config.js",
+    "admin:preview": "vite preview --config admin/vite.config.js --host 0.0.0.0",
     "server": "node server/index.js",
     "server:watch": "nodemon server/index.js",
     "build": "vite build",

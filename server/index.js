@@ -16,7 +16,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173', credentials: true }));
+function allowedOrigins() {
+  return [
+    process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+    process.env.ADMIN_ORIGIN || 'http://localhost:5174',
+    ...(process.env.ALLOWED_ORIGINS || '').split(',')
+  ]
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins().includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true
+}));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(rootDir, 'uploads')));
 app.use('/api/auth', authRoutes);
