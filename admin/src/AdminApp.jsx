@@ -27,9 +27,28 @@ async function api(path, options = {}) {
 }
 
 function mediaUrl(value) {
-  if (!value) return '/assets/hero-room.png';
+  if (!value) return '/assets/hero2.png';
   if (/^(?:https?:|data:)/i.test(value)) return value;
   return API_BASE ? `${API_BASE}${value}` : value;
+}
+
+function cleanDisplayText(value, fallback = '') {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return fallback;
+  if (/\b(?:bust|waist|hip|sleeve|shoulder|inseam|cuff|length|heel to toe|thigh circumference)\s*\(in\)/i.test(text)) return fallback;
+  if (text.length > 58) return fallback;
+  return text;
+}
+
+function displayBrand(product) {
+  const brand = cleanDisplayText(product?.brand, '');
+  if (!brand) return 'Marketplace brand';
+  if (brand.toLowerCase() === 'amazon') return 'Amazon';
+  return brand;
+}
+
+function displayCategory(product) {
+  return cleanDisplayText(product?.category, 'Products');
 }
 
 function formatMoney(value, currency = 'USD') {
@@ -94,6 +113,31 @@ function useProducts(params) {
   return state;
 }
 
+function useRecommendationStats(adminKey, refresh) {
+  const [state, setState] = useState({ stats: null, loading: false, error: '' });
+
+  useEffect(() => {
+    if (!adminKey) {
+      setState({ stats: null, loading: false, error: '' });
+      return;
+    }
+    let alive = true;
+    setState((current) => ({ ...current, loading: true, error: '' }));
+    api('/recommendations/admin/stats', { headers: { 'x-admin-key': adminKey } })
+      .then((data) => {
+        if (alive) setState({ stats: data, loading: false, error: '' });
+      })
+      .catch((err) => {
+        if (alive) setState({ stats: null, loading: false, error: err.message });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [adminKey, refresh]);
+
+  return state;
+}
+
 function AdminApp() {
   const formRef = useRef(null);
   const [adminKey, setAdminKey] = useState(localStorage.getItem('fitlook_admin_key') || '');
@@ -101,6 +145,7 @@ function AdminApp() {
   const [previewImage, setPreviewImage] = useState('');
   const [refresh, setRefresh] = useState(0);
   const state = useProducts({ limit: 96, sort: 'newest', refresh });
+  const recommendationStats = useRecommendationStats(adminKey, refresh);
   const categoryDistribution = useMemo(() => {
     if (state.facets.categoryCounts?.length) {
       return state.facets.categoryCounts
@@ -193,6 +238,25 @@ function AdminApp() {
     }
   };
 
+  const removeAllProducts = async () => {
+    if (!state.total) {
+      setMessage('There are no active products to remove.');
+      return;
+    }
+    const confirmed = window.confirm(`Remove all ${state.total} active products from the catalog? This will hide them from the storefront.`);
+    if (!confirmed) return;
+    const secondConfirmed = window.confirm('Please confirm again. This removes every listed product from the active catalog.');
+    if (!secondConfirmed) return;
+    setMessage('Removing all active products...');
+    try {
+      const data = await api('/products', { method: 'DELETE', headers: { 'x-admin-key': adminKey } });
+      setMessage(`Removed ${data.removed || 0} products from the catalog.`);
+      setRefresh((value) => value + 1);
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
   const updateTryOnModel = async (id, tryOnModel) => {
     setMessage('Updating try-on model...');
     try {
@@ -231,6 +295,19 @@ function AdminApp() {
           <span>Admin key</span>
           <input value={adminKey} onChange={(event) => saveKey(event.target.value)} placeholder="Enter admin key" />
         </label>
+      </section>
+
+      <RecommendationStatsCard state={recommendationStats} onRefresh={() => setRefresh((value) => value + 1)} />
+
+      <section className="admin-command-bar" aria-label="Catalog actions">
+        <div>
+          <strong>{state.total || 0} active products</strong>
+          <span>{message || 'Catalog tools are ready.'}</span>
+        </div>
+        <div>
+          <button type="button" onClick={rebuildCategories}>Rebuild Categories</button>
+          <button className="danger-action" type="button" onClick={removeAllProducts} disabled={state.loading || !state.total}>Remove All</button>
+        </div>
       </section>
 
       <section className="admin-grid">
@@ -289,9 +366,11 @@ function AdminApp() {
         <section className="admin-card">
           <div className="section-head admin-catalog-head">
             <h2>Catalog</h2>
-            <div><button type="button" onClick={rebuildCategories}>Rebuild Categories</button><span className="count">{state.total} active</span></div>
+            <div>
+              <span className="count">{state.total} active</span>
+            </div>
           </div>
-          {state.loading && <StatusPanel text="Loading catalog..." />}
+          {state.loading && <AdminProductSkeleton />}
           {state.error && <StatusPanel text={state.error} />}
           {!state.loading && !state.error && categoryDistribution.length > 0 && <CategoryDistribution items={categoryDistribution} total={state.total || state.products.length} />}
           {!state.loading && !state.error && state.products.length === 0 && <StatusPanel text="No products yet." />}
@@ -301,7 +380,7 @@ function AdminApp() {
                 <img src={mediaUrl(product.imageUrl)} alt={product.name} />
                 <div>
                   <h3>{product.name}</h3>
-                  <p>{product.brand} - {product.category} - {formatMoney(product.price || 0, product.currency)}</p>
+                  <p>{displayBrand(product)} - {displayCategory(product)} - {formatMoney(product.price || 0, product.currency)}</p>
                   {product.affiliateLink && <a className="admin-affiliate" href={product.affiliateLink} target="_blank" rel="noreferrer">Affiliate link</a>}
                 </div>
                 <div className="admin-product-actions">
@@ -341,6 +420,80 @@ function CategoryDistribution({ items, total }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function RecommendationStatsCard({ state, onRefresh }) {
+  const stats = state.stats;
+
+  return (
+    <section className="admin-card recommendation-card">
+      <div className="section-head">
+        <div>
+          <h2>Recommendation Signals</h2>
+          <p>Searches, clicks, try-ons, shop clicks, and profile weights.</p>
+        </div>
+        <button type="button" onClick={onRefresh}>Refresh Stats</button>
+      </div>
+      {state.loading && <StatusPanel text="Loading recommendation stats..." />}
+      {state.error && <StatusPanel text={state.error} />}
+      {!state.loading && !state.error && !stats && <StatusPanel text="Enter the admin key to load recommendation stats." />}
+      {stats && (
+        <>
+          <div className="stats-grid">
+            <StatBox label="Events" value={stats.totals?.events || 0} />
+            <StatBox label="Active users 30d" value={stats.totals?.activeUsers30d || 0} />
+            <StatBox label="Profiles" value={stats.totals?.preferenceProfiles || 0} />
+            <StatBox label="Avg price intent" value={stats.totals?.averagePreferredPrice ? formatMoney(stats.totals.averagePreferredPrice, 'INR') : '-'} />
+          </div>
+          <div className="stats-columns">
+            <StatsList title="Event Types" items={(stats.eventCounts || []).map((item) => ({ label: item.type.replace(/_/g, ' '), value: item.count, meta: `weight ${item.weight}` }))} />
+            <StatsList title="Top Categories" items={(stats.topCategories || []).map((item) => ({ label: item.label, value: item.weight }))} />
+            <StatsList title="Top Brands" items={(stats.topBrands || []).map((item) => ({ label: item.label, value: item.weight }))} />
+            <StatsList title="Top Tags" items={(stats.topTags || []).map((item) => ({ label: item.label, value: item.weight }))} />
+          </div>
+          <div className="stats-columns two">
+            <StatsList title="Top Products" items={(stats.topProducts || []).map((item) => ({ label: item.name, value: item.weight, meta: `${displayBrand(item)} - ${displayCategory(item)} - ${item.count} events` }))} />
+            <StatsList title="Recent Signals" items={(stats.recentEvents || []).map((item) => ({ label: item.product?.name || item.query || item.type, value: item.weight, meta: item.type.replace(/_/g, ' ') }))} />
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function StatBox({ label, value }) {
+  return <div className="stat-box"><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function StatsList({ title, items }) {
+  return (
+    <div className="stats-list">
+      <h3>{title}</h3>
+      {items.length === 0 ? <p>No data yet.</p> : items.slice(0, 8).map((item) => (
+        <div className="stats-row" key={`${title}-${item.label}-${item.value}`}>
+          <div><strong>{item.label}</strong>{item.meta && <span>{item.meta}</span>}</div>
+          <b>{item.value}</b>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AdminProductSkeleton() {
+  return (
+    <div className="admin-products admin-products-skeleton" aria-hidden="true">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <article className="admin-product" key={index}>
+          <span className="admin-skeleton-thumb" />
+          <div>
+            <span className="admin-skeleton-line wide" />
+            <span className="admin-skeleton-line medium" />
+          </div>
+          <span className="admin-skeleton-action" />
+        </article>
+      ))}
     </div>
   );
 }

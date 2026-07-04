@@ -20,18 +20,24 @@ const tryOnSchema = new mongoose.Schema(
 );
 
 tryOnSchema.index({ user: 1, product: 1 }, { unique: true });
+tryOnSchema.index({ user: 1, createdAt: -1 });
+
+function tryOnToClient(tryOn) {
+  return {
+    id: tryOn._id.toString(),
+    productId: tryOn.product.toString(),
+    imageUrl: tryOn.image?.path ? `/${tryOn.image.path}` : null,
+    provider: tryOn.provider,
+    model: tryOn.model,
+    quality: tryOn.quality,
+    tokenCost: tryOn.tokenCost,
+    createdAt: tryOn.createdAt
+  };
+}
 
 tryOnSchema.methods.toClient = function toClient() {
-  return {
-    id: this._id.toString(),
-    productId: this.product.toString(),
-    imageUrl: this.image?.path ? `/${this.image.path}` : null,
-    provider: this.provider,
-    model: this.model,
-    quality: this.quality,
-    tokenCost: this.tokenCost,
-    createdAt: this.createdAt
-  };
+  return tryOnToClient(this);
 };
 
 export default mongoose.model('TryOn', tryOnSchema);
+export { tryOnToClient };

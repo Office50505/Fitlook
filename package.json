@@ -24,6 +24,7 @@
     "multer": "^2.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "redis": "^6.1.0",
     "vite": "^6.0.7"
   },
   "devDependencies": {

@@ -14,6 +14,13 @@ function formatMoney(value, currency = 'USD') {
   }
 }
 
+function formatDate(value) {
+  if (!value) return 'Recently';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Recently';
+  return new Intl.DateTimeFormat('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+}
+
 const categories = [
   ['Shirts', 'category-1.jpg', 'shirts'],
   ['T-Shirts', 'category-2.jpg', 't-shirts'],
@@ -33,16 +40,16 @@ const pageMeta = {
   '/women': ['For Women', 'Try new silhouettes with less guessing.', 'A dedicated shopping entry point for shirts, denim, jackets, accessories, and AI-powered outfit previews.', 'arrival-4.jpg'],
   '/new-arrivals': ['New Arrivals', 'Fresh pieces, first impressions.', 'New products are updated here so you can preview the latest fits before they disappear.', 'arrival-5.jpg'],
   '/sale': ['Sale', 'Better deals, fewer fit doubts.', 'Browse discounted products and use try-on previews before finalizing your picks.', 'search-shirt-2.jpg'],
-  '/gift-cards': ['Gift Cards', 'Style confidence makes a good gift.', 'Gift cards can be used toward shopping and try-on tokens when the product is connected.', 'hero-room.png'],
-  '/about': ['About', 'Shopping online should feel more certain.', 'FitLook combines product discovery with AI try-on previews so shoppers can compare styles with more confidence.', 'hero-room.png'],
+  '/gift-cards': ['Gift Cards', 'Style confidence makes a good gift.', 'Gift cards can be used toward shopping and try-on tokens when the product is connected.', 'hero2.png'],
+  '/about': ['About', 'Shopping online should feel more certain.', 'FitLook combines product discovery with AI try-on previews so shoppers can compare styles with more confidence.', 'hero2.png'],
   '/support': ['Help', 'Support for shopping and try-on.', 'Find answers about shipping, returns, profile photos, tokens, and account access.', 'search-shirt-4.jpg'],
-  '/contact': ['Contact', 'Tell us what you need.', 'For order, token, account, and AI try-on questions, reach the FitLook support team.', 'hero-room.png'],
-  '/careers': ['Careers', 'Build the future of fitting rooms.', 'Future roles across product, design, engineering, fashion operations, and partnerships would be listed here.', 'hero-room.png'],
+  '/contact': ['Contact', 'Tell us what you need.', 'For order, token, account, and AI try-on questions, reach the FitLook support team.', 'hero2.png'],
+  '/careers': ['Careers', 'Build the future of fitting rooms.', 'Future roles across product, design, engineering, fashion operations, and partnerships would be listed here.', 'hero2.png'],
   '/blog': ['Blog', 'Fit notes, styling ideas, and AI try-on updates.', 'Editorial content, product guides, and try-on tips would live here.', 'arrival-4.jpg'],
-  '/press': ['Press', 'FitLook press and media.', 'Company information, product screenshots, and media contact details would be available here.', 'hero-room.png'],
-  '/terms': ['Terms', 'Terms and conditions.', 'This page outlines where account, token, shopping, and AI try-on usage rules live.', 'hero-room.png'],
-  '/privacy': ['Privacy', 'Your try-on profile is personal.', 'This page describes how account details, full-body photos, token usage, and shopping activity are handled.', 'hero-room.png'],
-  '/accessibility': ['Accessibility', 'Accessibility matters at every step.', 'Accessibility goals cover navigation, forms, image alt text, contrast, and keyboard-friendly flows.', 'hero-room.png']
+  '/press': ['Press', 'FitLook press and media.', 'Company information, product screenshots, and media contact details would be available here.', 'hero2.png'],
+  '/terms': ['Terms', 'Terms and conditions.', 'This page outlines where account, token, shopping, and AI try-on usage rules live.', 'hero2.png'],
+  '/privacy': ['Privacy', 'Your try-on profile is personal.', 'This page describes how account details, full-body photos, token usage, and shopping activity are handled.', 'hero2.png'],
+  '/accessibility': ['Accessibility', 'Accessibility matters at every step.', 'Accessibility goals cover navigation, forms, image alt text, contrast, and keyboard-friendly flows.', 'hero2.png']
 };
 
 function normalizePath() {
@@ -70,6 +77,29 @@ function readableError(value, fallback = 'Request failed') {
   return String(value);
 }
 
+function cleanDisplayText(value, fallback = '') {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return fallback;
+  if (/\b(?:bust|waist|hip|sleeve|shoulder|inseam|cuff|length|heel to toe|thigh circumference)\s*\(in\)/i.test(text)) return fallback;
+  if (text.length > 58) return fallback;
+  return text;
+}
+
+function displayBrand(product) {
+  const brand = cleanDisplayText(product?.brand, '');
+  if (!brand) return 'Marketplace brand';
+  if (brand.toLowerCase() === 'amazon') return 'Amazon';
+  return brand;
+}
+
+function displayCategory(product) {
+  return cleanDisplayText(product?.category, 'Products');
+}
+
+function usableBrands(brands = []) {
+  return brands.map((brand) => cleanDisplayText(brand, '')).filter(Boolean);
+}
+
 async function api(path, options = {}) {
   const token = localStorage.getItem('fitlook_token');
   const headers = options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' };
@@ -78,6 +108,14 @@ async function api(path, options = {}) {
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(readableError(data, `Request failed (${res.status})`));
   return data;
+}
+
+function recordEvent(type, payload = {}) {
+  if (!localStorage.getItem('fitlook_token')) return;
+  api('/recommendations/events', {
+    method: 'POST',
+    body: JSON.stringify({ type, ...payload })
+  }).catch(() => {});
 }
 
 function useProducts(params) {
@@ -104,6 +142,53 @@ function useProducts(params) {
       alive = false;
     };
   }, [query]);
+
+  return state;
+}
+
+function useRecommendedProducts(user, limit = 6) {
+  const [state, setState] = useState({ products: [], total: 0, facets: { brands: [], categories: [], categoryCounts: [] }, loading: Boolean(user), error: '' });
+
+  useEffect(() => {
+    if (!user) {
+      setState({ products: [], total: 0, facets: { brands: [], categories: [], categoryCounts: [] }, loading: false, error: '' });
+      return;
+    }
+    let alive = true;
+    setState((current) => ({ ...current, loading: true, error: '' }));
+    api(`/recommendations/for-you?limit=${limit}`)
+      .then((data) => {
+        if (alive) setState({ products: data.products || [], total: data.products?.length || 0, facets: { brands: [], categories: [], categoryCounts: [] }, loading: false, error: '' });
+      })
+      .catch((err) => {
+        if (alive) setState({ products: [], total: 0, facets: { brands: [], categories: [], categoryCounts: [] }, loading: false, error: err.message });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user, limit]);
+
+  return state;
+}
+
+function useSimilarProducts(id, limit = 4) {
+  const [state, setState] = useState({ products: [], loading: true, error: '' });
+
+  useEffect(() => {
+    if (!id) return;
+    let alive = true;
+    setState({ products: [], loading: true, error: '' });
+    api(`/recommendations/similar/${encodeURIComponent(id)}?limit=${limit}`)
+      .then((data) => {
+        if (alive) setState({ products: data.products || [], loading: false, error: '' });
+      })
+      .catch((err) => {
+        if (alive) setState({ products: [], loading: false, error: err.message });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [id, limit]);
 
   return state;
 }
@@ -159,12 +244,21 @@ function useTryOnCache(user, products) {
 
 function Header({ user, setUser }) {
   const tokenLabel = user?.devMode ? 'Dev Mode' : user ? `${user.tokens} Tokens` : 'Tokens';
+  const [menuOpen, setMenuOpen] = useState(false);
   const logout = () => {
     localStorage.removeItem('fitlook_token');
     setUser(null);
+    setMenuOpen(false);
     window.history.pushState({}, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
   };
+  const navLinks = [
+    ['Shop', '/search'],
+    ['For Men', '/search?gender=men'],
+    ['For Women', '/search?gender=women'],
+    ['Categories', '/categories'],
+    ['How it Works', '/how-it-works']
+  ];
 
   return (
     <>
@@ -178,11 +272,7 @@ function Header({ user, setUser }) {
           <div className="header-left">
             <a className="brand" href="/">FitLook</a>
             <nav className="nav">
-              <a href="/search">Shop</a>
-              <a href="/search?gender=men">For Men</a>
-              <a href="/search?gender=women">For Women</a>
-              <a href="/search?newArrival=true">New Arrivals</a>
-              <a href="/how-it-works">How it Works</a>
+              {navLinks.map(([label, href]) => <a href={href} key={label}>{label}</a>)}
             </nav>
           </div>
           <div className="header-search" role="search">
@@ -193,8 +283,20 @@ function Header({ user, setUser }) {
           </div>
           <div className="header-actions">
             <a className="token-pill" href="/tokens"><span>✨</span>{tokenLabel}</a>
-            {user ? <button className="text-button" onClick={logout}>Log out</button> : <a className="icon-button" href="/login" aria-label="Account"><UserIcon /></a>}
+            {user ? <a className="icon-button" href="/profile" aria-label="Profile"><UserIcon /></a> : <a className="icon-button" href="/login" aria-label="Account"><UserIcon /></a>}
+            {user && <button className="text-button" onClick={logout}>Log out</button>}
             <button className="icon-button" aria-label="Wishlist"><HeartIcon /></button>
+            <button className="icon-button menu-toggle" type="button" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+              {menuOpen ? <CloseIcon /> : <MenuIcon />}
+            </button>
+          </div>
+        </div>
+        <div className={`mobile-menu ${menuOpen ? 'open' : ''}`}>
+          <div className="wrap mobile-menu-inner">
+            {navLinks.map(([label, href]) => <a href={href} key={label} onClick={() => setMenuOpen(false)}>{label}</a>)}
+            <a href="/tokens" onClick={() => setMenuOpen(false)}>{tokenLabel}</a>
+            <a href={user ? '/profile' : '/login'} onClick={() => setMenuOpen(false)}>{user ? 'Profile' : 'Account'}</a>
+            {user && <button type="button" onClick={logout}>Log out</button>}
           </div>
         </div>
       </header>
@@ -227,16 +329,25 @@ function FooterCol({ title, links }) {
 }
 
 function Hero({ compact = false }) {
+  const slide = {
+    kicker: 'AI Try-On',
+    title: <>See it on you,<br />before <em>you</em> buy.</>,
+    copy: 'Upload once. Try thousands of outfits using AI and shop from top brands.',
+    cta: 'Start Trying',
+    href: '/tokens',
+    image: compact ? 'hero2.png' : 'hero1.png'
+  };
+
   return (
     <section className="hero">
       <div className="wrap">
         <div className={compact ? 'hero-panel compact' : 'hero-panel'}>
-          <img className="hero-bg" src={asset('hero-room.png')} alt="" />
+          <img className="hero-bg" src={asset(slide.image)} alt="" />
           <div className="hero-card">
-            <span className="hero-kicker">AI Try-On</span>
-            <h1 className="hero-title">See it on you,<br />before <em>you</em> buy.</h1>
-            <p className="hero-copy">Upload once. Try thousands of outfits using AI and shop from top brands.</p>
-            <a className="hero-cta" href="/search">Start Trying <span>→</span></a>
+            <span className="hero-kicker">{slide.kicker}</span>
+            <h1 className="hero-title">{slide.title}</h1>
+            <p className="hero-copy">{slide.copy}</p>
+            <a className="hero-cta" href={slide.href}>{slide.cta} <span>→</span></a>
           </div>
         </div>
       </div>
@@ -245,15 +356,15 @@ function Hero({ compact = false }) {
 }
 
 function Home({ user }) {
-  const trending = useProducts({ limit: 6 });
+  const recommended = useRecommendedProducts(user, 6);
   const arrivals = useProducts({ newArrival: 'true', sort: 'newest', limit: 6 });
 
   return (
     <>
       <Hero />
-      <ProductSection title="Trending Now" href="/search" state={trending} user={user} />
+      {user && (recommended.loading || recommended.products.length > 0) && <ProductSection title="Recommended For You" href="/search" state={recommended} user={user} />}
       <ProductSection title="New Arrivals" href="/search?newArrival=true" state={arrivals} user={user} />
-      <section className="categories"><div className="wrap"><div className="section-head"><h2>Shop by Category</h2></div><div className="category-grid">{categories.map(([label, image, q]) => <a className="category" href={`/search?category=${encodeURIComponent(q)}`} key={label}><img src={asset(image)} alt={label} /><span>{label}</span></a>)}</div></div></section>
+      <section className="categories"><div className="wrap"><div className="section-head"><h2>Shop by Category</h2><a className="view-all" href="/categories">View all ›</a></div><div className="category-grid">{categories.slice(0, 8).map(([label, image, q]) => <a className="category" href={`/search?category=${encodeURIComponent(q)}`} key={label}><img src={asset(image)} alt={label} /><span>{label}</span></a>)}</div></div></section>
       <FeatureBand />
     </>
   );
@@ -267,32 +378,112 @@ function ProductSection({ title, href, state, user }) {
     <section className="section">
       <div className="wrap">
         <div className="section-head"><h2>{title}</h2><a className="view-all" href={href}>View all ›</a></div>
-        {loading && <StatusPanel text="Loading products..." />}
+        {loading && <ProductGridSkeleton count={6} />}
         {error && <StatusPanel text={error} />}
         {!loading && !error && products.length === 0 && <EmptyProducts />}
-        {!loading && !error && products.length > 0 && <div className="product-grid">{displayProducts.map((product) => <ProductCard key={product.id} product={product} tryOn={tryOns[product.id]} />)}</div>}
+        {!loading && !error && products.length > 0 && <div className="product-grid">{displayProducts.map((product) => <ProductCard key={product.id} product={product} user={user} tryOn={tryOns[product.id]} />)}</div>}
       </div>
     </section>
   );
 }
 
-function ProductCard({ product, locked = false, tryOn, canTryOn = false, tryOnLoading = false, tryOnError = '', onTryOn }) {
+function CategoriesPage() {
+  const state = useProducts({ limit: 96, sort: 'newest' });
+  const fallbackBySlug = Object.fromEntries(categories.map(([label, image, slug]) => [slug, { label, image }]));
+  const categoryCards = useMemo(() => {
+    const groups = new Map();
+    (state.products || []).forEach((product) => {
+      const slug = String(product.category || 'uncategorized').toLowerCase();
+      const current = groups.get(slug) || {
+        slug,
+        label: fallbackBySlug[slug]?.label || product.category || 'Uncategorized',
+        fallbackImage: fallbackBySlug[slug]?.image || 'hero2.png',
+        products: []
+      };
+      current.products.push(product);
+      groups.set(slug, current);
+    });
+
+    const liveCategories = [...groups.values()].filter((category) => category.products.length > 0);
+    if (liveCategories.length) {
+      return liveCategories.sort((a, b) => b.products.length - a.products.length || a.label.localeCompare(b.label));
+    }
+
+    return categories.map(([label, image, slug]) => ({ slug, label, fallbackImage: image, products: [] }));
+  }, [state.products]);
+
+  return (
+    <main className="category-page">
+      <section className="wrap category-page-head">
+        <p className="kicker">Categories</p>
+        <h1>Shop by category.</h1>
+        <p className="lead">Browse product groups with a quick visual preview from the live catalog.</p>
+      </section>
+
+      <section className="wrap category-showcase-grid">
+        {state.loading && <StatusPanel text="Loading categories..." />}
+        {state.error && <StatusPanel text={state.error} />}
+        {!state.loading && !state.error && categoryCards.map((category) => {
+          const previewImages = category.products.slice(0, 4).map((product) => product.imageUrl).filter(Boolean);
+          const images = previewImages.length ? previewImages : [asset(category.fallbackImage)];
+          return (
+            <article className="category-showcase-card" key={category.slug}>
+              <a className="category-showcase-media" href={`/search?category=${encodeURIComponent(category.slug)}`}>
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <img src={images[index % images.length]} alt="" key={`${category.slug}-${index}`} />
+                ))}
+              </a>
+              <div className="category-showcase-info">
+                <div className="category-showcase-title">
+                  <img src={asset(category.fallbackImage)} alt="" />
+                  <div>
+                    <h2>{category.label}</h2>
+                    <p>{category.products.length ? `${category.products.length} products` : 'Waiting for products'}</p>
+                  </div>
+                </div>
+                <a href={`/search?category=${encodeURIComponent(category.slug)}`}>View more ›</a>
+              </div>
+            </article>
+          );
+        })}
+      </section>
+    </main>
+  );
+}
+
+function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, tryOnLoading = false, tryOnError = '', onTryOn }) {
+  const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? `${Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}% OFF` : '';
-  const image = tryOn?.imageUrl || product.imageUrl || asset('hero-room.png');
+  const productImage = product.imageUrl || asset('hero2.png');
+  const hasUsableTryOn = Boolean(tryOn?.imageUrl) && !tryOnImageFailed;
+  const image = hasUsableTryOn ? tryOn.imageUrl : productImage;
   const detailHref = `/product/${encodeURIComponent(product.id)}`;
+  const brand = displayBrand(product);
+
+  useEffect(() => {
+    setTryOnImageFailed(false);
+  }, [tryOn?.imageUrl]);
+
   const content = (
     <>
       <div className="product-media">
-        <img src={image} alt={product.name} />
+        <img
+          src={image}
+          alt={product.name}
+          onError={(event) => {
+            if (hasUsableTryOn) setTryOnImageFailed(true);
+            else if (event.currentTarget.src !== window.location.origin + asset('hero2.png')) event.currentTarget.src = asset('hero2.png');
+          }}
+        />
         {product.badge && <span className="badge">{product.badge}</span>}
-        {tryOn?.imageUrl && <span className="badge tryon-badge">AI Try-On</span>}
+        {hasUsableTryOn && <span className="badge tryon-badge">AI Try-On</span>}
         {tryOnLoading && <TryOnGenerating />}
         {!locked && <span className="heart"><HeartIcon /></span>}
       </div>
       <div className="product-info">
         <h3 className="product-title">{product.name}</h3>
-        <p className="product-brand">{product.brand}</p>
+        <p className="product-brand">{brand}</p>
         <p className="rating"><span>★</span> {Number(product.rating || 0).toFixed(1)} {product.ratingCount ? `(${product.ratingCount})` : ''}</p>
         <div className="price-row">
           <span className="price">{formatMoney(product.price || 0, product.currency)}</span>
@@ -305,16 +496,20 @@ function ProductCard({ product, locked = false, tryOn, canTryOn = false, tryOnLo
 
   return (
     <article className={`product-card ${locked ? 'locked-product' : ''}`}>
-      {locked ? <div>{content}</div> : <a className="product-card-link" href={detailHref}>{content}</a>}
-      {!locked && canTryOn && (
-        <div className="tryon-card-actions">
-          <button type="button" onClick={() => onTryOn(product)} disabled={tryOnLoading || Boolean(tryOn?.imageUrl)}>
-            {tryOn?.imageUrl ? 'Try-On Ready' : tryOnLoading ? 'Generating...' : 'Try On'}
-          </button>
+      {locked ? <div>{content}</div> : <a className="product-card-link" href={detailHref} onClick={() => recordEvent('product_click', { productId: product.id })}>{content}</a>}
+      {!locked && (
+        <div className="product-card-actions">
+          {canTryOn && onTryOn ? (
+            <button type="button" onClick={() => onTryOn(product)} disabled={tryOnLoading || Boolean(tryOn?.imageUrl)}>
+              {hasUsableTryOn ? 'Try-On Ready' : tryOnImageFailed ? 'Product Photo' : tryOnLoading ? 'Generating...' : 'Try On'}
+            </button>
+          ) : (
+            <a href={user ? detailHref : '/signup'}>{hasUsableTryOn ? 'Try-On Ready' : 'Try On'}</a>
+          )}
+          {product.affiliateLink && <a className="shop-action" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop</a>}
           {tryOnError && <p>{tryOnError}</p>}
         </div>
       )}
-      {!locked && product.affiliateLink && <a className="affiliate-cta" href={product.affiliateLink} target="_blank" rel="noreferrer">Shop Brand ↗</a>}
     </article>
   );
 }
@@ -346,27 +541,68 @@ function TryOnGenerating({ text = 'Try-on is being generated' }) {
   );
 }
 
+function ProductGridSkeleton({ count = 8 }) {
+  return (
+    <div className="product-grid skeleton-grid" aria-hidden="true">
+      {Array.from({ length: count }).map((_, index) => (
+        <article className="product-card product-skeleton" key={index}>
+          <div className="skeleton-media" />
+          <div className="product-info">
+            <span className="skeleton-line wide" />
+            <span className="skeleton-line medium" />
+            <span className="skeleton-line short" />
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ProductDetailSkeleton() {
+  return (
+    <main className="product-page">
+      <section className="wrap product-detail">
+        <div className="product-detail-grid product-detail-skeleton" aria-hidden="true">
+          <div className="skeleton-detail-media" />
+          <div className="product-summary">
+            <span className="skeleton-line short" />
+            <span className="skeleton-line title" />
+            <span className="skeleton-line wide" />
+            <span className="skeleton-line medium" />
+            <div className="product-detail-facts">
+              {Array.from({ length: 4 }).map((_, index) => <span className="skeleton-box" key={index} />)}
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function SearchPage({ user, setUser, tryOnMode = false }) {
   const params = new URLSearchParams(window.location.search);
   const q = params.get('q') || '';
+  const tag = params.get('tag') || '';
   const category = params.get('category') || '';
   const brand = params.get('brand') || '';
   const gender = params.get('gender') || '';
   const sort = params.get('sort') || '';
   const newArrival = params.get('newArrival') || '';
-  const state = useProducts({ q, category, brand, gender, sort, newArrival, limit: 60 });
+  const state = useProducts({ q, tag, category, brand, gender, sort, newArrival, limit: 60 });
   const [tryOns, setTryOns] = useTryOnCache(user, state.products);
   const [tryOnLoading, setTryOnLoading] = useState({});
   const [tryOnErrors, setTryOnErrors] = useState({});
   const [continueWithoutTryOn, setContinueWithoutTryOn] = useState(false);
   const autoTryOnStarted = useRef('');
+  const searchEventStarted = useRef('');
   const hasSearchIntent = Boolean(q);
   const allowTryOnTrial = Boolean(user) && !continueWithoutTryOn && (tryOnMode || hasSearchIntent);
   const shouldAutoGenerate = Boolean(user) && !continueWithoutTryOn && hasSearchIntent && !tryOnMode;
   const trialProducts = state.products.slice(0, 4);
   const visibleProducts = allowTryOnTrial ? trialProducts : state.products;
   const lockedProducts = allowTryOnTrial ? state.products.slice(4, 12) : [];
-  const title = tryOnMode ? 'AI Try-On' : q || category || brand || gender || (newArrival ? 'New Arrivals' : 'All Products');
+  const title = tryOnMode ? 'AI Try-On' : q || tag || category || brand || gender || (newArrival ? 'New Arrivals' : 'All Products');
+  const filterValues = { q, tag, category, brand, gender, sort, newArrival };
 
   const generateTryOn = async (product) => {
     setTryOnLoading((current) => ({ ...current, [product.id]: true }));
@@ -374,6 +610,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
     try {
       const data = await api(`/tryons/${product.id}`, { method: 'POST' });
       setTryOns((current) => ({ ...current, [product.id]: data.tryOn }));
+      recordEvent('try_on', { productId: product.id });
       if (data.user) {
         setUser((current) => {
           if (!current) return data.user;
@@ -386,6 +623,15 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
       setTryOnLoading((current) => ({ ...current, [product.id]: false }));
     }
   };
+
+  useEffect(() => {
+    if (!user) return;
+    const key = JSON.stringify({ q, tag, category, brand, gender, sort, newArrival });
+    if (searchEventStarted.current === key) return;
+    searchEventStarted.current = key;
+    if (q) recordEvent('search', { query: q, metadata: { tag, category, brand, gender, sort, newArrival } });
+    else if (tag || category || brand || gender || newArrival) recordEvent('filter', { metadata: { tag, category, brand, gender, sort, newArrival } });
+  }, [user, q, tag, category, brand, gender, sort, newArrival]);
 
   useEffect(() => {
     if (!shouldAutoGenerate || trialProducts.length === 0) return;
@@ -405,12 +651,14 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
           <div className="results-head">
             <div><h1>{title}</h1><p className="count">{state.loading ? 'Searching...' : `${state.total} Products`}</p></div>
           </div>
-          {state.loading && <StatusPanel text="Finding products..." />}
+          <ActiveFilterChips values={filterValues} />
+          <FilterPanel className="mobile-filters" facets={state.facets} values={filterValues} />
+          {state.loading && <ProductGridSkeleton count={8} />}
           {state.error && <StatusPanel text={state.error} />}
           {!state.loading && !state.error && state.products.length === 0 && <EmptyProducts search={title} />}
           {!state.loading && !state.error && state.products.length > 0 && (
             <div className="product-grid">
-              {visibleProducts.map((product, index) => <ProductCard key={product.id} product={product} tryOn={tryOns[product.id]} canTryOn={allowTryOnTrial && index < 4} tryOnLoading={Boolean(tryOnLoading[product.id])} tryOnError={tryOnErrors[product.id]} onTryOn={generateTryOn} />)}
+              {visibleProducts.map((product, index) => <ProductCard key={product.id} product={product} user={user} tryOn={tryOns[product.id]} canTryOn={allowTryOnTrial && index < 4} tryOnLoading={Boolean(tryOnLoading[product.id])} tryOnError={tryOnErrors[product.id]} onTryOn={generateTryOn} />)}
               {lockedProducts.length > 0 && (
                 <div className="locked-row">
                   {lockedProducts.map((product) => <ProductCard key={`locked-${product.id}`} product={product} locked />)}
@@ -424,7 +672,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
             </div>
           )}
         </div>
-        <FilterPanel facets={state.facets} values={{ q, category, brand, gender, sort, newArrival }} />
+        <FilterPanel className="desktop-filters" facets={state.facets} values={filterValues} />
       </section>
     </>
   );
@@ -445,115 +693,6 @@ function CustomTryOnPage({ user, setUser }) {
   );
 }
 
-function VtoTrialPage({ user, setUser }) {
-  const personRef = useRef(null);
-  const garmentRef = useRef(null);
-  const [personPreview, setPersonPreview] = useState('');
-  const [garmentPreview, setGarmentPreview] = useState('');
-  const [note, setNote] = useState('');
-  const [result, setResult] = useState(null);
-  const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [fullscreenImage, setFullscreenImage] = useState(null);
-  const strictPrompt = [
-    'Use the person photo as the only identity reference: keep the same face, eyes, nose, mouth, jawline, hair, skin tone, pose, crop, lighting, and background.',
-    'Send preserve_pose=true to the FAL model.',
-    'Ignore any model, face, hair, skin, body, pose, or background in the clothing photo.',
-    'Transfer the garment color, pattern, texture, neckline, sleeve length, hemline, buttons, logos, seams, and silhouette.',
-    'Do not copy, blend, borrow, or average the face from the clothing photo.'
-  ].join(' ');
-
-  if (!user) return <AuthPage mode="signup" setUser={setUser} />;
-
-  const previewFile = (event, setter) => {
-    const file = event.currentTarget.files?.[0];
-    setter(file ? URL.createObjectURL(file) : '');
-    setResult(null);
-    setMessage('');
-  };
-
-  const submit = async (event) => {
-    event.preventDefault();
-    const person = personRef.current?.files?.[0];
-    const garment = garmentRef.current?.files?.[0];
-    if (!person || !garment) {
-      setMessage('Upload both a person image and a garment image first.');
-      return;
-    }
-    setLoading(true);
-    setResult(null);
-    setMessage('Running unrestricted FAL virtual try-on trial...');
-    try {
-      const form = new FormData();
-      form.append('person', person);
-      form.append('garment', garment);
-      form.append('note', note);
-      const data = await api('/tryons/vto-trial', { method: 'POST', body: form });
-      setResult(data.trial);
-      if (data.user) setUser(data.user);
-      setMessage(`Trial ready using ${data.trial?.payloadVariant || 'model payload'}.`);
-    } catch (err) {
-      setMessage(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <main className="vto-trial-page">
-      <section className="wrap vto-trial-hero">
-        <p className="kicker">FAL Trial</p>
-        <h1>Pose-lock test for virtual try-on.</h1>
-        <p className="lead">This page tests <strong>fal-ai/image-apps-v2/virtual-try-on</strong> with a strict prompt. It does not charge tokens or save to the normal product try-on cache.</p>
-        <p className="trial-note">Use a clearly adult, fully clothed person photo and a standard garment product photo. FAL can still block underwear, swimwear, transparent clothing, nudity, or heavily cropped body framing.</p>
-      </section>
-
-      <section className="wrap vto-trial-shell">
-        <form className="vto-trial-panel" onSubmit={submit}>
-          <div className="vto-upload-grid">
-            <label className="upload-box custom-upload">
-              <input ref={personRef} name="person" type="file" accept="image/*" onChange={(event) => previewFile(event, setPersonPreview)} />
-              <span><span className="upload-icon">↑</span><span className="upload-title">Upload person photo</span><span className="upload-help">Fully clothed adult photo with the pose to preserve.</span></span>
-            </label>
-            <label className="upload-box custom-upload">
-              <input ref={garmentRef} name="garment" type="file" accept="image/*" onChange={(event) => previewFile(event, setGarmentPreview)} />
-              <span><span className="upload-icon">↑</span><span className="upload-title">Upload garment photo</span><span className="upload-help">Use a standard product photo of the clothing item.</span></span>
-            </label>
-          </div>
-          <label className="field"><span>Extra tester note</span><input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional: preserve crossed arms, keep same background..." /></label>
-          <div className="vto-prompt-box"><span>Strict prompt focus</span><p>{strictPrompt}</p></div>
-          <button className="submit" type="submit" disabled={loading}>{loading ? 'Running Trial...' : 'Run FAL VTO Trial'}</button>
-          {message && <p className={`form-message ${result?.imageUrl ? '' : 'error-message'}`}>{message}</p>}
-        </form>
-
-        <div className="vto-trial-preview">
-          <div className="vto-preview-card">
-            <span>Person</span>
-            {personPreview ? <img src={personPreview} alt="Person preview" /> : <div>Upload person</div>}
-          </div>
-          <div className="vto-preview-card">
-            <span>Garment</span>
-            {garmentPreview ? <img src={garmentPreview} alt="Garment preview" /> : <div>Upload garment</div>}
-          </div>
-          <div className="vto-preview-card result">
-            <span>Generated</span>
-            {loading && <TryOnGenerating text="FAL VTO trial is running" />}
-            {result?.imageUrl ? (
-              <>
-                <img src={result.imageUrl} alt="FAL virtual try-on trial result" />
-                <button className="fullscreen-button" type="button" aria-label="Open trial image full screen" title="Open full screen" onClick={() => setFullscreenImage({ src: result.imageUrl, alt: 'FAL virtual try-on trial result', title: 'FAL VTO Trial' })}><FullscreenIcon /></button>
-              </>
-            ) : <div>Generated result</div>}
-          </div>
-          {result && <div className="vto-debug"><strong>{result.model}</strong><span>payload: {result.payloadVariant}</span><span>preserve_pose: {result.preservePose ? 'true' : 'false'}</span><span>aspect_ratio: {result.aspectRatio}</span><span>keys: {(result.rawKeys || []).join(', ')}</span></div>}
-        </div>
-      </section>
-
-      {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
-    </main>
-  );
-}
-
 function CustomClothingTryOn({ setUser }) {
   const fileRef = useRef(null);
   const [garmentPreview, setGarmentPreview] = useState('');
@@ -561,6 +700,7 @@ function CustomClothingTryOn({ setUser }) {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [tryOnModel, setTryOnModel] = useState('gpt-image-2');
 
   const chooseGarment = (event) => {
     const file = event.currentTarget.files?.[0];
@@ -585,8 +725,10 @@ function CustomClothingTryOn({ setUser }) {
     try {
       const form = new FormData();
       form.append('garment', file);
+      form.append('tryOnModel', tryOnModel);
       const data = await api('/tryons/custom', { method: 'POST', body: form });
       setResult(data.tryOn);
+      recordEvent('custom_tryon', { metadata: { tryOnModel } });
       if (data.user) {
         setUser((current) => {
           if (!current) return data.user;
@@ -618,6 +760,16 @@ function CustomClothingTryOn({ setUser }) {
               <span className="upload-help">Use a front-facing product photo with the garment clearly visible.</span>
             </span>
           </label>
+          <div className="tryon-model-select" role="radiogroup" aria-label="Custom try-on clothing type">
+            <label className={tryOnModel === 'gpt-image-2' ? 'active' : ''}>
+              <input type="radio" name="tryOnModel" value="gpt-image-2" checked={tryOnModel === 'gpt-image-2'} onChange={(event) => setTryOnModel(event.target.value)} />
+              <span>Regular clothing</span>
+            </label>
+            <label className={tryOnModel === 'vto-unrestricted' ? 'active' : ''}>
+              <input type="radio" name="tryOnModel" value="vto-unrestricted" checked={tryOnModel === 'vto-unrestricted'} onChange={(event) => setTryOnModel(event.target.value)} />
+              <span>Swimwear / innerwear</span>
+            </label>
+          </div>
           <div className="custom-preview-grid">
             <div className="custom-preview">
               {garmentPreview ? <img src={garmentPreview} alt="Uploaded clothing preview" /> : <span>Garment preview</span>}
@@ -661,6 +813,7 @@ function StyleBotPage({ user, setUser }) {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setQuery('');
     setBusy(true);
+    recordEvent('style_bot_query', { query: prompt });
     setRuns((current) => [
       ...current,
       { id, query: prompt, products: [], tryOns: {}, loading: true, generating: {}, errors: {}, searchError: '' }
@@ -684,6 +837,7 @@ function StyleBotPage({ user, setUser }) {
             method: 'POST',
             body: JSON.stringify({ product })
           });
+          recordEvent('try_on', { query: product.name, metadata: { product } });
           updateRun(id, (run) => ({
             tryOns: { ...run.tryOns, [product.id]: generated.tryOn },
             errors: { ...run.errors, [product.id]: '' }
@@ -769,35 +923,47 @@ function StyleBotPage({ user, setUser }) {
 }
 
 function StyleBotProduct({ product, tryOn, loading, error, onFullscreen }) {
+  const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const tags = (product.tags || []).filter(Boolean).slice(0, 4);
+  const productImage = product.imageUrl || asset('hero2.png');
+  const hasUsableTryOn = Boolean(tryOn?.imageUrl) && !tryOnImageFailed;
+  const brand = displayBrand(product);
+  const category = displayCategory(product);
+
+  useEffect(() => {
+    setTryOnImageFailed(false);
+  }, [tryOn?.imageUrl]);
+
   return (
     <article className="style-result-card">
       <div className="style-result-media">
         <div>
           <span className="style-media-label">Product</span>
-          <img src={product.imageUrl || asset('hero-room.png')} alt={product.name} />
+          <img src={productImage} alt={product.name} />
         </div>
         <div className="style-generated">
           <span className="style-media-label">On You</span>
           {loading && <TryOnGenerating />}
-          {tryOn?.imageUrl ? (
+          {hasUsableTryOn ? (
             <>
-              <img src={tryOn.imageUrl} alt={`AI try-on for ${product.name}`} />
+              <img src={tryOn.imageUrl} alt={`AI try-on for ${product.name}`} onError={() => setTryOnImageFailed(true)} />
               <button className="fullscreen-button" type="button" aria-label="Open generated image full screen" title="Open full screen" onClick={() => onFullscreen({ src: tryOn.imageUrl, alt: `AI try-on for ${product.name}`, title: product.name })}><FullscreenIcon /></button>
             </>
+          ) : tryOn?.imageUrl ? (
+            <img src={productImage} alt={product.name} />
           ) : <div className="style-placeholder">Waiting for try-on</div>}
         </div>
       </div>
       <div className="style-result-info">
         <h2>{product.name}</h2>
-        <p>{product.brand} · {product.category}</p>
+        <p>{brand} · {category}</p>
         <p className="rating"><span>★</span> {Number(product.rating || 0).toFixed(1)} {product.ratingCount ? `(${product.ratingCount})` : ''}</p>
         <div className="price-row"><span className="price">{formatMoney(product.price, product.currency)}</span></div>
         {product.description && <p className="style-result-description">{product.description}</p>}
         {tags.length > 0 && <div className="style-result-tags">{tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
         {error && <p className="form-message error-message">{error}</p>}
         <div className="style-result-actions">
-          {product.affiliateLink && <a className="button" href={product.affiliateLink} target="_blank" rel="noreferrer">Shop ↗</a>}
+          {product.affiliateLink && <a className="button" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { query: product.name, metadata: { product } })}>Shop ↗</a>}
         </div>
       </div>
     </article>
@@ -861,15 +1027,147 @@ function TokenPage({ user }) {
   );
 }
 
-function FilterPanel({ facets, values }) {
-  const resetSearch = new URLSearchParams();
-  ['q', 'category', 'gender', 'newArrival'].forEach((key) => {
-    if (values[key]) resetSearch.set(key, values[key]);
-  });
-  const resetHref = `/search${resetSearch.toString() ? `?${resetSearch}` : ''}`;
+function ProfilePage({ user, setUser }) {
+  const fileRef = useRef(null);
+  const [preview, setPreview] = useState('');
+  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview);
+  }, [preview]);
+
+  if (!user) return <AuthPage mode="signup" setUser={setUser} />;
+
+  const photoSrc = preview || user.bodyPhotoUrl;
+  const selectPhoto = (event) => {
+    const file = event.currentTarget.files?.[0];
+    setPreview(file ? URL.createObjectURL(file) : '');
+    setMessage('');
+  };
+
+  const submitPhoto = async (event) => {
+    event.preventDefault();
+    const file = fileRef.current?.files?.[0];
+    if (!file) {
+      setMessage('Choose a new profile photo first.');
+      return;
+    }
+    setSaving(true);
+    setMessage('Updating profile photo...');
+    try {
+      const form = new FormData();
+      form.append('bodyPhoto', file);
+      const data = await api('/auth/body-photo', { method: 'POST', body: form });
+      setUser(data.user);
+      if (fileRef.current) fileRef.current.value = '';
+      setPreview('');
+      setMessage('Profile photo updated. Future try-ons will use this image.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <aside className="filters">
+    <main className="profile-page">
+      <section className="wrap profile-hero">
+        <div>
+          <p className="kicker">Profile</p>
+          <h1>Your fitting room profile.</h1>
+          <p className="lead">Manage the account details and body photo FitLook uses for AI try-on previews.</p>
+        </div>
+        <div className="profile-credit-card">
+          <span>{user.devMode ? '∞' : user.tokens}</span>
+          <strong>{user.devMode ? 'Dev mode active' : 'credits available'}</strong>
+          <a href="/tokens">View token plans</a>
+        </div>
+      </section>
+
+      <section className="wrap profile-grid">
+        <article className="profile-card">
+          <h2>Basic details</h2>
+          <dl className="profile-details">
+            <div><dt>Name</dt><dd>{user.name}</dd></div>
+            <div><dt>Username</dt><dd>@{user.username}</dd></div>
+            <div><dt>Email</dt><dd>{user.email}</dd></div>
+            <div><dt>Joined</dt><dd>{formatDate(user.joinedAt)}</dd></div>
+          </dl>
+        </article>
+
+        <article className="profile-card">
+          <h2>Credits</h2>
+          <div className="profile-token-meter">
+            <span>{user.devMode ? '∞' : user.tokens}</span>
+            <div>
+              <strong>{user.devMode ? 'Unlimited testing' : `${user.tokens} try-on credits`}</strong>
+              <p>{user.devMode ? 'Dev Mode bypasses token charging.' : 'Each new AI-generated try-on costs 1 token. Cached try-ons are free to view again.'}</p>
+            </div>
+          </div>
+        </article>
+
+        <article className="profile-card profile-photo-card">
+          <div>
+            <h2>Try-on photo</h2>
+            <p>This is the body reference used when generating product and custom try-ons.</p>
+          </div>
+          <form className="profile-photo-form" onSubmit={submitPhoto}>
+            <label className={`upload-box profile-photo-upload ${photoSrc ? 'has-preview' : ''}`}>
+              <input ref={fileRef} name="bodyPhoto" type="file" accept="image/*" onChange={selectPhoto} />
+              {photoSrc ? (
+                <>
+                  <img className="upload-preview" src={photoSrc} alt="Current try-on profile" />
+                  <span className="upload-overlay"><span className="upload-title">Change try-on photo</span><span className="upload-help">Use a clear front-facing full-body image.</span></span>
+                </>
+              ) : (
+                <span><span className="upload-icon">↑</span><span className="upload-title">Upload try-on photo</span><span className="upload-help">Front-facing, full-length image with good lighting.</span></span>
+              )}
+            </label>
+            <button className="submit" type="submit" disabled={saving || !preview}>{saving ? 'Saving...' : 'Save New Photo'}</button>
+            {message && <p className="form-message">{message}</p>}
+          </form>
+        </article>
+      </section>
+    </main>
+  );
+}
+
+function ActiveFilterChips({ values }) {
+  const active = [
+    ['q', values.q, `Search: ${values.q}`],
+    ['tag', values.tag, `Tag: ${values.tag}`],
+    ['category', values.category, displayCategory({ category: values.category })],
+    ['brand', values.brand, displayBrand({ brand: values.brand })],
+    ['gender', values.gender, values.gender],
+    ['newArrival', values.newArrival, 'New arrivals'],
+    ['sort', values.sort, values.sort === 'price-asc' ? 'Price low to high' : values.sort === 'price-desc' ? 'Price high to low' : values.sort === 'newest' ? 'Newest' : '']
+  ].filter(([, value, label]) => value && label);
+
+  if (active.length === 0) return null;
+
+  const hrefWithout = (key) => {
+    const params = new URLSearchParams();
+    Object.entries(values).forEach(([name, value]) => {
+      if (name !== key && value) params.set(name, value);
+    });
+    return `/search${params.toString() ? `?${params}` : ''}`;
+  };
+
+  return (
+    <div className="active-filters" aria-label="Active filters">
+      {active.map(([key, , label]) => <a href={hrefWithout(key)} key={key}>{label}<span>×</span></a>)}
+      <a className="clear" href="/search">Clear all</a>
+    </div>
+  );
+}
+
+function FilterPanel({ facets, values, className = '' }) {
+  const resetHref = '/search';
+  const brands = usableBrands(facets.brands);
+
+  return (
+    <aside className={`filters ${className}`}>
       <div className="filter-head"><h2>Filters</h2><a href={resetHref}>Reset</a></div>
       <form className="filter-form" action="/search">
         <input name="q" defaultValue={values.q} placeholder="Search keyword" />
@@ -879,7 +1177,7 @@ function FilterPanel({ facets, values }) {
         </select>
         <select name="brand" defaultValue={values.brand}>
           <option value="">All brands</option>
-          {facets.brands.map((item) => <option key={item} value={item}>{item}</option>)}
+          {brands.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
         <select name="gender" defaultValue={values.gender}>
           <option value="">All genders</option>
@@ -894,6 +1192,7 @@ function FilterPanel({ facets, values }) {
           <option value="price-desc">Price: High to Low</option>
         </select>
         {values.newArrival && <input type="hidden" name="newArrival" value={values.newArrival} />}
+        {values.tag && <input type="hidden" name="tag" value={values.tag} />}
         <button className="apply">Apply Filters</button>
       </form>
     </aside>
@@ -902,10 +1201,13 @@ function FilterPanel({ facets, values }) {
 
 function ProductPage({ id, user, setUser }) {
   const { product, loading, error } = useProduct(id);
-  const related = useProducts({ category: product?.category || '', limit: 5 });
+  const related = useSimilarProducts(id, 4);
   const [tryOn, setTryOn] = useState(null);
+  const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const [tryOnLoading, setTryOnLoading] = useState(false);
   const [tryOnError, setTryOnError] = useState('');
+  const [fullscreenImage, setFullscreenImage] = useState(null);
+  const productViewStarted = useRef('');
   const relatedProducts = related.products.filter((item) => item.id !== id).slice(0, 4);
   const [relatedTryOns] = useTryOnCache(user, relatedProducts);
 
@@ -928,8 +1230,18 @@ function ProductPage({ id, user, setUser }) {
     };
   }, [id, user]);
 
+  useEffect(() => {
+    setTryOnImageFailed(false);
+  }, [tryOn?.imageUrl]);
+
+  useEffect(() => {
+    if (!user || !product?.id || productViewStarted.current === product.id) return;
+    productViewStarted.current = product.id;
+    recordEvent('product_view', { productId: product.id });
+  }, [user, product?.id]);
+
   if (loading) {
-    return <main className="wrap product-page"><StatusPanel text="Loading product..." /></main>;
+    return <ProductDetailSkeleton />;
   }
 
   if (error || !product) {
@@ -946,10 +1258,14 @@ function ProductPage({ id, user, setUser }) {
 
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? `${Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}% off` : '';
-  const image = tryOn?.imageUrl || product.imageUrl || asset('hero-room.png');
+  const productImage = product.imageUrl || asset('hero2.png');
+  const hasUsableTryOn = Boolean(tryOn?.imageUrl) && !tryOnImageFailed;
+  const image = hasUsableTryOn ? tryOn.imageUrl : productImage;
+  const brand = displayBrand(product);
+  const category = displayCategory(product);
   const detailFacts = [
-    ['Brand', product.brand],
-    ['Category', product.category],
+    ['Brand', brand],
+    ['Category', category],
     ['For', product.gender],
     ['Rating', `${Number(product.rating || 0).toFixed(1)}${product.ratingCount ? ` from ${product.ratingCount} reviews` : ''}`],
     ['Price', formatMoney(product.price, product.currency)]
@@ -963,6 +1279,7 @@ function ProductPage({ id, user, setUser }) {
     try {
       const data = await api(`/tryons/${product.id}`, { method: 'POST' });
       setTryOn(data.tryOn);
+      recordEvent('try_on', { productId: product.id });
       if (data.user) {
         setUser((current) => {
           if (!current) return data.user;
@@ -979,14 +1296,32 @@ function ProductPage({ id, user, setUser }) {
   return (
     <main className="product-page">
       <section className="wrap product-detail">
-        <div className="breadcrumb"><a href="/search">Shop</a><span>/</span><a href={`/search?category=${encodeURIComponent(product.category || '')}`}>{product.category || 'Products'}</a></div>
+        <div className="breadcrumb"><a href="/search">Shop</a><span>/</span><a href={`/search?category=${encodeURIComponent(product.category || '')}`}>{category}</a></div>
         <div className="product-detail-grid">
           <div className="product-detail-media">
-            <img src={image} alt={product.name} />
+            <img
+              src={image}
+              alt={product.name}
+              onError={(event) => {
+                if (hasUsableTryOn) setTryOnImageFailed(true);
+                else if (event.currentTarget.src !== window.location.origin + asset('hero2.png')) event.currentTarget.src = asset('hero2.png');
+              }}
+            />
             {product.badge && <span className="badge">{product.badge}</span>}
-            {tryOn?.imageUrl && <span className="badge tryon-badge">AI Try-On</span>}
+            {hasUsableTryOn && <span className="badge tryon-badge">AI Try-On</span>}
+            {hasUsableTryOn && (
+              <button
+                className="fullscreen-button"
+                type="button"
+                aria-label="Open generated try-on full screen"
+                title="Open full screen"
+                onClick={() => setFullscreenImage({ src: tryOn.imageUrl, alt: `AI try-on for ${product.name}`, title: product.name })}
+              >
+                <FullscreenIcon />
+              </button>
+            )}
             {tryOnLoading && <TryOnGenerating />}
-            {tryOn?.imageUrl && product.imageUrl && (
+            {hasUsableTryOn && product.imageUrl && (
               <div className="original-product-preview">
                 <span>Product photo</span>
                 <img src={product.imageUrl} alt={`${product.name} product photo`} />
@@ -994,7 +1329,7 @@ function ProductPage({ id, user, setUser }) {
             )}
           </div>
           <div className="product-summary">
-            <p className="kicker">{product.brand}</p>
+            <p className="kicker">{brand}</p>
             <h1>{product.name}</h1>
             <p className="rating detail-rating"><span>★</span> {Number(product.rating || 0).toFixed(1)} {product.ratingCount ? `(${product.ratingCount} reviews)` : ''}</p>
             <div className="price-row detail-price">
@@ -1004,7 +1339,7 @@ function ProductPage({ id, user, setUser }) {
             </div>
             <p className="product-description">{product.description || 'No product description has been added yet.'}</p>
             <div className="product-meta">
-              {product.category && <a href={`/search?category=${encodeURIComponent(product.category)}`}>{product.category}</a>}
+              {product.category && <a href={`/search?category=${encodeURIComponent(product.category)}`}>{category}</a>}
               {product.gender && <a href={`/search?gender=${encodeURIComponent(product.gender)}`}>{product.gender}</a>}
               {product.isNewArrival && <span>New arrival</span>}
             </div>
@@ -1015,14 +1350,14 @@ function ProductPage({ id, user, setUser }) {
             </div>
             {productTags.length > 0 && (
               <div className="product-tags" aria-label="Product tags">
-                {productTags.map((tag) => <a href={`/search?q=${encodeURIComponent(tag)}`} key={tag}>{tag}</a>)}
+                {productTags.map((tag) => <a href={`/search?tag=${encodeURIComponent(tag)}`} key={tag}>{tag}</a>)}
               </div>
             )}
             <div className="product-actions">
-              {product.affiliateLink && <a className="button" href={product.affiliateLink} target="_blank" rel="noreferrer">Shop Brand ↗</a>}
+              {product.affiliateLink && <a className="button" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop Brand ↗</a>}
               {user ? (
                 <button className="secondary-button" type="button" onClick={generateProductTryOn} disabled={tryOnLoading || Boolean(tryOn?.imageUrl)}>
-                  {tryOn?.imageUrl ? 'Try-On Ready' : tryOnLoading ? 'Generating Try-On...' : 'Generate AI Try-On'}
+                  {hasUsableTryOn ? 'Try-On Ready' : tryOnImageFailed ? 'Product Photo Shown' : tryOnLoading ? 'Generating Try-On...' : 'Generate AI Try-On'}
                 </button>
               ) : <a className="secondary-button" href="/signup">Create Profile for Try-On</a>}
             </div>
@@ -1034,11 +1369,12 @@ function ProductPage({ id, user, setUser }) {
       {relatedProducts.length > 0 && (
         <section className="section">
           <div className="wrap">
-            <div className="section-head"><h2>More in {product.category}</h2><a className="view-all" href={`/search?category=${encodeURIComponent(product.category || '')}`}>View all ›</a></div>
-            <div className="product-grid">{relatedProducts.map((item) => <ProductCard key={item.id} product={item} tryOn={relatedTryOns[item.id]} />)}</div>
+            <div className="section-head"><h2>More Like This</h2><a className="view-all" href={`/search?category=${encodeURIComponent(product.category || '')}`}>View all ›</a></div>
+            <div className="product-grid">{relatedProducts.map((item) => <ProductCard key={item.id} product={item} user={user} tryOn={relatedTryOns[item.id]} />)}</div>
           </div>
         </section>
       )}
+      {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
     </main>
   );
 }
@@ -1060,38 +1396,66 @@ function EmptyProducts({ search }) {
 function HowItWorks({ user }) {
   const steps = [
     {
-      title: user ? 'Use your profile' : 'Create your profile',
-      copy: user ? 'Your account is ready, so you can move straight into browsing products.' : 'Upload one clear standing photo once, then keep using it for try-on previews.'
+      title: 'Set your fit profile',
+      copy: user ? 'Your profile photo is ready, so product try-ons can use the same body reference across the site.' : 'Create an account once with a clear full-body photo so future try-ons have a consistent reference.',
+      meta: user ? 'Profile ready' : 'One-time setup'
     },
     {
-      title: 'Choose a product',
-      copy: 'Open any product from the catalog and review the brand, price, image, colors, and details.'
+      title: 'Find a product',
+      copy: 'Browse the catalog, search directly, or ask Style Bot for a specific look, budget, occasion, or category.',
+      meta: 'Search or Style Bot'
     },
     {
-      title: 'Generate the try-on',
-      copy: 'Use tokens to preview how selected pieces look on your profile before leaving FitLook.'
+      title: 'Generate the preview',
+      copy: 'Use one token to create a try-on image. If that same product was already generated for you, FitLook reuses the saved result.',
+      meta: '1 token when new'
     },
     {
       title: 'Compare and shop',
-      copy: 'Shortlist the looks that work, then continue to the brand store when you are ready.'
+      copy: 'Open the generated image full screen, compare it with the product photo, then continue to the brand store when ready.',
+      meta: 'Review, then buy'
     }
+  ];
+  const signals = [
+    ['Product pages', 'See product info, saved try-ons, and similar recommendations in one place.'],
+    ['Custom try-on', 'Upload your own clothing reference and choose the right generation mode.'],
+    ['Recommendations', 'Searches, clicks, try-ons, and shop clicks quietly tune your product suggestions.']
   ];
 
   return (
     <main className="how-page">
       <section className="wrap how-hero">
-        <p className="kicker">How FitLook Works</p>
-        <h1>Four simple steps.</h1>
-        <p className="lead">From profile photo to product preview, the whole flow is built around making online shopping feel less like guessing.</p>
-        <a className="button" href={user ? '/search' : '/signup'}>{user ? 'Start Shopping' : 'Create Profile'}</a>
+        <div>
+          <p className="kicker">How FitLook Works</p>
+          <h1>Four simple steps.</h1>
+          <p className="lead">From profile photo to product preview, the whole flow is built around making online shopping feel less like guessing.</p>
+          <a className="button" href={user ? '/search' : '/signup'}>{user ? 'Start Shopping' : 'Create Profile'}</a>
+        </div>
+        <div className="how-hero-visual" aria-hidden="true">
+          <img src={asset('search-locked-preview.jpg')} alt="" />
+          <div>
+            <strong>{user ? 'Ready to try on' : 'Profile starts here'}</strong>
+            <span>{user ? 'Browse, generate, compare.' : 'Upload once, preview often.'}</span>
+          </div>
+        </div>
       </section>
 
       <section className="wrap how-steps" aria-label="FitLook steps">
         {steps.map((step, index) => (
           <article className="how-step" key={step.title}>
             <span>{String(index + 1).padStart(2, '0')}</span>
+            <small>{step.meta}</small>
             <h2>{step.title}</h2>
             <p>{step.copy}</p>
+          </article>
+        ))}
+      </section>
+
+      <section className="wrap how-support">
+        {signals.map(([title, copy]) => (
+          <article key={title}>
+            <h3>{title}</h3>
+            <p>{copy}</p>
           </article>
         ))}
       </section>
@@ -1114,7 +1478,50 @@ function InfoPage({ meta, children, user, ctaLabel, ctaHref }) {
 
 function AuthPage({ mode, setUser }) {
   const [message, setMessage] = useState('');
+  const [nameValue, setNameValue] = useState('');
+  const [username, setUsername] = useState('');
+  const [usernameTouched, setUsernameTouched] = useState(false);
+  const [usernameSuggestions, setUsernameSuggestions] = useState([]);
+  const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
   const isSignup = mode === 'signup';
+
+  useEffect(() => {
+    if (!isSignup) return;
+    const cleanName = nameValue.trim();
+    if (!cleanName) {
+      setUsernameSuggestions([]);
+      if (!usernameTouched) setUsername('');
+      return;
+    }
+
+    let alive = true;
+    const timer = setTimeout(() => {
+      api(`/auth/username-suggestions?name=${encodeURIComponent(cleanName)}`)
+        .then((data) => {
+          if (!alive) return;
+          const suggestions = data.suggestions || [];
+          setUsernameSuggestions(suggestions);
+          if (!usernameTouched && suggestions[0]) setUsername(suggestions[0]);
+        })
+        .catch(() => {
+          if (alive) setUsernameSuggestions([]);
+        });
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [isSignup, nameValue, usernameTouched]);
+
+  useEffect(() => () => {
+    if (bodyPhotoPreview) URL.revokeObjectURL(bodyPhotoPreview);
+  }, [bodyPhotoPreview]);
+
+  const previewBodyPhoto = (event) => {
+    const file = event.currentTarget.files?.[0];
+    setBodyPhotoPreview(file ? URL.createObjectURL(file) : '');
+  };
+
   const submit = async (event) => {
     event.preventDefault();
     setMessage('Working...');
@@ -1139,16 +1546,51 @@ function AuthPage({ mode, setUser }) {
           <h1>{isSignup ? 'Build your AI fitting room.' : 'Log in to your fitting room.'}</h1>
           <p className="auth-copy">{isSignup ? 'Upload one full-body photo so FitLook can generate realistic outfit previews.' : 'Continue browsing, unlock your saved looks, and generate AI previews.'}</p>
           <form className="auth-form" onSubmit={submit}>
-            {isSignup && <label className="field"><span>Full name</span><input name="name" required /></label>}
-            <label className="field"><span>Email address</span><input name="email" type="email" required /></label>
+            {isSignup && (
+              <>
+                <label className="field"><span>Full name</span><input name="name" required value={nameValue} onChange={(event) => { setNameValue(event.target.value); setUsernameTouched(false); }} /></label>
+                <label className="field"><span>Username</span><input name="username" required minLength="3" value={username} onChange={(event) => { setUsernameTouched(true); setUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')); }} /></label>
+                {usernameSuggestions.length > 0 && (
+                  <div className="username-suggestions" aria-label="Username suggestions">
+                    {usernameSuggestions.map((item) => (
+                      <button type="button" key={item} onClick={() => { setUsernameTouched(true); setUsername(item); }}>{item}</button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+            <label className="field"><span>{isSignup ? 'Email address' : 'Email or username'}</span><input name="email" type={isSignup ? 'email' : 'text'} required /></label>
             <label className="field"><span>Password</span><input name="password" type="password" required minLength="6" /></label>
-            {isSignup && <label className="upload-box"><input name="bodyPhoto" type="file" accept="image/*" required /><span><span className="upload-icon">↑</span><span className="upload-title">Upload a clear standing photo</span><span className="upload-help">Front-facing, full-length image with good lighting.</span></span></label>}
+            {isSignup && (
+              <>
+                <label className={`upload-box ${bodyPhotoPreview ? 'has-preview' : ''}`}>
+                  <input name="bodyPhoto" type="file" accept="image/*" required onChange={previewBodyPhoto} />
+                  {bodyPhotoPreview ? (
+                    <>
+                      <img className="upload-preview" src={bodyPhotoPreview} alt="Uploaded profile preview" />
+                      <span className="upload-overlay"><span className="upload-title">Change profile photo</span><span className="upload-help">Use a clear front-facing full-body image.</span></span>
+                    </>
+                  ) : (
+                    <span><span className="upload-icon">↑</span><span className="upload-title">Upload a clear standing photo</span><span className="upload-help">Front-facing, full-length image with good lighting.</span></span>
+                  )}
+                </label>
+                <div className="photo-rules" aria-label="Allowed try-on photo guidelines">
+                  <strong>Best photo for AI try-on</strong>
+                  <ul>
+                    <li>Use a single-person, full-body photo from head to shoes.</li>
+                    <li>Stand facing the camera with your face clearly visible.</li>
+                    <li>Choose bright lighting and a simple background.</li>
+                    <li>Avoid mirror selfies, heavy filters, group photos, cropped bodies, or covered faces.</li>
+                  </ul>
+                </div>
+              </>
+            )}
             <button className="submit">{isSignup ? 'Create Account' : 'Log In'}</button>
           </form>
-          {message && <p className="form-message">{message}</p>}
+          {message && <p className={`form-message ${message === 'Working...' ? '' : 'error-message'}`}>{message}</p>}
           <p className="switch">{isSignup ? 'Already have an account?' : 'New to FitLook?'} <a href={isSignup ? '/login' : '/signup'}>{isSignup ? 'Log in' : 'Create an account'}</a></p>
         </div>
-        <div className="auth-visual"><img src={asset('hero-room.png')} alt="" /></div>
+        <div className="auth-visual"><img src={asset('hero2.png')} alt="" /></div>
       </section>
     </main>
   );
@@ -1183,18 +1625,19 @@ function App() {
     const productMatch = path.match(/^\/product\/([^/]+)$/);
     if (path === '/') return <Home user={user} />;
     if (path === '/search') return <SearchPage user={user} setUser={setUser} />;
+    if (path === '/categories') return <CategoriesPage />;
     if (path === '/try-on') return user ? <SearchPage user={user} setUser={setUser} tryOnMode /> : <AuthPage mode="signup" setUser={setUser} />;
     if (path === '/custom-try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
-    if (path === '/vto-trial') return <VtoTrialPage user={user} setUser={setUser} />;
     if (path === '/style-bot') return <StyleBotPage user={user} setUser={setUser} />;
     if (path === '/tokens') return <TokenPage user={user} />;
+    if (path === '/profile') return <ProfilePage user={user} setUser={setUser} />;
     if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} />;
     if ((path === '/signup' || path === '/login') && user) return <SearchPage user={user} setUser={setUser} />;
     if (path === '/signup') return <AuthPage mode="signup" setUser={setUser} />;
     if (path === '/login') return <AuthPage mode="login" setUser={setUser} />;
     if (path === '/how-it-works') return <HowItWorks user={user} />;
     if (pageMeta[path]) return <InfoPage meta={pageMeta[path]} user={user} />;
-    return <InfoPage meta={['Not Found', 'This page is not available yet.', 'Use the navigation to continue shopping with FitLook.', 'hero-room.png']} user={user} ctaLabel="Back to Shop" ctaHref="/search" />;
+    return <InfoPage meta={['Not Found', 'This page is not available yet.', 'Use the navigation to continue shopping with FitLook.', 'hero2.png']} user={user} ctaLabel="Back to Shop" ctaHref="/search" />;
   }, [path, user]);
 
   return (
@@ -1224,6 +1667,14 @@ function HeartIcon() {
 
 function FullscreenIcon() {
   return <svg viewBox="0 0 24 24"><path d="M8 3H3v5" /><path d="M16 3h5v5" /><path d="M21 16v5h-5" /><path d="M8 21H3v-5" /></svg>;
+}
+
+function MenuIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h16" /></svg>;
+}
+
+function CloseIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>;
 }
 
 export default App;

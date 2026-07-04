@@ -13,6 +13,13 @@ const userSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true, required: true },
     email: { type: String, trim: true, lowercase: true, unique: true, required: true },
+    username: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      unique: true,
+      sparse: true
+    },
     passwordHash: { type: String, required: true },
     tokens: { type: Number, default: signupTokens },
     bodyPhoto: {
@@ -30,8 +37,10 @@ userSchema.methods.toClient = function toClient() {
     id: this._id.toString(),
     name: this.name,
     email: this.email,
+    username: this.username,
     tokens: this.tokens,
     devMode: devMode(),
+    joinedAt: this.createdAt,
     bodyPhotoUrl: this.bodyPhoto?.path ? `/${this.bodyPhoto.path}` : null
   };
 };

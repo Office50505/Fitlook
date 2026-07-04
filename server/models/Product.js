@@ -56,31 +56,42 @@ productSchema.index({
   description: 'text',
   tags: 'text'
 });
+productSchema.index({ isActive: 1, isFeatured: -1, createdAt: -1 });
+productSchema.index({ isActive: 1, isNewArrival: -1, createdAt: -1 });
+productSchema.index({ isActive: 1, category: 1, createdAt: -1 });
+productSchema.index({ isActive: 1, brand: 1, createdAt: -1 });
+productSchema.index({ isActive: 1, gender: 1, createdAt: -1 });
+productSchema.index({ isActive: 1, tags: 1, createdAt: -1 });
+
+function productToClient(product) {
+  return {
+    id: product._id.toString(),
+    name: decodeHtml(product.name),
+    brand: decodeHtml(product.brand),
+    category: decodeHtml(product.category),
+    gender: product.gender,
+    price: product.price,
+    compareAtPrice: product.compareAtPrice,
+    currency: product.currency || 'USD',
+    rating: product.rating,
+    ratingCount: product.ratingCount,
+    badge: product.badge,
+    affiliateLink: product.affiliateLink,
+    sourceUrl: product.sourceUrl,
+    description: decodeHtml(product.description),
+    tags: product.tags?.map(decodeHtml),
+    colors: product.colors,
+    tryOnModel: product.tryOnModel || 'gpt-image-2',
+    imageUrl: product.image?.path ? `/${product.image.path}` : product.image?.remoteUrl || null,
+    isFeatured: product.isFeatured,
+    isNewArrival: product.isNewArrival,
+    createdAt: product.createdAt
+  };
+}
 
 productSchema.methods.toClient = function toClient() {
-  return {
-    id: this._id.toString(),
-    name: decodeHtml(this.name),
-    brand: decodeHtml(this.brand),
-    category: decodeHtml(this.category),
-    gender: this.gender,
-    price: this.price,
-    compareAtPrice: this.compareAtPrice,
-    currency: this.currency || 'USD',
-    rating: this.rating,
-    ratingCount: this.ratingCount,
-    badge: this.badge,
-    affiliateLink: this.affiliateLink,
-    sourceUrl: this.sourceUrl,
-    description: decodeHtml(this.description),
-    tags: this.tags?.map(decodeHtml),
-    colors: this.colors,
-    tryOnModel: this.tryOnModel || 'gpt-image-2',
-    imageUrl: this.image?.path ? `/${this.image.path}` : this.image?.remoteUrl || null,
-    isFeatured: this.isFeatured,
-    isNewArrival: this.isNewArrival,
-    createdAt: this.createdAt
-  };
+  return productToClient(this);
 };
 
 export default mongoose.model('Product', productSchema);
+export { productToClient };

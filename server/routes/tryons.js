@@ -6,10 +6,10 @@ import { fileURLToPath } from 'node:url';
 import CustomTryOn from '../models/CustomTryOn.js';
 import ExternalTryOn from '../models/ExternalTryOn.js';
 import Product from '../models/Product.js';
-import TryOn from '../models/TryOn.js';
+import TryOn, { tryOnToClient } from '../models/TryOn.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
-import { inferTryOnModel } from '../utils/tryOnModel.js';
+import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -92,8 +92,8 @@ function imageModel() {
   return process.env.FAL_TRYON_MODEL || 'openai/gpt-image-2/edit';
 }
 
-function virtualTryOnTrialModel() {
-  return process.env.FAL_VTO_TRIAL_MODEL || 'fal-ai/image-apps-v2/virtual-try-on';
+function virtualTryOnModel() {
+  return process.env.FAL_VTO_MODEL || process.env.FAL_VTO_TRIAL_MODEL || 'fal-ai/image-apps-v2/virtual-try-on';
 }
 
 function tryOnModelForProduct(product) {
@@ -112,14 +112,13 @@ function imageSize() {
 }
 
 function normalizeAspectRatio(value = '') {
-  const ratio = String(value || process.env.FAL_VTO_ASPECT_RATIO || '4:5').trim();
-  return /^(?:1:1|3:4|4:3|4:5|5:4|9:16|16:9|2:3|3:2)$/.test(ratio) ? ratio : '4:5';
+  const ratio = String(value || process.env.FAL_VTO_ASPECT_RATIO || '3:4').trim();
+  return /^(?:1:1|3:4|4:3|9:16|16:9)$/.test(ratio) ? ratio : '3:4';
 }
 
 function aspectRatioObject(value = '') {
   const label = normalizeAspectRatio(value);
-  const [width, height] = label.split(':').map(Number);
-  return { label, value: { width, height } };
+  return { label, value: { ratio: label } };
 }
 
 function extensionFor(mimetype) {
@@ -256,63 +255,50 @@ function customTryOnPrompt() {
   ].join(' ');
 }
 
-function virtualTryOnTrialPrompt(extra = '') {
+function virtualTryOnProductPrompt(product) {
+  const productName = product?.name || 'the selected product';
+  const productBrand = product?.brand || 'the listed brand';
+
   return [
-'Create a photorealistic virtual try-on image for a standard fashion retail catalog.',
-'Use the person photo as the PRIMARY and ONLY source of identity, body geometry, pose, and composition.',
-'The person photo is the absolute spatial ground truth. Every pixel outside the garment region must remain unchanged.',
-'Strictly preserve the exact pose, body orientation, head position, facial expression, hand placement, leg placement, camera angle, framing, crop, perspective, lighting, and background from the person photo.',
-'The face, hair, and neck regions are protected and immutable.',
-'Keep the original face fully visible and unobstructed unless it is already obscured in the person photo.',
-'The generated image is invalid if the original face visibility changes. The final image must clearly show the same eyes, nose, mouth, jawline, hairline, and facial expression from the person photo.',
-'Do not cover, crop, blur, replace, regenerate, stylize, modify, or partially hide the face, hair, or neck with clothing, shadows, accessories, or framing.',
-'Do not generate a new pose, reinterpret the pose, rotate the body, reposition limbs, infer a pose from the garment image, or make any composition decisions on your own.',
-'The output must be composition-locked to the original person photo, with only the clothing changed.',
-'Use the clothing photo only as a garment asset reference.',
-'If the clothing photo contains a model, mannequin, face, hair, skin, hands, body, pose, expression, camera angle, crop, or background, ignore all of those completely.',
-'Never copy, borrow, blend, infer, or transfer any pose, body positioning, framing, crop, camera angle, identity, hairstyle, skin tone, expression, proportions, or background from the clothing photo.',
-'The garment image is texture and construction reference only and must never influence framing, crop, body positioning, face visibility, neck visibility, or composition.',
-'Ignore the garment image crop entirely.',
-'The garment image may be incomplete or tightly cropped. Infer the missing portions of the garment from the visible garment details and fit it onto the person while preserving the original composition.',
-'Transfer only the garment material and design attributes, including color, pattern, texture, neckline, sleeve length, hemline, buttons, logos, seams, pockets, and silhouette.',
-'Adapt the garment to the person; never adapt the person to the garment.',
-'Preserve the exact amount of visible face, neck, shoulders, and upper chest from the person photo.',
-'Never extend the garment upward to match the crop of the clothing photo.',
-'Never move the neckline higher than anatomically required by the garment design.',
-'Keep every non-target region of the original photo unchanged, including the face, hair, neck, hands, legs, accessories, background, crop, and lighting.',
-'If the requested aspect ratio creates extra empty canvas space, fill only that extra space with a plain neutral base color sampled from the original background. Do not generate additional body parts, clothing, furniture, scenery, floor, wall, shadows, or background details.',
-'Return one clean, photorealistic result with the identical composition and crop as the original person photo, suitable for an ecommerce product preview.',
-'The person photo is the absolute spatial ground truth for pose and composition.',
-'The pose is locked and immutable.',
-'Preserve the exact pixel-level pose from the person photo, including head tilt, neck angle, shoulder positions, spine curvature, torso orientation, waist position, hip alignment, arm positions, elbow angles, wrist rotations, hand placement, finger positions, leg positions, knee angles, ankle positions, foot placement, and weight distribution.',
-'Do not generate, infer, reinterpret, improve, normalize, straighten, stylize, or modify the pose in any way.',
-'Do not move, rotate, bend, extend, raise, lower, spread, or reposition any body part.',
-'Do not change body proportions, body geometry, body scale, limb lengths, joint angles, or body orientation.',
-'The clothing must adapt to the existing body pose exactly as shown in the person photo. The body must never adapt to the clothing.',
-'The garment image must have zero influence on pose, body positioning, limb placement, or composition.',
-'The final image is invalid if any body part changes position relative to the original person photo.',
-'The output must be pose-locked and composition-locked to the person photo, with only the garment pixels changing.',
-'Outside the garment region, the generated image should be visually identical to the person photo.',
-    extra ? `Additional tester note: ${extra}` : ''
-  ].filter(Boolean).join(' ');
+    'Create one photorealistic virtual try-on image for a fashion ecommerce product preview.',
+    'The person photo is the base image, master reference, and absolute spatial ground truth.',
+    'Preserve the person photo identity, face, head, hair, neck, skin tone, body shape, body proportions, pose, camera angle, crop, framing, zoom level, lighting, background, and scene perspective.',
+    'The final image must always include the complete head and full face from the person photo inside the frame. The forehead, hair, ears, eyes, nose, mouth, chin, jawline, and neck must remain visible exactly as in the person photo unless already hidden in the person photo.',
+    'Never crop, trim, zoom past, cover, blur, regenerate, stylize, replace, blend, beautify, age, slim, or partially hide the face, head, hair, or neck.',
+    'The pose is locked. Preserve the exact body geometry and every visible landmark: head tilt, shoulders, torso, waist, hips, arms, elbows, wrists, hands, fingers, legs, knees, ankles, feet, and weight distribution.',
+    'Do not move, rotate, bend, extend, raise, lower, straighten, recenter, reframe, reshape, resize, or synthesize any body part.',
+    'If the requested aspect ratio needs more canvas, add only plain neutral background sampled from the original background around the person. Never create space by cropping the person, zooming in, or hiding the head or face.',
+    `Use the clothing/product photo only as the garment reference for "${productName}" by ${productBrand}.`,
+    'If the product photo contains a model, mannequin, face, hair, skin, hands, body, pose, expression, camera angle, crop, lighting, or background, ignore all of those completely.',
+    'Never copy, borrow, blend, infer, or transfer identity, face, hairstyle, body, pose, anatomy, framing, crop, camera angle, expression, skin tone, proportions, or background from the product photo.',
+    'Transfer only the garment design: color, pattern, texture, fabric, neckline, collar, straps, sleeve length, hemline, seams, buttons, logos, pockets, closures, trims, and silhouette.',
+    'Fit the garment naturally onto the existing person pose with correct scale, drape, folds, wrinkles, tension, occlusion, shadows, and fabric behavior.',
+    'The garment must adapt to the person; the person must never adapt to the garment.',
+    'Do not invent extra accessories, logos, text, patterns, buttons, pockets, skin exposure, body changes, styling changes, or background details.',
+    'Every non-garment region must remain visually unchanged from the person photo.',
+    'Return one clean, non-sexualized, photorealistic, full-body ecommerce try-on image. The only visible change should be the selected garment.'
+  ].join(' ');
 }
 
-function virtualTryOnProductPrompt(product) {
+function virtualTryOnCustomPrompt() {
   return [
-    'Create a photorealistic virtual try-on image for a standard fashion retail product page.',
-    'Use the person photo as the PRIMARY and ONLY source of identity, body geometry, pose, and composition.',
-    'The person photo is the absolute spatial ground truth. Preserve the exact identity, face, facial features, hair, skin tone, body shape, pose, camera angle, framing, crop, lighting, and background from the person photo.',
-    'The face, hair, and neck regions are protected. The final image must clearly show the same eyes, nose, mouth, jawline, hairline, hairstyle, skin tone, and facial expression from the person photo.',
-    'Do not replace, blend, beautify, age, slim, re-face, crop, blur, hide, or stylize the person.',
-    `Use the clothing/product photo only as the garment reference for "${product.name}" by ${product.brand}.`,
-    'If the clothing/product photo contains a model, mannequin, face, hair, skin, hands, body, pose, expression, camera angle, crop, or background, ignore all of those completely.',
-    'Never copy, borrow, blend, infer, or transfer any pose, body positioning, framing, crop, camera angle, identity, hairstyle, skin tone, expression, proportions, or background from the clothing/product photo.',
-    'Transfer only the garment material and design attributes, including color, pattern, texture, neckline, sleeve length, hemline, buttons, logos, seams, pockets, and silhouette.',
+    'Create a photorealistic virtual try-on image for a standard fashion retail preview.',
+    'Treat the person photo as the base image and absolute spatial ground truth. Preserve the exact identity, face, facial features, hair, skin tone, body shape, body proportions, pose, camera angle, framing, crop, lighting, and background from the person photo.',
+    'Only the clothing pixels required for the uploaded garment may change. Every non-garment region must remain visually unchanged from the person photo.',
+    'The face, hair, neck, hands, fingers, legs, feet, accessories, background, lighting, shadows outside the garment, camera perspective, and crop are protected and must not be modified.',
+    'The final frame must always include the complete head and face from the person photo. Do not crop, trim, zoom past, or cut off the forehead, chin, hair, ears, jawline, or any part of the face.',
+    'If more canvas is needed to fit the garment or aspect ratio, add only plain neutral background around the person. Never solve framing by cropping the person or hiding the face.',
+    'The final face must be the exact same face from the person photo. Do not replace, blend, beautify, age, slim, re-face, crop, blur, hide, stylize, or borrow facial/body features from any other image.',
+    'Use the uploaded clothing image only as the garment reference.',
+    'If the clothing image contains a model, mannequin, face, hair, skin, hands, body, pose, expression, camera angle, crop, or background, ignore all of those completely.',
+    'Never copy, borrow, blend, infer, or transfer any pose, body positioning, framing, crop, camera angle, identity, hairstyle, skin tone, expression, proportions, anatomy, or background from the clothing image.',
+    'Transfer only the garment material and design attributes: color, pattern, texture, neckline, sleeve length, hemline, straps, buttons, logos, seams, pockets, closures, and silhouette.',
     'Fit the garment naturally onto the existing body pose with correct scale, folds, seams, shadows, occlusion, and fabric texture.',
     'Adapt the garment to the person; never adapt the person to the garment.',
-    'Keep every non-target region of the original photo unchanged, including face, hair, neck, hands, legs, accessories, background, crop, and lighting.',
+    'Keep the result non-sexualized and ecommerce-catalog appropriate. Do not exaggerate body shape, skin exposure, pose, expression, or styling.',
+    'Maintain natural fabric coverage based on the garment design without inventing extra skin exposure or extra accessories.',
     'If the requested aspect ratio creates extra empty canvas space, fill only that extra space with a plain neutral base color sampled from the original background. Do not generate extra body parts, clothing, scenery, floor, wall, shadows, or background details.',
-    'Return one clean, full-body, photorealistic result suitable for an ecommerce product preview.'
+    'Return one clean, full-body, photorealistic result suitable for an ecommerce preview. The only visible change should be the uploaded garment.'
   ].join(' ');
 }
 
@@ -431,42 +417,6 @@ async function generatedBytesFromUrl(url, timer) {
   throw new Error(`Could not download generated try-on image from ${shortUrlForLog(url)} (${lastStatus || 'request failed'})`);
 }
 
-async function callFalVirtualTryOnTrial({ personDataUri, garmentDataUri, prompt, aspectRatio, timer }) {
-  const endpoint = virtualTryOnTrialModel();
-  const ratio = aspectRatioObject(aspectRatio);
-  const payload = {
-    person_image_url: personDataUri,
-    clothing_image_url: garmentDataUri,
-    prompt,
-    preserve_pose: true,
-    aspect_ratio: ratio.value
-  };
-  const vtoTimer = {
-    ...timer,
-    maxAttempts: Number(process.env.FAL_VTO_POLL_ATTEMPTS || 240),
-    pollMs: Number(process.env.FAL_VTO_POLL_MS || 1500)
-  };
-
-  try {
-    timer?.mark('fal vto submit attempt', { variant: 'person_clothing', fields: Object.keys(payload) });
-    const submission = await falJson(`https://queue.fal.run/${endpoint}`, {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-    timer?.mark('fal vto submitted', { requestId: submission.request_id });
-    const result = await waitForFalResult(submission, vtoTimer);
-    const generatedUrl = firstGeneratedImageUrl(result);
-    if (!generatedUrl) throw new Error(`FAL returned no image. Response keys: ${Object.keys(result || {}).join(', ')}`);
-    return { generatedUrl, payloadVariant: 'person_clothing', rawKeys: Object.keys(result || {}), preservePose: true, aspectRatio: ratio.label };
-  } catch (error) {
-    const message = readableError(error, 'FAL virtual try-on trial failed');
-    if (isFalContentPolicyError(message)) {
-      throw new Error('FAL accepted the required payload fields, but its content checker blocked this person/clothing image pair. Try a clearly adult, fully clothed person photo and a standard garment product photo with no underwear, swimwear, nudity, transparent clothing, or heavily cropped body framing.');
-    }
-    throw new Error(message);
-  }
-}
-
 async function callFalVirtualTryOnProduct({ user, product, timer }) {
   const [person, garment] = await Promise.all([
     dataUriFromUpload(user.bodyPhoto, 'person', timer),
@@ -477,13 +427,12 @@ async function callFalVirtualTryOnProduct({ user, product, timer }) {
     garmentKb: Math.round(garment.length / 1024)
   });
 
-  const endpoint = virtualTryOnTrialModel();
+  const endpoint = virtualTryOnModel();
   const ratio = aspectRatioObject();
   const prompt = virtualTryOnProductPrompt(product);
   const payload = {
     person_image_url: person,
     clothing_image_url: garment,
-    prompt,
     preserve_pose: true,
     aspect_ratio: ratio.value
   };
@@ -494,7 +443,12 @@ async function callFalVirtualTryOnProduct({ user, product, timer }) {
   };
 
   try {
-    timer?.mark('fal vto submit attempt', { fields: Object.keys(payload), aspectRatio: ratio.label });
+    timer?.mark('fal vto submit attempt', {
+      fields: Object.keys(payload),
+      aspectRatio: ratio.label,
+      preservePose: true,
+      unsupportedControls: 'seed/mask/identity/prompt not in FAL schema'
+    });
     const submission = await falJson(`https://queue.fal.run/${endpoint}`, {
       method: 'POST',
       body: JSON.stringify(payload)
@@ -519,6 +473,64 @@ async function callFalVirtualTryOnProduct({ user, product, timer }) {
     const message = readableError(error, 'FAL virtual try-on failed');
     if (isFalContentPolicyError(message)) {
       throw new Error('FAL VTO accepted the product payload, but its content checker blocked this person/clothing pair. Try a clearer fully clothed person photo or switch this product back to GPT Image 2.');
+    }
+    throw new Error(message);
+  }
+}
+
+async function callFalVirtualTryOnCustom({ user, garmentDataUri, timer }) {
+  const person = await dataUriFromUpload(user.bodyPhoto, 'person', timer);
+  timer?.mark('custom vto reference images prepared', {
+    personKb: Math.round(person.length / 1024),
+    garmentKb: Math.round(garmentDataUri.length / 1024)
+  });
+
+  const endpoint = virtualTryOnModel();
+  const ratio = aspectRatioObject();
+  const prompt = virtualTryOnCustomPrompt();
+  const payload = {
+    person_image_url: person,
+    clothing_image_url: garmentDataUri,
+    preserve_pose: true,
+    aspect_ratio: ratio.value
+  };
+  const vtoTimer = {
+    ...timer,
+    maxAttempts: Number(process.env.FAL_VTO_POLL_ATTEMPTS || 240),
+    pollMs: Number(process.env.FAL_VTO_POLL_MS || 1500)
+  };
+
+  try {
+    timer?.mark('fal custom vto submit attempt', {
+      fields: Object.keys(payload),
+      aspectRatio: ratio.label,
+      preservePose: true,
+      unsupportedControls: 'seed/mask/identity/prompt not in FAL schema'
+    });
+    const submission = await falJson(`https://queue.fal.run/${endpoint}`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    timer?.mark('fal custom vto submitted', { requestId: submission.request_id });
+    const result = await waitForFalResult(submission, vtoTimer);
+    const generatedUrl = firstGeneratedImageUrl(result);
+    if (!generatedUrl) throw new Error(`FAL returned no image. Response keys: ${Object.keys(result || {}).join(', ')}`);
+    const { bytes, mimetype } = await generatedBytesFromUrl(generatedUrl, timer);
+    timer?.mark('custom vto generated image downloaded', {
+      outputKb: Math.round(bytes.length / 1024),
+      aspectRatio: ratio.label
+    });
+    return {
+      bytes,
+      mimetype,
+      prompt,
+      model: endpoint,
+      quality: `vto ${ratio.label}`
+    };
+  } catch (error) {
+    const message = readableError(error, 'FAL custom virtual try-on failed');
+    if (isFalContentPolicyError(message)) {
+      throw new Error('FAL VTO accepted the custom payload, but its content checker blocked this person/clothing pair. Try a clearer fully clothed person photo or a clearer clothing image.');
     }
     throw new Error(message);
   }
@@ -672,26 +684,35 @@ async function saveUploadFile(file, prefix, user) {
   };
 }
 
-async function saveGeneratedCustomTryOn({ user, garmentFile, timer }) {
+async function saveGeneratedCustomTryOn({ user, garmentFile, tryOnModel, timer }) {
   const garmentDataUri = dataUriFromBuffer(garmentFile, 'garment');
   timer?.mark('custom garment prepared', { garmentKb: Math.round(garmentDataUri.length / 1024) });
-  const { bytes, prompt } = await callFalImageEdit({
-    user,
-    garmentDataUri,
-    prompt: customTryOnPrompt(),
-    timer
-  });
-  const filename = `tryon-custom-${Date.now()}-${Math.round(Math.random() * 1e9)}.png`;
-  const image = await saveUserCacheFile({ user, bytes, filename, mimetype: 'image/png' });
+  const selectedModel = normalizeTryOnModel(tryOnModel);
+  timer?.mark('custom try-on model selected', { selectedModel });
+  const generated = selectedModel === 'vto-unrestricted'
+    ? await callFalVirtualTryOnCustom({ user, garmentDataUri, timer })
+    : {
+        ...(await callFalImageEdit({
+          user,
+          garmentDataUri,
+          prompt: customTryOnPrompt(),
+          timer
+        })),
+        mimetype: 'image/png',
+        model: imageModel(),
+        quality: imageQuality()
+      };
+  const filename = `tryon-custom-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
+  const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   const garment = await saveUploadFile(garmentFile, 'garment', user);
   timer?.mark('custom try-on saved', { path: image.path });
 
   return CustomTryOn.create({
     user: user._id,
     provider: 'fal',
-    model: imageModel(),
-    quality: imageQuality(),
-    prompt,
+    model: generated.model,
+    quality: generated.quality,
+    prompt: generated.prompt,
     tokenCost: chargedTokenCost(),
     garment,
     image
@@ -733,8 +754,8 @@ router.get('/', requireUser, async (req, res) => {
     .slice(0, 96);
   const filter = { user: req.user._id };
   if (ids.length) filter.product = { $in: ids };
-  const tryOns = await TryOn.find(filter).sort({ createdAt: -1 });
-  res.json({ tryOns: tryOns.map((tryOn) => tryOn.toClient()) });
+  const tryOns = await TryOn.find(filter).sort({ createdAt: -1 }).lean();
+  res.json({ tryOns: tryOns.map(tryOnToClient) });
 });
 
 router.post('/custom', requireUser, upload.single('garment'), async (req, res) => {
@@ -751,7 +772,12 @@ router.post('/custom', requireUser, upload.single('garment'), async (req, res) =
     reserved = true;
     req.user = chargedUser;
 
-    const tryOn = await saveGeneratedCustomTryOn({ user: req.user, garmentFile: req.file, timer });
+    const tryOn = await saveGeneratedCustomTryOn({
+      user: req.user,
+      garmentFile: req.file,
+      tryOnModel: req.body?.tryOnModel,
+      timer
+    });
     timer.end({ tokensRemaining: req.user.tokens });
     res.status(201).json({ tryOn: tryOn.toClient(), user: req.user.toClient() });
   } catch (error) {
@@ -808,48 +834,6 @@ router.post('/external', requireUser, async (req, res) => {
     }
     if (reserved) req.user = await refundToken(req.user, timer);
     const message = readableError(error, 'Could not generate external AI try-on');
-    timer.end({ error: message });
-    res.status(400).json({ message });
-  }
-});
-
-router.post('/vto-trial', requireUser, upload.fields([{ name: 'person', maxCount: 1 }, { name: 'garment', maxCount: 1 }]), async (req, res) => {
-  const timer = createTimer('vto-trial', { userId: req.user._id.toString(), model: virtualTryOnTrialModel() });
-
-  try {
-    const personFile = req.files?.person?.[0];
-    const garmentFile = req.files?.garment?.[0];
-    if (!personFile) return res.status(400).json({ message: 'Upload a person image first' });
-    if (!garmentFile) return res.status(400).json({ message: 'Upload a garment image first' });
-
-    const personDataUri = dataUriFromBuffer(personFile, 'person');
-    const garmentDataUri = dataUriFromBuffer(garmentFile, 'garment');
-    const prompt = virtualTryOnTrialPrompt(req.body?.note);
-    timer.mark('trial images prepared', {
-      personKb: Math.round(personDataUri.length / 1024),
-      garmentKb: Math.round(garmentDataUri.length / 1024)
-    });
-
-    const trial = await callFalVirtualTryOnTrial({ personDataUri, garmentDataUri, prompt, aspectRatio: req.body?.aspectRatio, timer });
-    const { bytes, mimetype } = await generatedBytesFromUrl(trial.generatedUrl, timer);
-    const filename = `tryon-vto-trial-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(mimetype)}`;
-    const image = await saveUserCacheFile({ user: req.user, bytes, filename, mimetype });
-    timer.end({ payloadVariant: trial.payloadVariant, outputKb: Math.round(bytes.length / 1024), path: image.path });
-
-    res.status(201).json({
-      trial: {
-        imageUrl: `/${image.path}`,
-        model: virtualTryOnTrialModel(),
-        prompt,
-        payloadVariant: trial.payloadVariant,
-        preservePose: trial.preservePose,
-        aspectRatio: trial.aspectRatio,
-        rawKeys: trial.rawKeys
-      },
-      user: req.user.toClient()
-    });
-  } catch (error) {
-    const message = readableError(error, 'Could not run virtual try-on trial');
     timer.end({ error: message });
     res.status(400).json({ message });
   }

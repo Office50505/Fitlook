@@ -24,6 +24,33 @@ function sign(user) {
   return jwt.sign({ sub: user._id.toString() }, process.env.JWT_SECRET, { expiresIn: '14d' });
 }
 
+function normalizeUsername(value = '') {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+function usernameFromName(value = '') {
+  return normalizeUsername(
+    String(value)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+  );
+}
+
+async function uniqueUsername(seed) {
+  const base = usernameFromName(seed) || 'fitlook_user';
+  for (let index = 0; index < 20; index += 1) {
+    const candidate = index === 0 ? base : `${base}${Math.floor(100 + Math.random() * 9000)}`;
+    const existing = await User.exists({ username: candidate });
+    if (!existing) return candidate;
+  }
+  return `${base}${Date.now().toString().slice(-6)}`;
+}
+
 async function requireUser(req, res, next) {
   try {
     const header = req.headers.authorization || '';
@@ -41,39 +68,83 @@ async function requireUser(req, res, next) {
 
 router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
   const { name, email, password } = req.body;
-  if (!name || !email || !password) return res.status(400).json({ message: 'Name, email, and password are required' });
+  const username = normalizeUsername(req.body.username) || await uniqueUsername(name);
+  if (!name || !email || !password || !username) return res.status(400).json({ message: 'Name, username, email, and password are required' });
+  if (username.length < 3) return res.status(400).json({ message: 'Username must be at least 3 characters' });
   if (!req.file) return res.status(400).json({ message: 'Full-body photo is required' });
 
-  const existing = await User.findOne({ email: email.toLowerCase() });
-  if (existing) return res.status(409).json({ message: 'An account already exists for this email' });
-
-  const passwordHash = await bcrypt.hash(password, 12);
-  const user = await User.create({
-    name,
-    email,
-    passwordHash,
-    bodyPhoto: {
-      filename: req.file.filename,
-      path: `uploads/${req.file.filename}`,
-      mimetype: req.file.mimetype,
-      size: req.file.size
-    }
+  const existing = await User.findOne({
+    $or: [
+      { email: email.toLowerCase() },
+      { username }
+    ]
   });
+  if (existing?.email === email.toLowerCase()) return res.status(409).json({ message: 'An account already exists for this email' });
+  if (existing?.username === username) return res.status(409).json({ message: 'This username is already taken' });
 
-  res.status(201).json({ token: sign(user), user: user.toClient() });
+  try {
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await User.create({
+      name,
+      email,
+      username,
+      passwordHash,
+      bodyPhoto: {
+        filename: req.file.filename,
+        path: `uploads/${req.file.filename}`,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      }
+    });
+
+    res.status(201).json({ token: sign(user), user: user.toClient() });
+  } catch (error) {
+    if (error.code === 11000 && error.keyPattern?.username) return res.status(409).json({ message: 'This username is already taken' });
+    if (error.code === 11000 && error.keyPattern?.email) return res.status(409).json({ message: 'An account already exists for this email' });
+    throw error;
+  }
+});
+
+router.get('/username-suggestions', async (req, res) => {
+  const base = usernameFromName(req.query.name) || 'fitlook_user';
+  const suggestions = [];
+  for (let index = 0; suggestions.length < 4 && index < 20; index += 1) {
+    const candidate = index === 0 ? base : `${base}${Math.floor(100 + Math.random() * 9000)}`;
+    const existing = await User.exists({ username: candidate });
+    if (!existing && !suggestions.includes(candidate)) suggestions.push(candidate);
+  }
+  res.json({ suggestions });
 });
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ message: 'Email and password are required' });
-  const user = await User.findOne({ email: email.toLowerCase() });
-  if (!user) return res.status(401).json({ message: 'Invalid email or password' });
+  const identifier = String(req.body.email || req.body.username || '').trim().toLowerCase();
+  const { password } = req.body;
+  if (!identifier || !password) return res.status(400).json({ message: 'Email or username and password are required' });
+  const user = await User.findOne({
+    $or: [
+      { email: identifier },
+      { username: normalizeUsername(identifier) }
+    ]
+  });
+  if (!user) return res.status(401).json({ message: 'Invalid email/username or password' });
   const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ message: 'Invalid email or password' });
+  if (!ok) return res.status(401).json({ message: 'Invalid email/username or password' });
   res.json({ token: sign(user), user: user.toClient() });
 });
 
 router.get('/me', requireUser, (req, res) => {
+  res.json({ user: req.user.toClient() });
+});
+
+router.post('/body-photo', requireUser, upload.single('bodyPhoto'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'Upload a profile photo first' });
+  req.user.bodyPhoto = {
+    filename: req.file.filename,
+    path: `uploads/${req.file.filename}`,
+    mimetype: req.file.mimetype,
+    size: req.file.size
+  };
+  await req.user.save();
   res.json({ user: req.user.toClient() });
 });
 

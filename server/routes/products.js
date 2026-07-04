@@ -1,11 +1,30 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'node:path';
-import Product from '../models/Product.js';
+import Product, { productToClient } from '../models/Product.js';
 import { requireUser } from './auth.js';
+import { clearRecommendationCaches } from './recommendations.js';
 import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
+import { createHybridCache } from '../utils/cache.js';
 
 const router = express.Router();
+const readCacheTtlMs = Number(process.env.PRODUCT_READ_CACHE_TTL_MS || 30 * 1000);
+const productListCache = createHybridCache('products:list', { ttlMs: readCacheTtlMs, maxItems: 150 });
+const productDetailCache = createHybridCache('products:detail', { ttlMs: readCacheTtlMs, maxItems: 300 });
+
+async function clearProductReadCaches() {
+  await Promise.all([
+    productListCache.clear(),
+    productDetailCache.clear()
+  ]);
+}
+
+async function clearReadCachesAfterProductWrite() {
+  await Promise.all([
+    clearProductReadCaches(),
+    clearRecommendationCaches()
+  ]);
+}
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -892,12 +911,17 @@ function sortFor(value) {
 }
 
 router.get('/', async (req, res) => {
-  const { q, category, brand, gender, featured, newArrival, sort } = req.query;
+  const cacheKey = req.originalUrl;
+  const cached = await productListCache.get(cacheKey);
+  if (cached) return res.json(cached);
+
+  const { q, tag, category, brand, gender, featured, newArrival, sort } = req.query;
   const limit = Math.min(Number(req.query.limit) || 48, 96);
   const botAmazonRecord = { badge: 'Amazon', $or: [{ sourceUrl: /amazon\.[a-z.]+\/dp\//i }, { affiliateLink: /amazon\.[a-z.]+\/dp\//i }] };
   const filter = { isActive: true, $nor: [botAmazonRecord] };
 
   if (q) filter.$text = { $search: q };
+  if (tag) filter.tags = new RegExp(`^${escapeRegExp(String(tag).trim())}$`, 'i');
   if (category) filter.category = new RegExp(`^${String(category).trim()}$`, 'i');
   if (brand) filter.brand = new RegExp(`^${String(brand).trim()}$`, 'i');
   if (gender) filter.gender = new RegExp(`^${String(gender).trim()}$`, 'i');
@@ -905,7 +929,7 @@ router.get('/', async (req, res) => {
   if (newArrival === 'true') filter.isNewArrival = true;
 
   const projection = q ? { score: { $meta: 'textScore' } } : {};
-  const query = Product.find(filter, projection).limit(limit);
+  const query = Product.find(filter, projection).limit(limit).lean();
   if (q && !sort) query.sort({ score: { $meta: 'textScore' }, createdAt: -1 });
   else query.sort(sortFor(sort));
 
@@ -921,15 +945,17 @@ router.get('/', async (req, res) => {
     ])
   ]);
 
-  res.json({
-    products: products.map((product) => product.toClient()),
+  const payload = {
+    products: products.map(productToClient),
     total,
     facets: {
       brands: brands.filter(Boolean).sort(),
       categories: categories.filter(Boolean).sort(),
       categoryCounts: categoryCounts.map((item) => ({ category: item._id || 'uncategorized', count: item.count }))
     }
-  });
+  };
+  await productListCache.set(cacheKey, payload);
+  res.json(payload);
 });
 
 router.post('/amazon-search', requireUser, async (req, res) => {
@@ -996,14 +1022,19 @@ router.post('/recategorize', requireAdmin, async (_req, res) => {
     updated += 1;
   }
 
+  if (updated) await clearReadCachesAfterProductWrite();
   res.json({ updated, checked: products.length, changes });
 });
 
 router.get('/:id', async (req, res) => {
   try {
-    const product = await Product.findOne({ _id: req.params.id, isActive: true });
+    const cached = await productDetailCache.get(req.params.id);
+    if (cached) return res.json(cached);
+    const product = await Product.findOne({ _id: req.params.id, isActive: true }).lean();
     if (!product) return res.status(404).json({ message: 'Product not found' });
-    res.json({ product: product.toClient() });
+    const payload = { product: productToClient(product) };
+    await productDetailCache.set(req.params.id, payload);
+    res.json(payload);
   } catch {
     res.status(404).json({ message: 'Product not found' });
   }
@@ -1060,6 +1091,7 @@ router.post('/', requireAdmin, upload.single('image'), async (req, res) => {
     image
   });
 
+  await clearReadCachesAfterProductWrite();
   res.status(201).json({ product: product.toClient() });
 });
 
@@ -1070,12 +1102,20 @@ router.patch('/:id/tryon-model', requireAdmin, async (req, res) => {
     { new: true }
   );
   if (!product) return res.status(404).json({ message: 'Product not found' });
+  await clearReadCachesAfterProductWrite();
   res.json({ product: product.toClient() });
+});
+
+router.delete('/', requireAdmin, async (_req, res) => {
+  const result = await Product.updateMany({ isActive: true }, { isActive: false });
+  await clearReadCachesAfterProductWrite();
+  res.json({ removed: result.modifiedCount || 0 });
 });
 
 router.delete('/:id', requireAdmin, async (req, res) => {
   const product = await Product.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
   if (!product) return res.status(404).json({ message: 'Product not found' });
+  await clearReadCachesAfterProductWrite();
   res.json({ product: product.toClient() });
 });
 
