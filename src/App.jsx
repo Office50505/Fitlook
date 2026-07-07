@@ -1,6 +1,66 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 const asset = (name) => `/assets/${name}`;
+const MAX_BODY_PHOTO_BYTES = 8 * 1024 * 1024;
+const TARGET_BODY_PHOTO_BYTES = 6.5 * 1024 * 1024;
+
+function formatFileSize(bytes) {
+  return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
+}
+
+function imageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Please upload a JPG or PNG profile photo.'));
+    };
+    image.src = url;
+  });
+}
+
+function canvasToBlob(canvas, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Could not prepare the profile photo. Try a different image.'));
+    }, 'image/jpeg', quality);
+  });
+}
+
+async function prepareBodyPhoto(file) {
+  if (!file) return file;
+  if (file.size <= MAX_BODY_PHOTO_BYTES && ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return file;
+
+  const image = await imageFromFile(file);
+  const maxSide = 1600;
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+  const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+  const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+
+  for (const quality of [0.86, 0.76, 0.66, 0.56]) {
+    const blob = await canvasToBlob(canvas, quality);
+    if (blob.size <= TARGET_BODY_PHOTO_BYTES || quality === 0.56) {
+      if (blob.size > MAX_BODY_PHOTO_BYTES) throw new Error(`Profile photo is still ${formatFileSize(blob.size)} after optimization. Please upload a smaller image.`);
+      const name = `${file.name.replace(/\.[^.]+$/, '') || 'profile-photo'}.jpg`;
+      return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() });
+    }
+  }
+
+  return file;
+}
 
 function formatMoney(value, currency = 'USD') {
   const amount = Number(value);
@@ -1567,6 +1627,7 @@ function AuthPage({ mode, setUser }) {
 
   const previewBodyPhoto = (event) => {
     const file = event.currentTarget.files?.[0];
+    setMessage(file && file.size > MAX_BODY_PHOTO_BYTES ? 'Large profile photo selected. It will be optimized before upload.' : '');
     setBodyPhotoPreview(file ? URL.createObjectURL(file) : '');
   };
 
@@ -1576,6 +1637,10 @@ function AuthPage({ mode, setUser }) {
     try {
       const form = event.currentTarget;
       const body = isSignup ? new FormData(form) : JSON.stringify(Object.fromEntries(new FormData(form)));
+      if (isSignup) {
+        const bodyPhoto = form.elements.bodyPhoto?.files?.[0];
+        body.set('bodyPhoto', await prepareBodyPhoto(bodyPhoto));
+      }
       const data = await api(isSignup ? '/auth/signup' : '/auth/login', { method: 'POST', body });
       localStorage.setItem('fitlook_token', data.token);
       setUser(data.user);
