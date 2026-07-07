@@ -35,7 +35,6 @@ function canvasToBlob(canvas, quality) {
 
 async function prepareBodyPhoto(file) {
   if (!file) return file;
-  if (file.size <= MAX_BODY_PHOTO_BYTES && ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return file;
 
   const image = await imageFromFile(file);
   const maxSide = 1600;
