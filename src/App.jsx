@@ -243,7 +243,7 @@ function useTryOnCache(user, products) {
 }
 
 function Header({ user, setUser }) {
-  const tokenLabel = user?.devMode ? 'Dev Mode' : user ? `${user.tokens} Tokens` : 'Tokens';
+  const tokenLabel = user ? `${user.tokens} Tokens` : 'Tokens';
   const [menuOpen, setMenuOpen] = useState(false);
   const logout = () => {
     localStorage.removeItem('fitlook_token');
@@ -264,7 +264,7 @@ function Header({ user, setUser }) {
     <>
       <div className="announcement">
         <span>✨</span>
-        <span>{user?.devMode ? <>Dev Mode is on: unlimited AI try-ons</> : user ? <>You have {user.tokens} tokens ready for AI try-on</> : <>Get free tokens on sign up to try AI try-on</>}</span>
+        <span>{user ? <>You have {user.tokens} tokens ready for AI try-on</> : <>Get free tokens on sign up to try AI try-on</>}</span>
         <span>✨</span>
       </div>
       <header className="site-header">
@@ -876,7 +876,7 @@ function StyleBotPage({ user, setUser }) {
         <section className="chat-panel" aria-label="Style bot chat">
           <div className="chat-panel-head">
             <div><strong>FitLook Assistant</strong><span>Amazon trial search · 2 products max</span></div>
-            <small>{user?.devMode ? 'Dev mode' : `${user?.tokens ?? 0} tokens`}</small>
+            <small>{`${user?.tokens ?? 0} tokens`}</small>
           </div>
           <div className="chat-scroll">
             <div className="chat-row assistant">
@@ -992,7 +992,7 @@ function ImageLightbox({ image, onClose }) {
 
 function TokenPage({ user, setUser }) {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [devModeSaving, setDevModeSaving] = useState(false);
+  
   const [message, setMessage] = useState('');
   const verifiedOrderRef = useRef('');
   const params = new URLSearchParams(window.location.search);
@@ -1038,26 +1038,7 @@ function TokenPage({ user, setUser }) {
     }
   };
 
-  const updateDevMode = async (enabled) => {
-    if (!user) {
-      window.location.href = '/signup';
-      return;
-    }
-    setDevModeSaving(true);
-    setMessage(enabled ? 'Switching to dev mode...' : 'Switching to token mode...');
-    try {
-      const data = await api('/auth/dev-mode', {
-        method: 'PATCH',
-        body: JSON.stringify({ devMode: enabled })
-      });
-      setUser(data.user);
-      setMessage(enabled ? 'Dev mode active. Try-ons will not spend tokens.' : 'Token mode active. PhonePe checkout and token charging are enabled.');
-    } catch (err) {
-      setMessage(err.message);
-    } finally {
-      setDevModeSaving(false);
-    }
-  };
+  // Dev mode removed in frontend — token mode only
 
   return (
     <main className="token-page">
@@ -1065,13 +1046,7 @@ function TokenPage({ user, setUser }) {
         <p className="kicker">FitLook Tokens</p>
         <h1>One token, one AI try-on.</h1>
         <p className="lead">Get 20 free tokens on signup. Subscribe for Rs 1000/month to receive 100 try-on tokens for the month.</p>
-        <div className="token-balance">{user?.devMode ? <><span>∞</span><strong>dev mode active</strong></> : user ? <><span>{user.tokens}</span><strong>tokens available</strong></> : <><span>20</span><strong>free tokens on signup</strong></>}</div>
-        <label className={`dev-mode-toggle token-dev-toggle ${user?.devMode ? 'active' : ''} ${!user || devModeSaving ? 'disabled' : ''}`}>
-          <input type="checkbox" checked={Boolean(user?.devMode)} disabled={!user || devModeSaving} onChange={(event) => updateDevMode(event.target.checked)} />
-          <span aria-hidden="true"><i /></span>
-          <strong>{user?.devMode ? 'Dev mode' : 'Token mode'}</strong>
-          <small>{user ? (user.devMode ? 'Unlimited try-ons without token deductions.' : 'Real token spending and PhonePe checkout testing.') : 'Create an account to choose a testing mode.'}</small>
-        </label>
+        <div className="token-balance">{user ? <><span>{user.tokens}</span><strong>tokens available</strong></> : <><span>20</span><strong>free tokens on signup</strong></>}</div>
         {message && <p className={`token-message ${/failed|not completed|missing|Could not|error/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
       </section>
 
@@ -1084,15 +1059,15 @@ function TokenPage({ user, setUser }) {
           <p className="token-amount">100 tokens every month</p>
           <p className="token-price">Rs 1000</p>
           <p>PhonePe checkout opens securely when you subscribe. Tokens are added only after payment is confirmed.</p>
-          <button type="button" onClick={startCheckout} disabled={checkoutLoading || user?.devMode}>
-            {user?.devMode ? 'Dev Mode Active' : checkoutLoading ? 'Opening PhonePe...' : user ? 'Subscribe with PhonePe' : 'Create Account First'}
+          <button type="button" onClick={startCheckout} disabled={checkoutLoading}>
+            {checkoutLoading ? 'Opening PhonePe...' : user ? 'Subscribe with PhonePe' : 'Create Account First'}
           </button>
           {isActive && subscription.currentPeriodEnd && <small>Current month ends {formatDate(subscription.currentPeriodEnd)}</small>}
         </article>
       </section>
 
       <section className="wrap token-rules">
-        <article><h3>What costs tokens?</h3><p>{user?.devMode ? 'Dev Mode bypasses token charging for testing.' : 'Generating a product try-on or custom clothing try-on costs 1 token.'}</p></article>
+        <article><h3>What costs tokens?</h3><p>Generating a product try-on or custom clothing try-on costs 1 token.</p></article>
         <article><h3>What is free?</h3><p>New accounts start with 20 free tokens. Browsing, search, product pages, and viewing saved try-ons are free.</p></article>
         <article><h3>How payment works</h3><p>FitLook verifies the PhonePe order status before adding subscription tokens, so a return or callback cannot double-credit your account.</p></article>
       </section>
@@ -1152,8 +1127,8 @@ function ProfilePage({ user, setUser }) {
           <p className="lead">Manage the account details and body photo FitLook uses for AI try-on previews.</p>
         </div>
         <div className="profile-credit-card">
-          <span>{user.devMode ? '∞' : user.tokens}</span>
-          <strong>{user.devMode ? 'Dev mode active' : 'credits available'}</strong>
+          <span>{user.tokens}</span>
+          <strong>credits available</strong>
           <a href="/tokens">View token plans</a>
         </div>
       </section>
@@ -1172,10 +1147,10 @@ function ProfilePage({ user, setUser }) {
         <article className="profile-card">
           <h2>Credits</h2>
           <div className="profile-token-meter">
-            <span>{user.devMode ? '∞' : user.tokens}</span>
+            <span>{user.tokens}</span>
             <div>
-              <strong>{user.devMode ? 'Unlimited testing' : `${user.tokens} try-on credits`}</strong>
-              <p>{user.devMode ? 'Dev Mode bypasses token charging.' : 'Each new AI-generated try-on costs 1 token. Cached try-ons are free to view again.'}</p>
+              <strong>{`${user.tokens} try-on credits`}</strong>
+              <p>Each new AI-generated try-on costs 1 token. Cached try-ons are free to view again.</p>
             </div>
           </div>
         </article>
@@ -1556,7 +1531,6 @@ function AuthPage({ mode, setUser }) {
   const [usernameTouched, setUsernameTouched] = useState(false);
   const [usernameSuggestions, setUsernameSuggestions] = useState([]);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
-  const [signupDevMode, setSignupDevMode] = useState(false);
   const isSignup = mode === 'signup';
 
   useEffect(() => {
@@ -1631,12 +1605,6 @@ function AuthPage({ mode, setUser }) {
                     ))}
                   </div>
                 )}
-                <label className={`dev-mode-toggle ${signupDevMode ? 'active' : ''}`}>
-                  <input name="devMode" type="checkbox" value="true" checked={signupDevMode} onChange={(event) => setSignupDevMode(event.target.checked)} />
-                  <span aria-hidden="true"><i /></span>
-                  <strong>{signupDevMode ? 'Dev mode' : 'Token mode'}</strong>
-                  <small>{signupDevMode ? 'Unlimited try-ons for testing UI without charges.' : 'Use real token charging and PhonePe checkout testing.'}</small>
-                </label>
               </>
             )}
             <label className="field"><span>{isSignup ? 'Email address' : 'Email or username'}</span><input name="email" type={isSignup ? 'email' : 'text'} required /></label>
