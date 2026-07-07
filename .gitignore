@@ -59,3 +59,8 @@ Thumbs.db
 # Deploy/provider local state
 .vercel/
 .netlify/
+*.tfvars
+*.tfvars.json
+**/.terraform/
+terraform.tfstate
+terraform.tfstate.*
