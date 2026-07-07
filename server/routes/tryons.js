@@ -33,12 +33,12 @@ function tokenCost() {
   return Number.isFinite(value) && value > 0 ? Math.ceil(value) : 1;
 }
 
-function devMode() {
-  return ['1', 'true', 'yes', 'on'].includes(String(process.env.DEV_MODE || '').toLowerCase());
+function devMode(user) {
+  return Boolean(user?.devMode);
 }
 
-function chargedTokenCost() {
-  return devMode() ? 0 : tokenCost();
+function chargedTokenCost(user) {
+  return devMode(user) ? 0 : tokenCost();
 }
 
 function redactLargeData(value) {
@@ -605,7 +605,7 @@ async function saveGeneratedTryOn({ user, product, timer }) {
     model: generated.model,
     quality: generated.quality,
     prompt: generated.prompt,
-    tokenCost: chargedTokenCost(),
+    tokenCost: chargedTokenCost(user),
     image
   });
 }
@@ -664,7 +664,7 @@ async function saveGeneratedExternalTryOn({ user, product, timer }) {
     model: generated.model,
     quality: generated.quality,
     prompt: generated.prompt,
-    tokenCost: chargedTokenCost(),
+    tokenCost: chargedTokenCost(user),
     image
   });
 }
@@ -713,14 +713,14 @@ async function saveGeneratedCustomTryOn({ user, garmentFile, tryOnModel, timer }
     model: generated.model,
     quality: generated.quality,
     prompt: generated.prompt,
-    tokenCost: chargedTokenCost(),
+    tokenCost: chargedTokenCost(user),
     garment,
     image
   });
 }
 
 async function reserveToken(user, timer) {
-  if (devMode()) {
+  if (devMode(user)) {
     timer.mark('dev mode token bypass', { tokensRemaining: user.tokens, cost: 0 });
     return user;
   }
@@ -736,7 +736,7 @@ async function reserveToken(user, timer) {
 }
 
 async function refundToken(user, timer) {
-  if (devMode()) {
+  if (devMode(user)) {
     timer.mark('dev mode refund skipped', { tokensRemaining: user.tokens, cost: 0 });
     return user;
   }

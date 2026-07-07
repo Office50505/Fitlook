@@ -990,38 +990,111 @@ function ImageLightbox({ image, onClose }) {
   );
 }
 
-function TokenPage({ user }) {
-  const packs = [
-    ['Starter', 10, '$4.99', 'For quick outfit checks.'],
-    ['Everyday', 30, '$11.99', 'Best for regular browsing.'],
-    ['Studio', 80, '$24.99', 'For heavy try-on sessions.']
-  ];
+function TokenPage({ user, setUser }) {
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [devModeSaving, setDevModeSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const verifiedOrderRef = useRef('');
+  const params = new URLSearchParams(window.location.search);
+  const returnedOrderId = params.get('merchantOrderId') || params.get('orderId') || '';
+  const subscription = user?.subscription;
+  const isActive = subscription?.status === 'active' && (!subscription.currentPeriodEnd || new Date(subscription.currentPeriodEnd) > new Date());
+
+  useEffect(() => {
+    if (!user || !returnedOrderId || verifiedOrderRef.current === returnedOrderId) return;
+    verifiedOrderRef.current = returnedOrderId;
+    let alive = true;
+    setMessage('Verifying payment with PhonePe...');
+    api(`/payments/orders/${encodeURIComponent(returnedOrderId)}/status`)
+      .then((data) => {
+        if (!alive) return;
+        if (data.user) setUser(data.user);
+        const state = data.order?.status;
+        if (state === 'completed') setMessage('Payment confirmed. 100 tokens have been added to your account.');
+        else if (state === 'failed') setMessage('Payment was not completed. You can try again when ready.');
+        else setMessage('Payment is still pending. Refresh this page in a moment to check again.');
+      })
+      .catch((err) => {
+        if (alive) setMessage(err.message);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user, returnedOrderId, setUser]);
+
+  const startCheckout = async () => {
+    if (!user) {
+      window.location.href = '/signup';
+      return;
+    }
+    setCheckoutLoading(true);
+    setMessage('Opening PhonePe checkout...');
+    try {
+      const data = await api('/payments/phonepe/subscription', { method: 'POST' });
+      window.location.assign(data.redirectUrl);
+    } catch (err) {
+      setMessage(err.message);
+      setCheckoutLoading(false);
+    }
+  };
+
+  const updateDevMode = async (enabled) => {
+    if (!user) {
+      window.location.href = '/signup';
+      return;
+    }
+    setDevModeSaving(true);
+    setMessage(enabled ? 'Switching to dev mode...' : 'Switching to token mode...');
+    try {
+      const data = await api('/auth/dev-mode', {
+        method: 'PATCH',
+        body: JSON.stringify({ devMode: enabled })
+      });
+      setUser(data.user);
+      setMessage(enabled ? 'Dev mode active. Try-ons will not spend tokens.' : 'Token mode active. PhonePe checkout and token charging are enabled.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setDevModeSaving(false);
+    }
+  };
 
   return (
     <main className="token-page">
       <section className="wrap token-hero">
         <p className="kicker">FitLook Tokens</p>
         <h1>One token, one AI try-on.</h1>
-        <p className="lead">Tokens are used only when FitLook generates a new AI try-on image. Cached try-ons for the same product do not charge again.</p>
-        <div className="token-balance">{user?.devMode ? <><span>∞</span><strong>dev mode active</strong></> : user ? <><span>{user.tokens}</span><strong>tokens available</strong></> : <><span>4</span><strong>free tokens on signup</strong></>}</div>
+        <p className="lead">Get 20 free tokens on signup. Subscribe for Rs 1000/month to receive 100 try-on tokens for the month.</p>
+        <div className="token-balance">{user?.devMode ? <><span>∞</span><strong>dev mode active</strong></> : user ? <><span>{user.tokens}</span><strong>tokens available</strong></> : <><span>20</span><strong>free tokens on signup</strong></>}</div>
+        <label className={`dev-mode-toggle token-dev-toggle ${user?.devMode ? 'active' : ''} ${!user || devModeSaving ? 'disabled' : ''}`}>
+          <input type="checkbox" checked={Boolean(user?.devMode)} disabled={!user || devModeSaving} onChange={(event) => updateDevMode(event.target.checked)} />
+          <span aria-hidden="true"><i /></span>
+          <strong>{user?.devMode ? 'Dev mode' : 'Token mode'}</strong>
+          <small>{user ? (user.devMode ? 'Unlimited try-ons without token deductions.' : 'Real token spending and PhonePe checkout testing.') : 'Create an account to choose a testing mode.'}</small>
+        </label>
+        {message && <p className={`token-message ${/failed|not completed|missing|Could not|error/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
       </section>
 
-      <section className="wrap token-grid">
-        {packs.map(([name, amount, price, copy]) => (
-          <article className="token-pack" key={name}>
-            <h2>{name}</h2>
-            <p className="token-amount">{amount} tokens</p>
-            <p className="token-price">{price}</p>
-            <p>{copy}</p>
-            <button type="button" disabled>{user ? 'Checkout Coming Soon' : 'Create Account First'}</button>
-          </article>
-        ))}
+      <section className="wrap token-grid subscription-grid">
+        <article className="token-pack featured-token-pack">
+          <div className="plan-status-row">
+            <h2>Monthly</h2>
+            {isActive && <span>Active</span>}
+          </div>
+          <p className="token-amount">100 tokens every month</p>
+          <p className="token-price">Rs 1000</p>
+          <p>PhonePe checkout opens securely when you subscribe. Tokens are added only after payment is confirmed.</p>
+          <button type="button" onClick={startCheckout} disabled={checkoutLoading || user?.devMode}>
+            {user?.devMode ? 'Dev Mode Active' : checkoutLoading ? 'Opening PhonePe...' : user ? 'Subscribe with PhonePe' : 'Create Account First'}
+          </button>
+          {isActive && subscription.currentPeriodEnd && <small>Current month ends {formatDate(subscription.currentPeriodEnd)}</small>}
+        </article>
       </section>
 
       <section className="wrap token-rules">
         <article><h3>What costs tokens?</h3><p>{user?.devMode ? 'Dev Mode bypasses token charging for testing.' : 'Generating a product try-on or custom clothing try-on costs 1 token.'}</p></article>
-        <article><h3>What is free?</h3><p>Browsing, search, product pages, and viewing previously generated try-ons are free.</p></article>
-        <article><h3>Why cache matters</h3><p>If a try-on already exists for the same user and product, FitLook reuses it without charging another token.</p></article>
+        <article><h3>What is free?</h3><p>New accounts start with 20 free tokens. Browsing, search, product pages, and viewing saved try-ons are free.</p></article>
+        <article><h3>How payment works</h3><p>FitLook verifies the PhonePe order status before adding subscription tokens, so a return or callback cannot double-credit your account.</p></article>
       </section>
     </main>
   );
@@ -1483,6 +1556,7 @@ function AuthPage({ mode, setUser }) {
   const [usernameTouched, setUsernameTouched] = useState(false);
   const [usernameSuggestions, setUsernameSuggestions] = useState([]);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
+  const [signupDevMode, setSignupDevMode] = useState(false);
   const isSignup = mode === 'signup';
 
   useEffect(() => {
@@ -1557,6 +1631,12 @@ function AuthPage({ mode, setUser }) {
                     ))}
                   </div>
                 )}
+                <label className={`dev-mode-toggle ${signupDevMode ? 'active' : ''}`}>
+                  <input name="devMode" type="checkbox" value="true" checked={signupDevMode} onChange={(event) => setSignupDevMode(event.target.checked)} />
+                  <span aria-hidden="true"><i /></span>
+                  <strong>{signupDevMode ? 'Dev mode' : 'Token mode'}</strong>
+                  <small>{signupDevMode ? 'Unlimited try-ons for testing UI without charges.' : 'Use real token charging and PhonePe checkout testing.'}</small>
+                </label>
               </>
             )}
             <label className="field"><span>{isSignup ? 'Email address' : 'Email or username'}</span><input name="email" type={isSignup ? 'email' : 'text'} required /></label>
@@ -1629,7 +1709,7 @@ function App() {
     if (path === '/try-on') return user ? <SearchPage user={user} setUser={setUser} tryOnMode /> : <AuthPage mode="signup" setUser={setUser} />;
     if (path === '/custom-try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/style-bot') return <StyleBotPage user={user} setUser={setUser} />;
-    if (path === '/tokens') return <TokenPage user={user} />;
+    if (path === '/tokens') return <TokenPage user={user} setUser={setUser} />;
     if (path === '/profile') return <ProfilePage user={user} setUser={setUser} />;
     if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} />;
     if ((path === '/signup' || path === '/login') && user) return <SearchPage user={user} setUser={setUser} />;

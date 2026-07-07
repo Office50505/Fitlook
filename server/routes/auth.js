@@ -31,6 +31,10 @@ function normalizeUsername(value = '') {
     .replace(/[^a-z0-9_]/g, '');
 }
 
+function parseBoolean(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').toLowerCase());
+}
+
 function usernameFromName(value = '') {
   return normalizeUsername(
     String(value)
@@ -89,6 +93,7 @@ router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
       email,
       username,
       passwordHash,
+      devMode: parseBoolean(req.body.devMode),
       bodyPhoto: {
         filename: req.file.filename,
         path: `uploads/${req.file.filename}`,
@@ -133,6 +138,12 @@ router.post('/login', async (req, res) => {
 });
 
 router.get('/me', requireUser, (req, res) => {
+  res.json({ user: req.user.toClient() });
+});
+
+router.patch('/dev-mode', requireUser, async (req, res) => {
+  req.user.devMode = parseBoolean(req.body?.devMode);
+  await req.user.save();
   res.json({ user: req.user.toClient() });
 });
 
