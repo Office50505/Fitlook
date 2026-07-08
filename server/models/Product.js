@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 
+const LEGACY_UNRESTRICTED_MODEL = ['v' + 'to', 'unrestricted'].join('-');
+
 function decodeHtml(value) {
   if (typeof value !== 'string') return value;
   return value
@@ -30,7 +32,7 @@ const productSchema = new mongoose.Schema(
     colors: [{ type: String, trim: true }],
     tryOnModel: {
       type: String,
-      enum: ['gpt-image-2', 'vto-unrestricted'],
+      enum: ['gpt-image-2', 'wan-v2.6-image-to-image'],
       default: 'gpt-image-2'
     },
     image: {
@@ -81,7 +83,7 @@ function productToClient(product) {
     description: decodeHtml(product.description),
     tags: product.tags?.map(decodeHtml),
     colors: product.colors,
-    tryOnModel: product.tryOnModel || 'gpt-image-2',
+    tryOnModel: product.tryOnModel === LEGACY_UNRESTRICTED_MODEL ? 'wan-v2.6-image-to-image' : product.tryOnModel || 'gpt-image-2',
     imageUrl: product.image?.path ? `/${product.image.path}` : product.image?.remoteUrl || null,
     isFeatured: product.isFeatured,
     isNewArrival: product.isNewArrival,

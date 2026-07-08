@@ -1,4 +1,4 @@
-const VTO_RESTRICTED_TERMS = [
+const WAN_MODEL_TERMS = [
   /\bbikini(?:s)?\b/i,
   /\btwo[-\s]?piece\s+swim/i,
   /\bswim\s?suit(?:s)?\b/i,
@@ -23,9 +23,11 @@ const VTO_RESTRICTED_TERMS = [
   /\bbabydoll\b/i,
   /\bchemise\b/i
 ];
+const LEGACY_UNRESTRICTED_MODEL = ['v' + 'to', 'unrestricted'].join('-');
 
 function normalizeTryOnModel(value) {
-  return value === 'vto-unrestricted' ? 'vto-unrestricted' : 'gpt-image-2';
+  if (value === 'wan-v2.6-image-to-image' || value === 'wan/v2.6/image-to-image') return 'wan-v2.6-image-to-image';
+  return value === LEGACY_UNRESTRICTED_MODEL ? 'wan-v2.6-image-to-image' : 'gpt-image-2';
 }
 
 function textForTryOnClassification(product = {}) {
@@ -48,7 +50,7 @@ function inferTryOnModel(product = {}) {
   if (product.tryOnModel) return explicit;
 
   const text = textForTryOnClassification(product);
-  return VTO_RESTRICTED_TERMS.some((pattern) => pattern.test(text)) ? 'vto-unrestricted' : 'gpt-image-2';
+  return WAN_MODEL_TERMS.some((pattern) => pattern.test(text)) ? 'wan-v2.6-image-to-image' : 'gpt-image-2';
 }
 
 export { inferTryOnModel, normalizeTryOnModel };

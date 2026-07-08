@@ -834,9 +834,9 @@ function CustomClothingTryOn({ setUser }) {
               <input type="radio" name="tryOnModel" value="gpt-image-2" checked={tryOnModel === 'gpt-image-2'} onChange={(event) => setTryOnModel(event.target.value)} />
               <span>Regular clothing</span>
             </label>
-            <label className={tryOnModel === 'vto-unrestricted' ? 'active' : ''}>
-              <input type="radio" name="tryOnModel" value="vto-unrestricted" checked={tryOnModel === 'vto-unrestricted'} onChange={(event) => setTryOnModel(event.target.value)} />
-              <span>Swimwear / innerwear</span>
+            <label className={tryOnModel === 'wan-v2.6-image-to-image' ? 'active' : ''}>
+              <input type="radio" name="tryOnModel" value="wan-v2.6-image-to-image" checked={tryOnModel === 'wan-v2.6-image-to-image'} onChange={(event) => setTryOnModel(event.target.value)} />
+              <span>Wan 2.6</span>
             </label>
           </div>
           <div className="custom-preview-grid">
@@ -1396,7 +1396,7 @@ function ProductPage({ id, user, setUser }) {
     try {
       const data = await api(`/tryons/${product.id}`, { method: 'POST' });
       setTryOn(data.tryOn);
-      recordEvent('try_on', { productId: product.id });
+      recordEvent('try_on', { productId: product.id, metadata: { tryOnModel: product.tryOnModel || 'default' } });
       if (data.user) {
         setUser((current) => {
           if (!current) return data.user;
