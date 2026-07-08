@@ -384,7 +384,17 @@ function Footer() {
 }
 
 function FooterCol({ title, links }) {
-  return <div><h3>{title}</h3><ul>{links.map(([label, href]) => <li key={label}><a href={href}>{label}</a></li>)}</ul></div>;
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className={`footer-col ${open ? 'open' : ''}`}>
+      <button className="footer-col-toggle" type="button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <h3>{title}</h3>
+        <span aria-hidden="true">+</span>
+      </button>
+      <ul>{links.map(([label, href]) => <li key={label}><a href={href}>{label}</a></li>)}</ul>
+    </div>
+  );
 }
 
 function Hero({ compact = false }) {
