@@ -347,7 +347,7 @@ function AdminApp() {
             <label className="field"><span>Rating count</span><input name="ratingCount" type="number" min="0" defaultValue="0" /></label>
           </div>
           <label className="field"><span>Badge</span><input name="badge" placeholder="New" /></label>
-          <label className="field"><span>Try-on model</span><select name="tryOnModel" defaultValue="gpt-image-2"><option value="gpt-image-2">GPT Image 2</option><option value="vto-unrestricted">FAL VTO unrestricted</option></select></label>
+          <label className="field"><span>Try-on model</span><select name="tryOnModel" defaultValue="gpt-image-2"><option value="gpt-image-2">GPT Image 2</option><option value="wan-v2.6-image-to-image">Wan 2.6</option></select></label>
           <label className="field"><span>Description</span><textarea name="description" rows="4" placeholder="Short product description" /></label>
           <label className="field"><span>Tags</span><input name="tags" placeholder="linen, casual, summer" /></label>
           <label className="field"><span>Colors</span><input name="colors" placeholder="#d9c8b4, #123323, white" /></label>
@@ -388,7 +388,7 @@ function AdminApp() {
                     <span>Try-on model</span>
                     <select value={product.tryOnModel || 'gpt-image-2'} onChange={(event) => updateTryOnModel(product.id, event.target.value)}>
                       <option value="gpt-image-2">GPT Image 2</option>
-                      <option value="vto-unrestricted">FAL VTO</option>
+                      <option value="wan-v2.6-image-to-image">Wan 2.6</option>
                     </select>
                   </label>
                   <button type="button" onClick={() => removeProduct(product.id)}>Remove</button>
