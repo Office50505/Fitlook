@@ -1324,6 +1324,7 @@ function ProductPage({ id, user, setUser }) {
   const [tryOnLoading, setTryOnLoading] = useState(false);
   const [tryOnError, setTryOnError] = useState('');
   const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [detailImageView, setDetailImageView] = useState('tryon');
   const productViewStarted = useRef('');
   const relatedProducts = related.products.filter((item) => item.id !== id).slice(0, 4);
   const [relatedTryOns] = useTryOnCache(user, relatedProducts);
@@ -1349,6 +1350,7 @@ function ProductPage({ id, user, setUser }) {
 
   useEffect(() => {
     setTryOnImageFailed(false);
+    setDetailImageView(tryOn?.imageUrl ? 'tryon' : 'product');
   }, [tryOn?.imageUrl]);
 
   useEffect(() => {
@@ -1377,7 +1379,16 @@ function ProductPage({ id, user, setUser }) {
   const discount = hasDiscount ? `${Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}% off` : '';
   const productImage = product.imageUrl || asset('hero2.png');
   const hasUsableTryOn = Boolean(tryOn?.imageUrl) && !tryOnImageFailed;
-  const image = hasUsableTryOn ? tryOn.imageUrl : productImage;
+  const showingTryOn = hasUsableTryOn && detailImageView !== 'product';
+  const image = showingTryOn ? tryOn.imageUrl : productImage;
+  const swapPreview = hasUsableTryOn && product.imageUrl
+    ? {
+        label: showingTryOn ? 'Product photo' : 'AI Try-On',
+        src: showingTryOn ? product.imageUrl : tryOn.imageUrl,
+        alt: showingTryOn ? `${product.name} product photo` : `AI try-on for ${product.name}`,
+        nextView: showingTryOn ? 'product' : 'tryon'
+      }
+    : null;
   const brand = displayBrand(product);
   const category = displayCategory(product);
   const detailFacts = [
@@ -1425,24 +1436,34 @@ function ProductPage({ id, user, setUser }) {
               }}
             />
             {product.badge && <span className="badge">{product.badge}</span>}
-            {hasUsableTryOn && <span className="badge tryon-badge">AI Try-On</span>}
+            {showingTryOn && <span className="badge tryon-badge">AI Try-On</span>}
             {hasUsableTryOn && (
               <button
                 className="fullscreen-button"
                 type="button"
-                aria-label="Open generated try-on full screen"
+                aria-label="Open current product image full screen"
                 title="Open full screen"
-                onClick={() => setFullscreenImage({ src: tryOn.imageUrl, alt: `AI try-on for ${product.name}`, title: product.name })}
+                onClick={() => setFullscreenImage({
+                  src: image,
+                  alt: showingTryOn ? `AI try-on for ${product.name}` : `${product.name} product photo`,
+                  title: showingTryOn ? product.name : `${product.name} product photo`
+                })}
               >
                 <FullscreenIcon />
               </button>
             )}
             {tryOnLoading && <TryOnGenerating />}
-            {hasUsableTryOn && product.imageUrl && (
-              <div className="original-product-preview">
-                <span>Product photo</span>
-                <img src={product.imageUrl} alt={`${product.name} product photo`} />
-              </div>
+            {swapPreview && (
+              <button
+                className="original-product-preview"
+                type="button"
+                onClick={() => setDetailImageView(swapPreview.nextView)}
+                aria-label={`Show ${swapPreview.label}`}
+                title={`Show ${swapPreview.label}`}
+              >
+                <span>{swapPreview.label}</span>
+                <img src={swapPreview.src} alt={swapPreview.alt} />
+              </button>
             )}
           </div>
           <div className="product-summary">

@@ -361,9 +361,8 @@ function wanCustomTryOnPrompt() {
 }
 
 function wanNegativePrompt() {
-  return 'low resolution, blurry, distorted face, changed identity, changed pose, changed body, extra limbs, extra fingers, missing head, cropped face, copied product model, mannequin, text, watermark, logo hallucination, overexposed, low quality';
+  return 'low resolution, blurry, distorted face, changed identity, changed pose, changed body, extra limbs, extra fingers, missing head, cropped face, copied product model, mannequin, text, watermark, logo hallucination, overexposed, low quality, two images, split screen, side by side, diptych, collage, grid, multiple panels, duplicate image, before and after, two people, comparison layout';
 }
-
 function customTryOnPrompt() {
   return [
     'Create a photorealistic virtual try-on result for an ecommerce fashion app.',
@@ -527,6 +526,12 @@ async function callFalWanImageToImage({ user, product, garmentDataUri, prompt, t
   });
   timer?.mark('fal wan submitted', { requestId: submission.request_id });
   const result = await waitForFalResult(submission, wanTimer);
+  console.log('[tryon:wan] raw response array lengths', {
+    images: Array.isArray(result?.images) ? result.images.length : undefined,
+    output: Array.isArray(result?.output) ? result.output.length : undefined,
+    data: Array.isArray(result?.data) ? result.data.length : undefined
+  });
+  console.log('[tryon:wan] raw response json', JSON.stringify(result, null, 2));
   const generatedUrl = firstGeneratedImageUrl(result);
   if (!generatedUrl) throw new Error(`FAL Wan returned no image. Response keys: ${Object.keys(result || {}).join(', ')}`);
   const { bytes, mimetype } = await generatedBytesFromUrl(generatedUrl, timer);

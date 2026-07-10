@@ -1479,6 +1479,7 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
   z-index: 5;
 }
 .original-product-preview {
+  appearance: none;
   position: absolute;
   right: 12px;
   bottom: 12px;
@@ -1490,8 +1491,16 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
   border-radius: 8px;
   padding: 7px;
   background: rgba(255, 253, 248, .9);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
   box-shadow: 0 12px 32px rgba(36, 29, 19, .18);
   backdrop-filter: blur(10px);
+}
+.original-product-preview:hover {
+  border-color: rgba(18, 51, 35, .46);
+  transform: translateY(-1px);
 }
 .original-product-preview span {
   color: var(--green);
@@ -1500,6 +1509,8 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
   text-transform: uppercase;
 }
 .original-product-preview img {
+  display: block;
+  width: 100%;
   aspect-ratio: 1;
   border-radius: 6px;
   object-fit: cover;
