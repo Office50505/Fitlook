@@ -1426,7 +1426,7 @@ function ProductPage({ id, user, setUser }) {
       <section className="wrap product-detail">
         <div className="breadcrumb"><a href="/search">Shop</a><span>/</span><a href={`/search?category=${encodeURIComponent(product.category || '')}`}>{category}</a></div>
         <div className="product-detail-grid">
-          <div className="product-detail-media">
+          <div className={`product-detail-media ${showingTryOn ? 'showing-tryon' : 'showing-product'}`}>
             <img
               src={image}
               alt={product.name}
