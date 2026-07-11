@@ -340,6 +340,7 @@ function tryOnPrompt(product) {
   'This is professional, non-sexualized commercial fashion photography intended for a retail product page. The pose, framing, and styling should remain catalog-appropriate and editorial in tone, consistent with mainstream fashion retail imagery.',
   'Keep the shopper hands, face, legs, footwear, and non-target clothing unchanged unless they must be naturally covered by the new garment.',
   'Do not invent extra accessories, logos, text, patterns, buttons, pockets, or colors that are not present in the product image.',
+  'The output must show the shopper full body from head to toe, including complete face, hair, both arms, both legs, and both feet or footwear, fully visible within the frame with no cropping at the head, waist, knees, or ankles.',
   'Return one clean full-body try-on image suitable for a product card, matching standard fashion e-commerce photography conventions.'
 ]
   ].join(' ');
@@ -357,6 +358,7 @@ function wanTryOnPrompt(product) {
     'Ignore any model, mannequin, person, face, body, pose, camera angle, crop, lighting, and background present in image 2.',
     'Fit the garment naturally onto the shopper with correct scale, drape, folds, wrinkles, occlusion, and shadows.',
     'Keep every non-garment region from image 1 unchanged. Do not add accessories, styling, text, logos, background details, body changes, or extra skin exposure.',
+    'The output must show the shopper full body from head to toe, including complete face, hair, both arms, both legs, and both feet or footwear, fully visible within the frame with no cropping at the head, waist, knees, or ankles.',
     'Return one clean, full-body, non-sexualized, photorealistic retail try-on preview.'
   ].join(' ');
 }
@@ -371,12 +373,13 @@ function wanCustomTryOnPrompt() {
     'Ignore any model, mannequin, person, face, body, pose, camera angle, crop, lighting, and background present in image 2.',
     'Fit the garment naturally onto the shopper with correct scale, drape, folds, wrinkles, occlusion, and shadows.',
     'Keep every non-garment region from image 1 unchanged. Do not add accessories, styling, text, logos, background details, body changes, or extra skin exposure.',
+    'The output must show the shopper full body from head to toe, including complete face, hair, both arms, both legs, and both feet or footwear, fully visible within the frame with no cropping at the head, waist, knees, or ankles.',
     'Return one clean, full-body, non-sexualized, photorealistic retail try-on preview.'
   ].join(' ');
 }
 
 function wanNegativePrompt() {
-  return 'low resolution, blurry, distorted face, changed identity, changed pose, changed body, extra limbs, extra fingers, missing head, cropped face, copied product model, mannequin, text, watermark, logo hallucination, overexposed, low quality, two images, split screen, side by side, diptych, collage, grid, multiple panels, duplicate image, before and after, two people, comparison layout';
+  return 'low resolution, blurry, distorted face, changed identity, changed pose, changed body, extra limbs, extra fingers, missing head, cropped face, cropped body, cropped legs, cropped feet, half body, waist-up, close-up crop, copied product model, mannequin, text, watermark, logo hallucination, overexposed, low quality, two images, split screen, side by side, diptych, collage, grid, multiple panels, duplicate image, before and after, two people, comparison layout';
 }
 function customTryOnPrompt() {
   return [
@@ -388,10 +391,10 @@ function customTryOnPrompt() {
     'The final face must match reference image 1. Keep the shopper eyes, nose, mouth, jawline, facial proportions, hairline, hairstyle, and expression from reference image 1 unchanged.',
     'Keep the shopper hands, face, legs, footwear, and non-target clothing unchanged unless they must be naturally covered by the uploaded garment.',
     'Do not invent extra accessories, logos, text, patterns, buttons, pockets, or colors that are not present in the clothing reference.',
+    'The output must show the shopper full body from head to toe, including complete face, hair, both arms, both legs, and both feet or footwear, fully visible within the frame with no cropping at the head, waist, knees, or ankles.',
     'Return one clean full-body try-on image.'
   ].join(' ');
 }
-
 function falHeaders() {
   if (!process.env.FAL_KEY) throw new Error('FAL_KEY is missing on the server');
   return {
