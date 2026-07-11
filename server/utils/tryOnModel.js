@@ -19,7 +19,10 @@ const WAN_MODEL_TERMS = [
   /\bbustier(?:s)?\b/i,
   /\bbodysuit(?:s)?\b/i,
   /\bshapewear\b/i,
+  /\bsleep\s?wear\b/i,
+  /\bsleep\s?dress(?:es)?\b/i,
   /\bnight(?:wear|ie|dress|gown)\b/i,
+  /\bnight(?:y|ies)\b/i,
   /\bbabydoll\b/i,
   /\bchemise\b/i
 ];
@@ -46,11 +49,12 @@ function textForTryOnClassification(product = {}) {
 }
 
 function inferTryOnModel(product = {}) {
+  const text = textForTryOnClassification(product);
+  if (WAN_MODEL_TERMS.some((pattern) => pattern.test(text))) return 'wan-v2.6-image-to-image';
+
   const explicit = normalizeTryOnModel(product.tryOnModel);
   if (product.tryOnModel) return explicit;
-
-  const text = textForTryOnClassification(product);
-  return WAN_MODEL_TERMS.some((pattern) => pattern.test(text)) ? 'wan-v2.6-image-to-image' : 'gpt-image-2';
+  return 'gpt-image-2';
 }
 
 export { inferTryOnModel, normalizeTryOnModel };

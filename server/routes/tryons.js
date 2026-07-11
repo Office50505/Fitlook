@@ -52,9 +52,18 @@ function redactLargeData(value) {
 
 function readableError(value, fallback = 'Request failed') {
   if (!value) return fallback;
-  if (typeof value === 'string') return redactLargeData(value);
+  if (typeof value === 'string') {
+    if (/content[_\s-]?policy|safety|flagged|content[_\s-]?policy[_\s-]?violation/i.test(value)) {
+      return 'This try-on was blocked by the image provider safety check. Please try again with the fitted/swimwear try-on mode.';
+    }
+    return redactLargeData(value);
+  }
   if (value instanceof Error) return readableError(value.message, fallback);
   if (Array.isArray(value)) {
+    const policyError = value.find((item) => /content[_\s-]?policy|safety|flagged/i.test([item?.type, item?.code, item?.msg, item?.message].filter(Boolean).join(' ')));
+    if (policyError) {
+      return 'This try-on was blocked by the image provider safety check. FitLook will use the fitted/swimwear try-on mode for this product.';
+    }
     const imageSizeError = value.find((item) => item?.type === 'image_too_small');
     if (imageSizeError) {
       const index = imageSizeError.loc?.[2] ?? imageSizeError.loc?.[1];
@@ -64,6 +73,10 @@ function readableError(value, fallback = 'Request failed') {
     return value.map((item) => readableError(item, fallback)).filter(Boolean).join(' ') || fallback;
   }
   if (typeof value === 'object') {
+    const policyText = [value.type, value.code, value.msg, value.message, value.error].filter((item) => typeof item === 'string').join(' ');
+    if (/content[_\s-]?policy|safety|flagged/i.test(policyText)) {
+      return 'This try-on was blocked by the image provider safety check. FitLook will use the fitted/swimwear try-on mode for this product.';
+    }
     if (value.type === 'image_too_small') {
       return 'Reference image is too small for Wan 2.6. Wan requires every reference image to be at least 384x384px.';
     }
@@ -902,6 +915,7 @@ router.post('/external', requireUser, async (req, res) => {
 
 router.post('/:productId', requireUser, async (req, res) => {
   const requestedModel = normalizeTryOnModel(req.body?.tryOnModel);
+  const hasRequestedModel = Boolean(req.body?.tryOnModel);
   const forceGenerate = Boolean(req.body?.force || req.body?.refresh);
   const timer = createTimer('generate', {
     userId: req.user._id.toString(),
@@ -914,9 +928,17 @@ router.post('/:productId', requireUser, async (req, res) => {
   try {
     const product = await Product.findOne({ _id: req.params.productId, isActive: true });
     if (!product) return res.status(404).json({ message: 'Product not found' });
-    timer.mark('product loaded', { tryOnModel: forceGenerate ? requestedModel : tryOnModelForProduct(product) });
-
     const existing = await TryOn.findOne({ user: req.user._id, product: req.params.productId });
+    const selectedModel = hasRequestedModel
+      ? requestedModel
+      : forceGenerate && existing?.model
+        ? normalizeTryOnModel(existing.model)
+        : tryOnModelForProduct(product);
+    timer.mark('product loaded', {
+      tryOnModel: selectedModel,
+      existingModel: existing?.model || ''
+    });
+
     if (existing && !forceGenerate) {
       timer.end({ reused: true });
       return res.json({ tryOn: existing.toClient(), user: req.user.toClient(), reused: true });
@@ -931,7 +953,7 @@ router.post('/:productId', requireUser, async (req, res) => {
     req.user = chargedUser;
 
     const tryOn = forceGenerate
-      ? await replaceGeneratedTryOn({ user: req.user, product, tryOnModel: requestedModel, timer })
+      ? await replaceGeneratedTryOn({ user: req.user, product, tryOnModel: selectedModel, timer })
       : await saveGeneratedTryOn({ user: req.user, product, timer });
     timer.end({ reused: false, tokensRemaining: req.user.tokens });
 

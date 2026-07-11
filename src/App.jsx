@@ -711,11 +711,11 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
       {!locked && (
         <div className="product-card-actions">
           {canTryOn && onTryOn ? (
-            <button type="button" onClick={() => onTryOn(product)} disabled={tryOnLoading || Boolean(tryOn?.imageUrl)}>
-              {hasUsableTryOn ? 'Try-On Ready' : tryOnImageFailed ? 'Product Photo' : tryOnLoading ? 'Generating...' : 'Try On'}
+            <button type="button" onClick={() => onTryOn(product, { force: Boolean(tryOn?.imageUrl), tryOnModel: tryOn?.model })} disabled={tryOnLoading}>
+              {tryOnLoading ? 'Generating...' : hasUsableTryOn ? 'Generate Again' : tryOnImageFailed ? 'Try Again' : 'Try On'}
             </button>
           ) : (
-            <a href={user ? detailHref : '/signup'}>{hasUsableTryOn ? 'Try-On Ready' : 'Try On'}</a>
+            <a href={user ? detailHref : '/signup'}>{hasUsableTryOn ? 'Generate Again' : 'Try On'}</a>
           )}
           {product.affiliateLink && <a className="shop-action" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop</a>}
           {tryOnError && <p>{tryOnError}</p>}
@@ -815,13 +815,16 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
   const title = tryOnMode ? 'AI Try-On' : q || tag || category || brand || gender || (newArrival ? 'New Arrivals' : 'All Products');
   const filterValues = { q, tag, category, brand, gender, sort, newArrival };
 
-  const generateTryOn = async (product) => {
+  const generateTryOn = async (product, options = {}) => {
     setTryOnLoading((current) => ({ ...current, [product.id]: true }));
     setTryOnErrors((current) => ({ ...current, [product.id]: '' }));
     try {
-      const data = await api(`/tryons/${product.id}`, { method: 'POST' });
+      const data = await api(`/tryons/${product.id}`, {
+        method: 'POST',
+        body: options.force ? JSON.stringify({ force: true, tryOnModel: options.tryOnModel }) : undefined
+      });
       setTryOns((current) => ({ ...current, [product.id]: data.tryOn }));
-      recordEvent('try_on', { productId: product.id });
+      recordEvent('try_on', { productId: product.id, metadata: { regenerated: Boolean(options.force) } });
       if (data.user) {
         setUser((current) => {
           if (!current) return data.user;
@@ -1557,13 +1560,19 @@ function ProductPage({ id, user, setUser }) {
   const productTags = (product.tags || []).filter(Boolean).slice(0, 10);
 
   const generateProductTryOn = async () => {
-    if (!product || tryOnLoading || tryOn?.imageUrl) return;
+    if (!product || tryOnLoading) return;
+    const regenerate = Boolean(tryOn?.imageUrl);
     setTryOnLoading(true);
     setTryOnError('');
     try {
-      const data = await api(`/tryons/${product.id}`, { method: 'POST' });
+      const data = await api(`/tryons/${product.id}`, {
+        method: 'POST',
+        body: regenerate ? JSON.stringify({ force: true, tryOnModel: tryOn?.model }) : undefined
+      });
       setTryOn(data.tryOn);
-      recordEvent('try_on', { productId: product.id, metadata: { tryOnModel: product.tryOnModel || 'default' } });
+      setDetailImageView('tryon');
+      setTryOnImageFailed(false);
+      recordEvent('try_on', { productId: product.id, metadata: { tryOnModel: product.tryOnModel || 'default', regenerated: regenerate } });
       if (data.user) {
         setUser((current) => {
           if (!current) return data.user;
@@ -1651,8 +1660,8 @@ function ProductPage({ id, user, setUser }) {
             <div className="product-actions">
               {product.affiliateLink && <a className="button" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop Brand ↗</a>}
               {user ? (
-                <button className="secondary-button" type="button" onClick={generateProductTryOn} disabled={tryOnLoading || Boolean(tryOn?.imageUrl)}>
-                  {hasUsableTryOn ? 'Try-On Ready' : tryOnImageFailed ? 'Product Photo Shown' : tryOnLoading ? 'Generating Try-On...' : 'Generate AI Try-On'}
+                <button className="secondary-button" type="button" onClick={generateProductTryOn} disabled={tryOnLoading}>
+                  {tryOnLoading ? 'Generating Try-On...' : hasUsableTryOn ? 'Generate Try-On Again' : tryOnImageFailed ? 'Try Again' : 'Generate AI Try-On'}
                 </button>
               ) : <a className="secondary-button" href="/signup">Create Profile for Try-On</a>}
             </div>
