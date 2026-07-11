@@ -187,6 +187,26 @@ function productGenderForPreference(value = '') {
   return '';
 }
 
+function localGenderPreference() {
+  const value = localStorage.getItem('fitlook_gender_preference') || '';
+  return ['male', 'female', 'other'].includes(value) ? value : '';
+}
+
+function withLocalGenderPreference(user) {
+  const localPreference = localGenderPreference();
+  return localPreference ? { ...user, genderPreference: localPreference } : user;
+}
+
+function genderedStyleBotQuery(query = '', preference = '') {
+  const target = productGenderForPreference(preference);
+  if (!target) return query;
+  const withoutGender = String(query || '')
+    .replace(/\b(male|female|men'?s?|women'?s?|mans?|womans?|boys?|girls?|ladies|gentlemen)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return `${target} ${withoutGender}`.trim();
+}
+
 function genderPreferenceLabel(value = '') {
   if (value === 'male') return 'Male';
   if (value === 'female') return 'Female';
@@ -1013,6 +1033,8 @@ function StyleBotPage({ user, setUser }) {
     if (!prompt || busy) return;
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const promptCompatibility = styleBotCompatibility(prompt);
+    const genderPreference = localGenderPreference() || user.genderPreference || 'other';
+    const searchPrompt = genderedStyleBotQuery(prompt, genderPreference);
     setQuery('');
     setBusy(true);
     recordEvent('style_bot_query', { query: prompt });
@@ -1028,11 +1050,11 @@ function StyleBotPage({ user, setUser }) {
     try {
       const data = await api('/products/amazon-search', {
         method: 'POST',
-        body: JSON.stringify({ query: prompt, limit: 2, genderPreference: user.genderPreference || 'other' })
+        body: JSON.stringify({ query: searchPrompt, limit: 2, genderPreference })
       });
       const products = (data.products || []).filter((product) => (
         styleBotProductCompatibility(product, prompt).compatible &&
-        styleBotGenderCompatibility(product, user.genderPreference).compatible
+        styleBotGenderCompatibility(product, genderPreference).compatible
       ));
       if (products.length === 0) {
         throw new Error('Amazon results were found, but none matched your try-on gender preference. Try a more specific clothing search.');
@@ -1342,10 +1364,17 @@ function ProfilePage({ user, setUser }) {
         method: 'PATCH',
         body: JSON.stringify({ genderPreference })
       });
+      localStorage.setItem('fitlook_gender_preference', data.user.genderPreference || genderPreference);
       setUser(data.user);
       setGenderMessage('Gender preference updated. Style Bot will use this for future searches.');
     } catch (err) {
-      setGenderMessage(err.message);
+      if (err.message.includes('404')) {
+        localStorage.setItem('fitlook_gender_preference', genderPreference);
+        setUser((current) => ({ ...current, genderPreference }));
+        setGenderMessage('Gender preference saved in this browser. Restart the backend server to save it permanently.');
+      } else {
+        setGenderMessage(err.message);
+      }
     } finally {
       setSavingGender(false);
     }
@@ -1851,7 +1880,8 @@ function AuthPage({ mode, setUser }) {
       }
       const data = await api(isSignup ? '/auth/signup' : '/auth/login', { method: 'POST', body });
       localStorage.setItem('fitlook_token', data.token);
-      setUser(data.user);
+      if (data.user?.genderPreference) localStorage.setItem('fitlook_gender_preference', data.user.genderPreference);
+      setUser(withLocalGenderPreference(data.user));
       window.history.pushState({}, '', '/search');
       window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (err) {
@@ -1944,7 +1974,7 @@ function App() {
 
   useEffect(() => {
     if (!localStorage.getItem('fitlook_token')) return;
-    api('/auth/me').then((data) => setUser(data.user)).catch(() => localStorage.removeItem('fitlook_token'));
+    api('/auth/me').then((data) => setUser(withLocalGenderPreference(data.user))).catch(() => localStorage.removeItem('fitlook_token'));
   }, []);
 
   useEffect(() => {
