@@ -80,6 +80,56 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 }
 
+function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1.65, onError }) {
+  const [zooming, setZooming] = useState(false);
+  const [origin, setOrigin] = useState({ x: 50, y: 50 });
+  const frameRef = useRef(null);
+
+  const moveOrigin = (event) => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const rect = frame.getBoundingClientRect();
+    const x = Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100));
+    const y = Math.min(100, Math.max(0, ((event.clientY - rect.top) / rect.height) * 100));
+    setOrigin({ x, y });
+  };
+
+  const startZoom = (event) => {
+    moveOrigin(event);
+    setZooming(true);
+    if (event.pointerType !== 'mouse') event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const stopZoom = (event) => {
+    setZooming(false);
+    if (event.pointerType !== 'mouse') event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+
+  return (
+    <div
+      ref={frameRef}
+      className={`zoomable-image ${zooming ? 'is-zoomed' : ''} ${className}`.trim()}
+      style={{
+        '--zoom-origin-x': `${origin.x}%`,
+        '--zoom-origin-y': `${origin.y}%`,
+        '--zoom-scale': zoom
+      }}
+      onPointerEnter={(event) => {
+        if (event.pointerType === 'mouse') startZoom(event);
+      }}
+      onPointerDown={startZoom}
+      onPointerMove={(event) => {
+        if (zooming || event.pointerType === 'mouse') moveOrigin(event);
+      }}
+      onPointerUp={stopZoom}
+      onPointerCancel={stopZoom}
+      onPointerLeave={stopZoom}
+    >
+      <img className={imageClassName} src={src} alt={alt} draggable="false" onError={onError} />
+    </div>
+  );
+}
+
 const categories = [
   ['Shirts', 'category-1.jpg', 'shirts'],
   ['T-Shirts', 'category-2.jpg', 't-shirts'],
@@ -847,7 +897,7 @@ function CustomClothingTryOn({ setUser }) {
               {loading && <TryOnGenerating />}
               {result?.imageUrl ? (
                 <>
-                  <img src={result.imageUrl} alt="Generated custom try-on" />
+                  <ZoomableImage src={result.imageUrl} alt="Generated custom try-on" />
                   <button className="fullscreen-button" type="button" aria-label="Open generated image full screen" title="Open full screen" onClick={() => setFullscreenImage({ src: result.imageUrl, alt: 'Generated custom try-on', title: 'Custom Try-On' })}><FullscreenIcon /></button>
                 </>
               ) : <span>Generated try-on</span>}
@@ -1008,18 +1058,18 @@ function StyleBotProduct({ product, tryOn, loading, error, onFullscreen }) {
       <div className="style-result-media">
         <div>
           <span className="style-media-label">Product</span>
-          <img src={productImage} alt={product.name} />
+          <ZoomableImage src={productImage} alt={product.name} />
         </div>
         <div className="style-generated">
           <span className="style-media-label">On You</span>
           {loading && <TryOnGenerating />}
           {hasUsableTryOn ? (
             <>
-              <img src={tryOn.imageUrl} alt={`AI try-on for ${product.name}`} onError={() => setTryOnImageFailed(true)} />
+              <ZoomableImage src={tryOn.imageUrl} alt={`AI try-on for ${product.name}`} onError={() => setTryOnImageFailed(true)} />
               <button className="fullscreen-button" type="button" aria-label="Open generated image full screen" title="Open full screen" onClick={() => onFullscreen({ src: tryOn.imageUrl, alt: `AI try-on for ${product.name}`, title: product.name })}><FullscreenIcon /></button>
             </>
           ) : tryOn?.imageUrl ? (
-            <img src={productImage} alt={product.name} />
+            <ZoomableImage src={productImage} alt={product.name} />
           ) : <div className="style-placeholder">Waiting for try-on</div>}
         </div>
       </div>
@@ -1427,9 +1477,10 @@ function ProductPage({ id, user, setUser }) {
         <div className="breadcrumb"><a href="/search">Shop</a><span>/</span><a href={`/search?category=${encodeURIComponent(product.category || '')}`}>{category}</a></div>
         <div className="product-detail-grid">
           <div className={`product-detail-media ${showingTryOn ? 'showing-tryon' : 'showing-product'}`}>
-            <img
+            <ZoomableImage
               src={image}
               alt={product.name}
+              zoom={1.75}
               onError={(event) => {
                 if (hasUsableTryOn) setTryOnImageFailed(true);
                 else if (event.currentTarget.src !== window.location.origin + asset('hero2.png')) event.currentTarget.src = asset('hero2.png');
