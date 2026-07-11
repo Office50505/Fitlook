@@ -181,6 +181,37 @@ function styleBotProductCompatibility(product = {}, query = '') {
   ].filter(Boolean).join(' '));
 }
 
+function productGenderForPreference(value = '') {
+  if (value === 'male') return 'men';
+  if (value === 'female') return 'women';
+  return '';
+}
+
+function genderPreferenceLabel(value = '') {
+  if (value === 'male') return 'Male';
+  if (value === 'female') return 'Female';
+  return 'Other';
+}
+
+function styleBotGenderCompatibility(product = {}, preference = '') {
+  const target = productGenderForPreference(preference);
+  if (!target) return { compatible: true };
+  const text = [
+    product.name,
+    product.brand,
+    product.category,
+    product.description,
+    Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
+  ].filter(Boolean).join(' ');
+  const productGender = String(product.gender || '').toLowerCase();
+  const isMens = /\b(men'?s?|male|boys?|gentlemen)\b/i.test(text);
+  const isWomens = /\b(women'?s?|female|girls?|ladies)\b/i.test(text);
+
+  if (target === 'women' && (productGender === 'men' || isMens)) return { compatible: false };
+  if (target === 'men' && (productGender === 'women' || isWomens)) return { compatible: false };
+  return { compatible: true };
+}
+
 const categories = [
   ['Shirts', 'category-1.jpg', 'shirts'],
   ['T-Shirts', 'category-2.jpg', 't-shirts'],
@@ -997,11 +1028,14 @@ function StyleBotPage({ user, setUser }) {
     try {
       const data = await api('/products/amazon-search', {
         method: 'POST',
-        body: JSON.stringify({ query: prompt, limit: 2 })
+        body: JSON.stringify({ query: prompt, limit: 2, genderPreference: user.genderPreference || 'other' })
       });
-      const products = (data.products || []).filter((product) => styleBotProductCompatibility(product, prompt).compatible);
+      const products = (data.products || []).filter((product) => (
+        styleBotProductCompatibility(product, prompt).compatible &&
+        styleBotGenderCompatibility(product, user.genderPreference).compatible
+      ));
       if (products.length === 0) {
-        throw new Error('Amazon results were found, but none were compatible with AI try-on. Try a clothing item, shoes, watch, bag, eyewear, or accessory.');
+        throw new Error('Amazon results were found, but none matched your try-on gender preference. Try a more specific clothing search.');
       }
       updateRun(id, () => ({
         products,
@@ -1257,7 +1291,9 @@ function ProfilePage({ user, setUser }) {
   const fileRef = useRef(null);
   const [preview, setPreview] = useState('');
   const [message, setMessage] = useState('');
+  const [genderMessage, setGenderMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [savingGender, setSavingGender] = useState(false);
 
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -1296,6 +1332,25 @@ function ProfilePage({ user, setUser }) {
     }
   };
 
+  const submitGenderPreference = async (event) => {
+    event.preventDefault();
+    const genderPreference = new FormData(event.currentTarget).get('genderPreference');
+    setSavingGender(true);
+    setGenderMessage('Saving preference...');
+    try {
+      const data = await api('/auth/gender-preference', {
+        method: 'PATCH',
+        body: JSON.stringify({ genderPreference })
+      });
+      setUser(data.user);
+      setGenderMessage('Gender preference updated. Style Bot will use this for future searches.');
+    } catch (err) {
+      setGenderMessage(err.message);
+    } finally {
+      setSavingGender(false);
+    }
+  };
+
   return (
     <main className="profile-page">
       <section className="wrap profile-hero">
@@ -1318,8 +1373,21 @@ function ProfilePage({ user, setUser }) {
             <div><dt>Name</dt><dd>{user.name}</dd></div>
             <div><dt>Username</dt><dd>@{user.username}</dd></div>
             <div><dt>Email</dt><dd>{user.email}</dd></div>
+            <div><dt>Preference</dt><dd>{genderPreferenceLabel(user.genderPreference)}</dd></div>
             <div><dt>Joined</dt><dd>{formatDate(user.joinedAt)}</dd></div>
           </dl>
+          <form className="profile-preference-form" onSubmit={submitGenderPreference}>
+            <label className="field">
+              <span>Gender preference</span>
+              <select name="genderPreference" defaultValue={user.genderPreference || 'other'}>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <button className="secondary-button" type="submit" disabled={savingGender}>{savingGender ? 'Saving...' : 'Save Preference'}</button>
+            {genderMessage && <p className="form-message">{genderMessage}</p>}
+          </form>
         </article>
 
         <article className="profile-card">
@@ -1813,6 +1881,17 @@ function AuthPage({ mode, setUser }) {
               </>
             )}
             <label className="field"><span>{isSignup ? 'Email address' : 'Email or username'}</span><input name="email" type={isSignup ? 'email' : 'text'} required /></label>
+            {isSignup && (
+              <label className="field">
+                <span>Gender preference</span>
+                <select name="genderPreference" required defaultValue="">
+                  <option value="" disabled>Choose preference</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+            )}
             <label className="field"><span>Password</span><input name="password" type="password" required minLength="6" /></label>
             {isSignup && (
               <>

@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import path from 'node:path';
 import User from '../models/User.js';
+import { normalizeGenderPreference } from '../utils/genderPreference.js';
 
 const router = express.Router();
 const upload = multer({
@@ -73,7 +74,8 @@ async function requireUser(req, res, next) {
 router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
   const { name, email, password } = req.body;
   const username = normalizeUsername(req.body.username) || await uniqueUsername(name);
-  if (!name || !email || !password || !username) return res.status(400).json({ message: 'Name, username, email, and password are required' });
+  const genderPreference = normalizeGenderPreference(req.body.genderPreference);
+  if (!name || !email || !password || !username || !genderPreference) return res.status(400).json({ message: 'Name, username, email, gender preference, and password are required' });
   if (username.length < 3) return res.status(400).json({ message: 'Username must be at least 3 characters' });
   if (!req.file) return res.status(400).json({ message: 'Full-body photo is required' });
 
@@ -92,6 +94,7 @@ router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
       name,
       email,
       username,
+      genderPreference,
       passwordHash,
       devMode: parseBoolean(req.body.devMode),
       bodyPhoto: {
@@ -143,6 +146,14 @@ router.get('/me', requireUser, (req, res) => {
 
 router.patch('/dev-mode', requireUser, async (req, res) => {
   req.user.devMode = parseBoolean(req.body?.devMode);
+  await req.user.save();
+  res.json({ user: req.user.toClient() });
+});
+
+router.patch('/gender-preference', requireUser, async (req, res) => {
+  const genderPreference = normalizeGenderPreference(req.body?.genderPreference);
+  if (!genderPreference) return res.status(400).json({ message: 'Choose male, female, or other' });
+  req.user.genderPreference = genderPreference;
   await req.user.save();
   res.json({ user: req.user.toClient() });
 });

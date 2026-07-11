@@ -7,6 +7,7 @@ import { clearRecommendationCaches } from './recommendations.js';
 import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { createHybridCache } from '../utils/cache.js';
 import { wearableCompatibility } from '../utils/wearable.js';
+import { genderCompatibility, genderedSearchQuery, normalizeGenderPreference } from '../utils/genderPreference.js';
 
 const router = express.Router();
 const readCacheTtlMs = Number(process.env.PRODUCT_READ_CACHE_TTL_MS || 30 * 1000);
@@ -962,13 +963,15 @@ router.get('/', async (req, res) => {
 router.post('/amazon-search', requireUser, async (req, res) => {
   const query = String(req.body?.query || '').trim();
   const limit = Math.min(Math.max(Number(req.body?.limit) || 2, 1), 2);
+  const genderPreference = normalizeGenderPreference(req.body?.genderPreference || req.user.genderPreference);
   if (!query) return res.status(400).json({ message: 'Tell the style bot what you want first' });
 
   try {
     const queryCompatibility = wearableCompatibility({ name: query }, { query });
     if (!queryCompatibility.compatible) throw new Error(queryCompatibility.reason);
 
-    const searchUrl = `${amazonSearchBaseUrl()}/s?k=${encodeURIComponent(query)}`;
+    const searchQuery = genderedSearchQuery(query, genderPreference);
+    const searchUrl = `${amazonSearchBaseUrl()}/s?k=${encodeURIComponent(searchQuery)}`;
     const response = await fetch(searchUrl, {
       redirect: 'follow',
       headers: {
@@ -997,6 +1000,7 @@ router.post('/amazon-search', requireUser, async (req, res) => {
       if (result.status !== 'fulfilled') continue;
       if (products.some((product) => product.sourceUrl === result.value.sourceUrl)) continue;
       if (!wearableCompatibility(result.value, { query }).compatible) continue;
+      if (!genderCompatibility(result.value, genderPreference).compatible) continue;
       products.push(result.value);
       if (products.length >= limit) break;
     }

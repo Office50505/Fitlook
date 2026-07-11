@@ -21,6 +21,11 @@ const userSchema = new mongoose.Schema(
       sparse: true
     },
     passwordHash: { type: String, required: true },
+    genderPreference: {
+      type: String,
+      enum: ['male', 'female', 'other'],
+      default: 'other'
+    },
     tokens: { type: Number, default: signupTokens },
     devMode: { type: Boolean, default: defaultDevMode },
     subscription: {
@@ -47,6 +52,7 @@ userSchema.methods.toClient = function toClient() {
     name: this.name,
     email: this.email,
     username: this.username,
+    genderPreference: this.genderPreference || 'other',
     tokens: this.tokens,
     subscription: {
       planId: this.subscription?.planId || null,

@@ -11,6 +11,7 @@ import User from '../models/User.js';
 import { requireUser } from './auth.js';
 import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { wearableCompatibility } from '../utils/wearable.js';
+import { genderCompatibility } from '../utils/genderPreference.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -850,6 +851,10 @@ router.post('/external', requireUser, async (req, res) => {
   const compatibility = wearableCompatibility(product);
   if (!compatibility.compatible) {
     return res.status(400).json({ message: compatibility.reason });
+  }
+  const genderMatch = genderCompatibility(product, req.user.genderPreference);
+  if (!genderMatch.compatible) {
+    return res.status(400).json({ message: genderMatch.reason });
   }
 
   const timer = createTimer('external', {
