@@ -150,14 +150,6 @@ router.patch('/dev-mode', requireUser, async (req, res) => {
   res.json({ user: req.user.toClient() });
 });
 
-router.patch('/gender-preference', requireUser, async (req, res) => {
-  const genderPreference = normalizeGenderPreference(req.body?.genderPreference);
-  if (!genderPreference) return res.status(400).json({ message: 'Choose male, female, or other' });
-  req.user.genderPreference = genderPreference;
-  await req.user.save();
-  res.json({ user: req.user.toClient() });
-});
-
 router.post('/body-photo', requireUser, upload.single('bodyPhoto'), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Upload a profile photo first' });
   req.user.bodyPhoto = {

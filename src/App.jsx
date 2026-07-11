@@ -187,16 +187,6 @@ function productGenderForPreference(value = '') {
   return '';
 }
 
-function localGenderPreference() {
-  const value = localStorage.getItem('fitlook_gender_preference') || '';
-  return ['male', 'female', 'other'].includes(value) ? value : '';
-}
-
-function withLocalGenderPreference(user) {
-  const localPreference = localGenderPreference();
-  return localPreference ? { ...user, genderPreference: localPreference } : user;
-}
-
 function genderedStyleBotQuery(query = '', preference = '') {
   const target = productGenderForPreference(preference);
   if (!target) return query;
@@ -1033,7 +1023,7 @@ function StyleBotPage({ user, setUser }) {
     if (!prompt || busy) return;
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const promptCompatibility = styleBotCompatibility(prompt);
-    const genderPreference = localGenderPreference() || user.genderPreference || 'other';
+    const genderPreference = user.genderPreference || 'other';
     const searchPrompt = genderedStyleBotQuery(prompt, genderPreference);
     setQuery('');
     setBusy(true);
@@ -1313,9 +1303,7 @@ function ProfilePage({ user, setUser }) {
   const fileRef = useRef(null);
   const [preview, setPreview] = useState('');
   const [message, setMessage] = useState('');
-  const [genderMessage, setGenderMessage] = useState('');
   const [saving, setSaving] = useState(false);
-  const [savingGender, setSavingGender] = useState(false);
 
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -1354,32 +1342,6 @@ function ProfilePage({ user, setUser }) {
     }
   };
 
-  const submitGenderPreference = async (event) => {
-    event.preventDefault();
-    const genderPreference = new FormData(event.currentTarget).get('genderPreference');
-    setSavingGender(true);
-    setGenderMessage('Saving preference...');
-    try {
-      const data = await api('/auth/gender-preference', {
-        method: 'PATCH',
-        body: JSON.stringify({ genderPreference })
-      });
-      localStorage.setItem('fitlook_gender_preference', data.user.genderPreference || genderPreference);
-      setUser(data.user);
-      setGenderMessage('Gender preference updated. Style Bot will use this for future searches.');
-    } catch (err) {
-      if (err.message.includes('404')) {
-        localStorage.setItem('fitlook_gender_preference', genderPreference);
-        setUser((current) => ({ ...current, genderPreference }));
-        setGenderMessage('Gender preference saved in this browser. Restart the backend server to save it permanently.');
-      } else {
-        setGenderMessage(err.message);
-      }
-    } finally {
-      setSavingGender(false);
-    }
-  };
-
   return (
     <main className="profile-page">
       <section className="wrap profile-hero">
@@ -1405,18 +1367,6 @@ function ProfilePage({ user, setUser }) {
             <div><dt>Preference</dt><dd>{genderPreferenceLabel(user.genderPreference)}</dd></div>
             <div><dt>Joined</dt><dd>{formatDate(user.joinedAt)}</dd></div>
           </dl>
-          <form className="profile-preference-form" onSubmit={submitGenderPreference}>
-            <label className="field">
-              <span>Gender preference</span>
-              <select name="genderPreference" defaultValue={user.genderPreference || 'other'}>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
-              </select>
-            </label>
-            <button className="secondary-button" type="submit" disabled={savingGender}>{savingGender ? 'Saving...' : 'Save Preference'}</button>
-            {genderMessage && <p className="form-message">{genderMessage}</p>}
-          </form>
         </article>
 
         <article className="profile-card">
@@ -1880,8 +1830,7 @@ function AuthPage({ mode, setUser }) {
       }
       const data = await api(isSignup ? '/auth/signup' : '/auth/login', { method: 'POST', body });
       localStorage.setItem('fitlook_token', data.token);
-      if (data.user?.genderPreference) localStorage.setItem('fitlook_gender_preference', data.user.genderPreference);
-      setUser(withLocalGenderPreference(data.user));
+      setUser(data.user);
       window.history.pushState({}, '', '/search');
       window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (err) {
@@ -1974,7 +1923,7 @@ function App() {
 
   useEffect(() => {
     if (!localStorage.getItem('fitlook_token')) return;
-    api('/auth/me').then((data) => setUser(withLocalGenderPreference(data.user))).catch(() => localStorage.removeItem('fitlook_token'));
+    api('/auth/me').then((data) => setUser(data.user)).catch(() => localStorage.removeItem('fitlook_token'));
   }, []);
 
   useEffect(() => {

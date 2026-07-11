@@ -1236,16 +1236,6 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
   font-size: 14px;
   font-weight: 800;
 }
-.profile-preference-form {
-  display: grid;
-  gap: 12px;
-  margin-top: 18px;
-  border-top: 1px solid #eadfd2;
-  padding-top: 18px;
-}
-.profile-preference-form .secondary-button {
-  width: 100%;
-}
 .profile-token-meter {
   display: flex;
   gap: 18px;
