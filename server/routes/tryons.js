@@ -10,6 +10,7 @@ import TryOn, { tryOnToClient } from '../models/TryOn.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
 import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
+import { wearableCompatibility } from '../utils/wearable.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -844,6 +845,11 @@ router.post('/external', requireUser, async (req, res) => {
     product = externalProductFromBody(req.body?.product);
   } catch (error) {
     return res.status(400).json({ message: readableError(error, 'External product is missing') });
+  }
+
+  const compatibility = wearableCompatibility(product);
+  if (!compatibility.compatible) {
+    return res.status(400).json({ message: compatibility.reason });
   }
 
   const timer = createTimer('external', {

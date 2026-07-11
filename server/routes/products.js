@@ -6,6 +6,7 @@ import { requireUser } from './auth.js';
 import { clearRecommendationCaches } from './recommendations.js';
 import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { createHybridCache } from '../utils/cache.js';
+import { wearableCompatibility } from '../utils/wearable.js';
 
 const router = express.Router();
 const readCacheTtlMs = Number(process.env.PRODUCT_READ_CACHE_TTL_MS || 30 * 1000);
@@ -964,6 +965,9 @@ router.post('/amazon-search', requireUser, async (req, res) => {
   if (!query) return res.status(400).json({ message: 'Tell the style bot what you want first' });
 
   try {
+    const queryCompatibility = wearableCompatibility({ name: query }, { query });
+    if (!queryCompatibility.compatible) throw new Error(queryCompatibility.reason);
+
     const searchUrl = `${amazonSearchBaseUrl()}/s?k=${encodeURIComponent(query)}`;
     const response = await fetch(searchUrl, {
       redirect: 'follow',
@@ -992,10 +996,11 @@ router.post('/amazon-search', requireUser, async (req, res) => {
     for (const result of settled) {
       if (result.status !== 'fulfilled') continue;
       if (products.some((product) => product.sourceUrl === result.value.sourceUrl)) continue;
+      if (!wearableCompatibility(result.value, { query }).compatible) continue;
       products.push(result.value);
       if (products.length >= limit) break;
     }
-    if (products.length === 0) throw new Error('Amazon results were found, but product details could not be extracted');
+    if (products.length === 0) throw new Error('Amazon results were found, but none were compatible with AI try-on. Try a clothing item, shoes, watch, bag, eyewear, or accessory.');
 
     res.json({ products });
   } catch (error) {

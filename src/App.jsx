@@ -130,6 +130,57 @@ function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1
   );
 }
 
+const styleBotWearablePatterns = [
+  /\b(cloth(?:e|es|ing)?|apparel|garments?|outfits?|fashion|wearable|style|look)\b/i,
+  /\b(sarees?|saris?|lehenga(?:s)?|dupatta(?:s)?|kurta(?:s)?|kurtis?|salwar(?:s)?|churidar(?:s)?|anarkali|palazzo(?:s)?|sharara(?:s)?)\b/i,
+  /\b(sun\s*glasses|sunglasses|eye\s*glasses|eyeglasses|spectacles?|optical\s*frames?|goggles?|aviator|wayfarer)\b/i,
+  /\b(underwear|briefs?|boxers?|trunks?|vests?|innerwear|lingerie|bras?|pant(?:y|ies)|camisoles?|shapewear)\b/i,
+  /\b(night(?:y|ie|wear|gown|suit|dress)|sleepwear|pajamas?|pyjamas?|loungewear|robe)\b/i,
+  /\b(dresses?|gowns?|suits?|skirts?|skorts?|jeans?|pants?|trousers?|joggers?|leggings?|chinos?|shorts?|bermudas?)\b/i,
+  /\b(hoodies?|sweatshirts?|sweaters?|pullovers?|jumpers?|jackets?|overshirts?|blazers?|coats?|windcheaters?|parkas?|shrugs?)\b/i,
+  /\b(t\s*-?\s*shirts?|tshirts?|tees?|polo\s*(?:shirts?)?|shirts?|button\s*(?:down|up)|tops?|blouses?|tunics?|crop\s*tops?|tank\s*tops?)\b/i,
+  /\b(shoes?|sneakers?|boots?|loafers?|sandals?|slippers?|heels?|pumps?|flats?|footwear|trainers?)\b/i,
+  /\b(watch(?:es)?|smart\s*watch(?:es)?|smartwatch(?:es)?|chronograph)\b/i,
+  /\b(wallets?|purses?|backpacks?|handbags?|totes?|sling\s*bags?|crossbody|duffels?|clutches?)\b/i,
+  /\b(belts?|baseball\s*caps?|hats?|scarves?|ties?|jewellery|jewelry|necklaces?|bracelets?|earrings?|accessor(?:y|ies))\b/i
+];
+
+const styleBotBlockedPatterns = [
+  ['an oral care product', /\b(tooth\s*paste|toothpaste|toote\s*paste|tooth\s*brush|toothbrush|mouth\s*wash|mouthwash|dental|oral\s+care|colgate|sensodyne|pepsodent)\b/i],
+  ['a beauty or hygiene product', /\b(shampoo|conditioner|soap|body\s*wash|face\s*wash|cleanser|lotion|cream|moisturi[sz]er|deodorant|perfume|makeup|cosmetics?|serum|sunscreen)\b/i],
+  ['a food or grocery product', /\b(food|grocery|snacks?|chocolate|candy|tea|coffee|rice|flour|oil|spices?|sauce|drink|beverage|juice|protein\s*powder)\b/i],
+  ['an electronics product', /\b(phone|mobile|laptop|tablet|camera|charger|cable|adapter|headphones?|earbuds?|speaker|keyboard|mouse|monitor|television|tv)\b/i],
+  ['a home product', /\b(furniture|chair|table|mattress|bedsheet|curtain|lamp|bottle|mug|plate|cookware|utensils?|detergent|cleaner|toilet|kitchen|bathroom)\b/i],
+  ['a book or stationery product', /\b(books?|notebooks?|pens?|pencils?|markers?|stationery|diary|paper)\b/i],
+  ['medicine or a supplement', /\b(medicine|tablet|capsules?|syrup|vitamins?|supplements?|pain\s*relief|antiseptic)\b/i]
+];
+
+function styleBotCompatibility(value = '') {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  const blocked = styleBotBlockedPatterns.find(([, pattern]) => pattern.test(text));
+  if (blocked) {
+    return {
+      compatible: false,
+      reason: `This is not a compatible product type for AI try-on. Style Bot only supports wearable fashion items, and this looks like ${blocked[0]}.`
+    };
+  }
+  if (styleBotWearablePatterns.some((pattern) => pattern.test(text))) return { compatible: true };
+  return {
+    compatible: false,
+    reason: 'This is not a compatible product type for AI try-on. Try clothes, shoes, watches, bags, eyewear, or accessories.'
+  };
+}
+
+function styleBotProductCompatibility(product = {}, query = '') {
+  return styleBotCompatibility([
+    query,
+    product.name,
+    product.brand,
+    product.description,
+    Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
+  ].filter(Boolean).join(' '));
+}
+
 const categories = [
   ['Shirts', 'category-1.jpg', 'shirts'],
   ['T-Shirts', 'category-2.jpg', 't-shirts'],
@@ -882,16 +933,16 @@ function CustomClothingTryOn({ setUser }) {
           <div className="tryon-model-select" role="radiogroup" aria-label="Custom try-on clothing type">
             <label className={tryOnModel === 'gpt-image-2' ? 'active' : ''}>
               <input type="radio" name="tryOnModel" value="gpt-image-2" checked={tryOnModel === 'gpt-image-2'} onChange={(event) => setTryOnModel(event.target.value)} />
-              <span>Regular clothing</span>
+              <span>Everyday Clothing</span>
             </label>
             <label className={tryOnModel === 'wan-v2.6-image-to-image' ? 'active' : ''}>
               <input type="radio" name="tryOnModel" value="wan-v2.6-image-to-image" checked={tryOnModel === 'wan-v2.6-image-to-image'} onChange={(event) => setTryOnModel(event.target.value)} />
-              <span>Wan 2.6</span>
+              <span>Fitted & Swimwear</span>
             </label>
           </div>
           <div className="custom-preview-grid">
             <div className="custom-preview">
-              {garmentPreview ? <img src={garmentPreview} alt="Uploaded clothing preview" /> : <span>Garment preview</span>}
+              {garmentPreview ? <ZoomableImage src={garmentPreview} alt="Uploaded clothing preview" /> : <span>Garment preview</span>}
             </div>
             <div className="custom-preview result">
               {loading && <TryOnGenerating />}
@@ -930,20 +981,28 @@ function StyleBotPage({ user, setUser }) {
     const prompt = query.trim();
     if (!prompt || busy) return;
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const promptCompatibility = styleBotCompatibility(prompt);
     setQuery('');
     setBusy(true);
     recordEvent('style_bot_query', { query: prompt });
     setRuns((current) => [
       ...current,
-      { id, query: prompt, products: [], tryOns: {}, loading: true, generating: {}, errors: {}, searchError: '' }
+      { id, query: prompt, products: [], tryOns: {}, loading: promptCompatibility.compatible, generating: {}, errors: {}, searchError: promptCompatibility.compatible ? '' : promptCompatibility.reason }
     ]);
+    if (!promptCompatibility.compatible) {
+      setBusy(false);
+      return;
+    }
 
     try {
       const data = await api('/products/amazon-search', {
         method: 'POST',
         body: JSON.stringify({ query: prompt, limit: 2 })
       });
-      const products = data.products || [];
+      const products = (data.products || []).filter((product) => styleBotProductCompatibility(product, prompt).compatible);
+      if (products.length === 0) {
+        throw new Error('Amazon results were found, but none were compatible with AI try-on. Try a clothing item, shoes, watch, bag, eyewear, or accessory.');
+      }
       updateRun(id, () => ({
         products,
         loading: false,
