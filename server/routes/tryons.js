@@ -330,19 +330,17 @@ async function dataUriFromProduct(product, timer, options = {}) {
 
 function tryOnPrompt(product) {
   return [
-[
-  'Generate a photorealistic e-commerce fashion try-on image. This is a standard apparel catalog photo, similar to images on Zara, ASOS, or Nordstrom product pages, showing how a real clothing item fits and drapes on a person.',
-  'Reference image 1 is the shopper and is the only identity reference. Preserve their exact identity, face, facial features, hair, skin tone, body shape, pose, camera angle, crop, lighting, and background. Do not beautify, slim, age, sexualize, re-face, or otherwise alter the shopper.',
-  `Reference image 2 is only the garment/product reference: "${product.name}" by ${product.brand}. If this product image contains a model, mannequin, face, hair, skin, hands, body, pose, or background, ignore all of those completely. Do not copy, blend, borrow, or average any identity, face, hairstyle, skin tone, body shape, pose, expression, or background from reference image 2.`,
-  'Transfer only the visible clothing item from reference image 2 as-is, including its original color, fabric texture, neckline, sleeve length, hemline, cut, seams, buttons, logos, pockets, pattern, and silhouette. Do not modify the garment design.',
-  'Fit the garment naturally onto the shopper with correct scale, seams, neckline, sleeve length, hem length, folds, shadows, occlusion, and fabric texture, matching how the garment fits in the original product photo.',
-  'The final face must match reference image 1. Keep the shopper eyes, nose, mouth, jawline, facial proportions, hairline, hairstyle, and expression from reference image 1 unchanged.',
-  'This is professional, non-sexualized commercial fashion photography intended for a retail product page. The pose, framing, and styling should remain catalog-appropriate and editorial in tone, consistent with mainstream fashion retail imagery.',
-  'Keep the shopper hands, face, legs, footwear, and non-target clothing unchanged unless they must be naturally covered by the new garment.',
-  'Do not invent extra accessories, logos, text, patterns, buttons, pockets, or colors that are not present in the product image.',
-  'The output must show the shopper full body from head to toe, including complete face, hair, both arms, both legs, and both feet or footwear, fully visible within the frame with no cropping at the head, waist, knees, or ankles.',
-  'Return one clean full-body try-on image suitable for a product card, matching standard fashion e-commerce photography conventions.'
-]
+    'Generate a photorealistic e-commerce fashion try-on image. This is a standard apparel catalog photo, similar to images on Zara, ASOS, or Nordstrom product pages, showing how a real clothing item fits and drapes on a person.',
+    'Reference image 1 is the shopper and is the only identity reference. Preserve their exact identity, face, facial features, hair, skin tone, body shape, pose, camera angle, crop, lighting, and background. Do not beautify, slim, age, sexualize, re-face, or otherwise alter the shopper.',
+    `Reference image 2 is only the garment/product reference: "${product.name}" by ${product.brand}. If this product image contains a model, mannequin, face, hair, skin, hands, body, pose, or background, ignore all of those completely. Do not copy, blend, borrow, or average any identity, face, hairstyle, skin tone, body shape, pose, expression, or background from reference image 2.`,
+    'Transfer only the visible clothing item from reference image 2 as-is, including its original color, fabric texture, neckline, sleeve length, hemline, cut, seams, buttons, logos, pockets, pattern, and silhouette. Do not modify the garment design.',
+    'Fit the garment naturally onto the shopper with correct scale, seams, neckline, sleeve length, hem length, folds, shadows, occlusion, and fabric texture, matching how the garment fits in the original product photo.',
+    'The final face must match reference image 1. Keep the shopper eyes, nose, mouth, jawline, facial proportions, hairline, hairstyle, and expression from reference image 1 unchanged.',
+    'This is professional, non-sexualized commercial fashion photography intended for a retail product page. The pose, framing, and styling should remain catalog-appropriate and editorial in tone, consistent with mainstream fashion retail imagery.',
+    'Keep the shopper hands, face, legs, footwear, and non-target clothing unchanged unless they must be naturally covered by the new garment.',
+    'Do not invent extra accessories, logos, text, patterns, buttons, pockets, or colors that are not present in the product image.',
+    'MANDATORY OUTPUT CHECK — the image is invalid unless ALL of these are true: (1) full body visible head-to-toe in one frame, (2) complete face and hair visible and unobstructed, (3) both arms and both hands fully visible, (4) both legs and both feet or footwear fully visible, (5) no cropping at the head, shoulders, waist, knees, or ankles, (6) exactly one person in one single continuous photo. If the input framing does not allow a full body composition, zoom out rather than cropping any body part out of frame.',
+    'Return one clean full-body try-on image suitable for a product card, matching standard fashion e-commerce photography conventions.'
   ].join(' ');
 }
 
@@ -358,7 +356,7 @@ function wanTryOnPrompt(product) {
     'Ignore any model, mannequin, person, face, body, pose, camera angle, crop, lighting, and background present in image 2.',
     'Fit the garment naturally onto the shopper with correct scale, drape, folds, wrinkles, occlusion, and shadows.',
     'Keep every non-garment region from image 1 unchanged. Do not add accessories, styling, text, logos, background details, body changes, or extra skin exposure.',
-    'The output must show the shopper full body from head to toe, including complete face, hair, both arms, both legs, and both feet or footwear, fully visible within the frame with no cropping at the head, waist, knees, or ankles.',
+    'MANDATORY OUTPUT CHECK — the image is invalid unless ALL of these are true: (1) full body visible head-to-toe in one frame, (2) complete face and hair visible and unobstructed, (3) both arms and both hands fully visible, (4) both legs and both feet or footwear fully visible, (5) no cropping at the head, shoulders, waist, knees, or ankles, (6) exactly one person in one single continuous photo. If the input framing does not allow a full body composition, zoom out rather than cropping any body part out of frame.',
     'Return one clean, full-body, non-sexualized, photorealistic retail try-on preview.'
   ].join(' ');
 }
@@ -373,14 +371,23 @@ function wanCustomTryOnPrompt() {
     'Ignore any model, mannequin, person, face, body, pose, camera angle, crop, lighting, and background present in image 2.',
     'Fit the garment naturally onto the shopper with correct scale, drape, folds, wrinkles, occlusion, and shadows.',
     'Keep every non-garment region from image 1 unchanged. Do not add accessories, styling, text, logos, background details, body changes, or extra skin exposure.',
-    'The output must show the shopper full body from head to toe, including complete face, hair, both arms, both legs, and both feet or footwear, fully visible within the frame with no cropping at the head, waist, knees, or ankles.',
+    'MANDATORY OUTPUT CHECK — the image is invalid unless ALL of these are true: (1) full body visible head-to-toe in one frame, (2) complete face and hair visible and unobstructed, (3) both arms and both hands fully visible, (4) both legs and both feet or footwear fully visible, (5) no cropping at the head, shoulders, waist, knees, or ankles, (6) exactly one person in one single continuous photo. If the input framing does not allow a full body composition, zoom out rather than cropping any body part out of frame.',
     'Return one clean, full-body, non-sexualized, photorealistic retail try-on preview.'
   ].join(' ');
 }
 
 function wanNegativePrompt() {
-  return 'low resolution, blurry, distorted face, changed identity, changed pose, changed body, extra limbs, extra fingers, missing head, cropped face, cropped body, cropped legs, cropped feet, half body, waist-up, close-up crop, copied product model, mannequin, text, watermark, logo hallucination, overexposed, low quality, two images, split screen, side by side, diptych, collage, grid, multiple panels, duplicate image, before and after, two people, comparison layout';
+  return [
+    'low resolution, blurry, distorted face, changed identity, changed pose, changed body, changed skin tone',
+    'extra limbs, extra fingers, missing head, missing hands, missing feet',
+    'cropped face, cropped head, cropped body, cropped legs, cropped feet, cropped ankles, cropped knees',
+    'half body, waist-up, bust shot, close-up crop, portrait crop',
+    'copied product model, mannequin identity bleed',
+    'text, watermark, logo hallucination, overexposed, low quality',
+    'two images, split screen, side by side, diptych, collage, grid, multiple panels, duplicate image, before and after, two people, comparison layout'
+  ].join(', ');
 }
+
 function customTryOnPrompt() {
   return [
     'Create a photorealistic virtual try-on result for an ecommerce fashion app.',
@@ -391,7 +398,7 @@ function customTryOnPrompt() {
     'The final face must match reference image 1. Keep the shopper eyes, nose, mouth, jawline, facial proportions, hairline, hairstyle, and expression from reference image 1 unchanged.',
     'Keep the shopper hands, face, legs, footwear, and non-target clothing unchanged unless they must be naturally covered by the uploaded garment.',
     'Do not invent extra accessories, logos, text, patterns, buttons, pockets, or colors that are not present in the clothing reference.',
-    'The output must show the shopper full body from head to toe, including complete face, hair, both arms, both legs, and both feet or footwear, fully visible within the frame with no cropping at the head, waist, knees, or ankles.',
+    'MANDATORY OUTPUT CHECK — the image is invalid unless ALL of these are true: (1) full body visible head-to-toe in one frame, (2) complete face and hair visible and unobstructed, (3) both arms and both hands fully visible, (4) both legs and both feet or footwear fully visible, (5) no cropping at the head, shoulders, waist, knees, or ankles, (6) exactly one person in one single continuous photo. If the input framing does not allow a full body composition, zoom out rather than cropping any body part out of frame.',
     'Return one clean full-body try-on image.'
   ].join(' ');
 }
