@@ -40,7 +40,11 @@ const userSchema = new mongoose.Schema(
       filename: String,
       path: String,
       mimetype: String,
-      size: Number
+      size: Number,
+      status: { type: String, enum: ['uploaded', 'generating', 'ready', 'failed'], default: 'uploaded' },
+      source: { type: String, trim: true },
+      generatedAt: Date,
+      error: String
     }
   },
   { timestamps: true }
@@ -63,7 +67,10 @@ userSchema.methods.toClient = function toClient() {
     },
     devMode: Boolean(this.devMode),
     joinedAt: this.createdAt,
-    bodyPhotoUrl: this.bodyPhoto?.path ? `/${this.bodyPhoto.path}` : null
+    bodyPhotoUrl: this.bodyPhoto?.path ? `/${this.bodyPhoto.path}` : null,
+    bodyPhotoStatus: this.bodyPhoto?.status || 'uploaded',
+    bodyPhotoSource: this.bodyPhoto?.source || 'upload',
+    bodyPhotoGeneratedAt: this.bodyPhoto?.generatedAt || null
   };
 };
 

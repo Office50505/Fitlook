@@ -43,6 +43,16 @@ function chargedTokenCost(user) {
   return devMode(user) ? 0 : tokenCost();
 }
 
+function ensureTryOnProfileReady(user) {
+  const status = user?.bodyPhoto?.status || 'ready';
+  if (status === 'generating') {
+    throw new Error('Your full-body try-on profile is still being prepared. You can keep browsing and try again in a minute.');
+  }
+  if (status === 'failed') {
+    throw new Error('Could not prepare your full-body try-on profile. Please upload a clearer selfie or body photo from your profile page.');
+  }
+}
+
 function redactLargeData(value) {
   if (typeof value === 'string') {
     return value.replace(/data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=_-]{120,}/gi, '[data image omitted]');
@@ -974,6 +984,7 @@ router.post('/custom', requireUser, upload.single('garment'), async (req, res) =
 
   try {
     if (!req.file) return res.status(400).json({ message: 'Upload a clothing image first' });
+    ensureTryOnProfileReady(req.user);
     const chargedUser = await reserveToken(req.user, timer);
     if (!chargedUser) {
       timer.end({ error: 'insufficient tokens' });
@@ -1028,6 +1039,7 @@ router.post('/external', requireUser, async (req, res) => {
       return res.json({ tryOn: existing.toClient(), user: req.user.toClient(), reused: true });
     }
 
+    ensureTryOnProfileReady(req.user);
     const chargedUser = await reserveToken(req.user, timer);
     if (!chargedUser) {
       timer.end({ error: 'insufficient tokens' });
@@ -1089,6 +1101,7 @@ router.post('/:productId', requireUser, async (req, res) => {
       return res.json({ tryOn: existing.toClient(), user: req.user.toClient(), reused: true });
     }
 
+    ensureTryOnProfileReady(req.user);
     const chargedUser = await reserveToken(req.user, timer);
     if (!chargedUser) {
       timer.end({ error: 'insufficient tokens' });

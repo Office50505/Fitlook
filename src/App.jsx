@@ -1318,10 +1318,30 @@ function ProfilePage({ user, setUser }) {
   const [preview, setPreview] = useState('');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
 
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
   }, [preview]);
+
+  useEffect(() => {
+    if (user?.bodyPhotoStatus !== 'generating') return;
+    let alive = true;
+    const interval = setInterval(() => {
+      api('/auth/me')
+        .then((data) => {
+          if (!alive) return;
+          setUser(data.user);
+          if (data.user?.bodyPhotoStatus === 'ready') setMessage('Full-body try-on profile is ready.');
+          if (data.user?.bodyPhotoStatus === 'failed') setMessage('Full-body profile generation failed. Upload a clearer selfie or body photo.');
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+    };
+  }, [user?.bodyPhotoStatus, setUser]);
 
   if (!user) return <AuthPage mode="signup" setUser={setUser} />;
 
@@ -1340,15 +1360,16 @@ function ProfilePage({ user, setUser }) {
       return;
     }
     setSaving(true);
-    setMessage('Updating profile photo...');
+    setMessage('Uploading profile photo...');
     try {
       const form = new FormData();
       form.append('bodyPhoto', await prepareBodyPhoto(file));
+      form.append('profilePhotoMode', profilePhotoMode);
       const data = await api('/auth/body-photo', { method: 'POST', body: form });
       setUser(data.user);
       if (fileRef.current) fileRef.current.value = '';
       setPreview('');
-      setMessage('Profile photo updated. Future try-ons will use this image.');
+      setMessage(data.user?.bodyPhotoStatus === 'generating' ? 'Photo saved. Full-body try-on profile is preparing in the background.' : 'Profile photo updated.');
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -1397,7 +1418,9 @@ function ProfilePage({ user, setUser }) {
         <article className="profile-card profile-photo-card">
           <div>
             <h2>Try-on photo</h2>
-            <p>This is the body reference used when generating product and custom try-ons.</p>
+            <p>Upload a selfie or body photo. FitLook creates the full-body reference used for product and custom try-ons.</p>
+            {user.bodyPhotoStatus === 'generating' && <p className="form-message">Full-body try-on profile is preparing in the background.</p>}
+            {user.bodyPhotoStatus === 'failed' && <p className="form-message error-message">Full-body profile generation failed. Upload a clearer selfie or body photo.</p>}
           </div>
           <form className="profile-photo-form" onSubmit={submitPhoto}>
             <label className={`upload-box profile-photo-upload ${photoSrc ? 'has-preview' : ''}`}>
@@ -1405,12 +1428,22 @@ function ProfilePage({ user, setUser }) {
               {photoSrc ? (
                 <>
                   <img className="upload-preview" src={photoSrc} alt="Current try-on profile" />
-                  <span className="upload-overlay"><span className="upload-title">Change try-on photo</span><span className="upload-help">Use a clear front-facing full-body image.</span></span>
+                  <span className="upload-overlay"><span className="upload-title">Change try-on photo</span><span className="upload-help">Use a clear selfie or front-facing photo.</span></span>
                 </>
               ) : (
-                <span><span className="upload-icon">↑</span><span className="upload-title">Upload try-on photo</span><span className="upload-help">Front-facing, full-length image with good lighting.</span></span>
+                <span><span className="upload-icon">↑</span><span className="upload-title">Upload selfie or photo</span><span className="upload-help">FitLook will create a full-body try-on profile.</span></span>
               )}
             </label>
+            <div className="tryon-model-select" role="radiogroup" aria-label="Profile photo mode">
+              <label className={profilePhotoMode === 'ai-full-body' ? 'active' : ''}>
+                <input type="radio" name="profilePhotoMode" value="ai-full-body" checked={profilePhotoMode === 'ai-full-body'} onChange={(event) => setProfilePhotoMode(event.target.value)} />
+                <span>Create full-body AI profile</span>
+              </label>
+              <label className={profilePhotoMode === 'exact' ? 'active' : ''}>
+                <input type="radio" name="profilePhotoMode" value="exact" checked={profilePhotoMode === 'exact'} onChange={(event) => setProfilePhotoMode(event.target.value)} />
+                <span>Use this exact photo</span>
+              </label>
+            </div>
             <button className="submit" type="submit" disabled={saving || !preview}>{saving ? 'Saving...' : 'Save New Photo'}</button>
             {message && <p className="form-message">{message}</p>}
           </form>
@@ -1798,6 +1831,7 @@ function AuthPage({ mode, setUser }) {
   const [usernameTouched, setUsernameTouched] = useState(false);
   const [usernameSuggestions, setUsernameSuggestions] = useState([]);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
+  const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
   const isSignup = mode === 'signup';
 
   useEffect(() => {
@@ -1840,7 +1874,7 @@ function AuthPage({ mode, setUser }) {
 
   const submit = async (event) => {
     event.preventDefault();
-    setMessage('Working...');
+    setMessage(isSignup ? 'Creating account...' : 'Working...');
     try {
       const form = event.currentTarget;
       const body = isSignup ? new FormData(form) : JSON.stringify(Object.fromEntries(new FormData(form)));
@@ -1864,7 +1898,7 @@ function AuthPage({ mode, setUser }) {
         <div className="auth-card">
           <p className="auth-kicker">{isSignup ? 'Create Profile' : 'Welcome Back'}</p>
           <h1>{isSignup ? 'Build your AI fitting room.' : 'Log in to your fitting room.'}</h1>
-          <p className="auth-copy">{isSignup ? 'Upload one full-body photo so FitLook can generate realistic outfit previews.' : 'Continue browsing, unlock your saved looks, and generate AI previews.'}</p>
+          <p className="auth-copy">{isSignup ? 'Upload a selfie or body photo. FitLook creates a full-body profile image for realistic outfit previews.' : 'Continue browsing, unlock your saved looks, and generate AI previews.'}</p>
           <form className="auth-form" onSubmit={submit}>
             {isSignup && (
               <>
@@ -1899,19 +1933,29 @@ function AuthPage({ mode, setUser }) {
                   {bodyPhotoPreview ? (
                     <>
                       <img className="upload-preview" src={bodyPhotoPreview} alt="Uploaded profile preview" />
-                      <span className="upload-overlay"><span className="upload-title">Change profile photo</span><span className="upload-help">Use a clear front-facing full-body image.</span></span>
+                      <span className="upload-overlay"><span className="upload-title">Change profile photo</span><span className="upload-help">Use a clear selfie or front-facing photo.</span></span>
                     </>
                   ) : (
-                    <span><span className="upload-icon">↑</span><span className="upload-title">Upload a clear standing photo</span><span className="upload-help">Front-facing, full-length image with good lighting.</span></span>
+                    <span><span className="upload-icon">↑</span><span className="upload-title">Upload a selfie or photo</span><span className="upload-help">FitLook will create your full-body try-on profile.</span></span>
                   )}
                 </label>
+                <div className="tryon-model-select" role="radiogroup" aria-label="Profile photo mode">
+                  <label className={profilePhotoMode === 'ai-full-body' ? 'active' : ''}>
+                    <input type="radio" name="profilePhotoMode" value="ai-full-body" checked={profilePhotoMode === 'ai-full-body'} onChange={(event) => setProfilePhotoMode(event.target.value)} />
+                    <span>Create full-body AI profile</span>
+                  </label>
+                  <label className={profilePhotoMode === 'exact' ? 'active' : ''}>
+                    <input type="radio" name="profilePhotoMode" value="exact" checked={profilePhotoMode === 'exact'} onChange={(event) => setProfilePhotoMode(event.target.value)} />
+                    <span>Use this exact photo</span>
+                  </label>
+                </div>
                 <div className="photo-rules" aria-label="Allowed try-on photo guidelines">
                   <strong>Best photo for AI try-on</strong>
                   <ul>
-                    <li>Use a single-person, full-body photo from head to shoes.</li>
-                    <li>Stand facing the camera with your face clearly visible.</li>
+                    <li>Use a single-person selfie, portrait, or body photo.</li>
+                    <li>Face the camera with your face clearly visible.</li>
                     <li>Choose bright lighting and a simple background.</li>
-                    <li>Avoid mirror selfies, heavy filters, group photos, cropped bodies, or covered faces.</li>
+                    <li>Avoid heavy filters, group photos, covered faces, or very blurry images.</li>
                   </ul>
                 </div>
               </>
