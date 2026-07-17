@@ -152,6 +152,37 @@ function extensionFor(mimetype) {
   return '.jpg';
 }
 
+function fitRoomHeaders() {
+  if (!process.env.FITROOM_API_KEY) throw new Error('FITROOM_API_KEY is missing on the server');
+  return { 'X-API-KEY': process.env.FITROOM_API_KEY };
+}
+
+function fitRoomBaseUrl() {
+  return (process.env.FITROOM_BASE_URL || 'https://platform.fitroom.app').replace(/\/+$/, '');
+}
+
+function fitRoomDefaultClothType() {
+  return 'full_set';
+}
+
+function fitRoomHdMode() {
+  return ['1', 'true', 'yes', 'on'].includes(String(process.env.FITROOM_HD_MODE || '').toLowerCase());
+}
+
+function fitRoomPollAttempts() {
+  const value = Number(process.env.FITROOM_POLL_ATTEMPTS || 80);
+  return Number.isFinite(value) && value > 0 ? value : 80;
+}
+
+function fitRoomPollMs() {
+  const value = Number(process.env.FITROOM_POLL_MS || 1500);
+  return Number.isFinite(value) && value > 0 ? value : 1500;
+}
+
+function fitRoomClothTypeForProduct() {
+  return 'full_set';
+}
+
 function safeLocalPath(storedPath) {
   const resolved = path.resolve(rootDir, storedPath || '');
   if (!resolved.startsWith(rootDir)) throw new Error('Invalid image path');
@@ -206,6 +237,23 @@ function imageDimensionsFromBuffer(bytes) {
     }
   }
   return null;
+}
+
+function imageMimeTypeFromBuffer(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length < 12) return '';
+  if (bytes[0] === 0x89 && bytes.toString('ascii', 1, 4) === 'PNG') return 'image/png';
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return 'image/jpeg';
+  if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  if (bytes.toString('ascii', 4, 12) === 'ftypavif') return 'image/avif';
+  if (bytes.toString('ascii', 4, 12).startsWith('ftyphei') || bytes.toString('ascii', 4, 12).startsWith('ftypmif')) return 'image/heif';
+  if (bytes.toString('ascii', 0, 5) === '<svg ' || bytes.toString('ascii', 0, 5) === '<?xml') return 'image/svg+xml';
+  return '';
+}
+
+function imageMimeTypeFromResponse(response, bytes) {
+  const declared = response.headers.get('content-type') || '';
+  if (declared.startsWith('image/')) return declared.split(';')[0];
+  return imageMimeTypeFromBuffer(bytes) || declared || 'image/png';
 }
 
 function ensureMinimumImageDimensions({ bytes, label, minWidth, minHeight }) {
@@ -326,6 +374,133 @@ async function dataUriFromProduct(product, timer, options = {}) {
       throw lastError || new Error('Could not fetch product image');
     }
   });
+}
+
+async function filePartFromUpload(image, label, timer) {
+  if (!image?.path) throw new Error(`${label} image is missing`);
+  const localPath = safeLocalPath(image.path);
+  const bytes = await fs.readFile(localPath);
+  const mimetype = image.mimetype || 'image/jpeg';
+  timer?.mark(`${label} file prepared`, { kb: Math.round(bytes.length / 1024), mimetype });
+  return {
+    bytes,
+    mimetype,
+    filename: image.filename || `${label}${extensionFor(mimetype)}`
+  };
+}
+
+async function filePartFromRemoteUrl(url, label, timer) {
+  const response = await fetch(url, {
+    headers: {
+      accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      'user-agent': 'Mozilla/5.0 FitLook image fetcher'
+    }
+  });
+  if (!response.ok) throw new Error(`Could not fetch ${label} image`);
+  const mimetype = response.headers.get('content-type') || 'image/jpeg';
+  if (!mimetype.startsWith('image/')) throw new Error(`${label} image URL is not an image`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  timer?.mark(`${label} remote file prepared`, { kb: Math.round(bytes.length / 1024), mimetype });
+  return { bytes, mimetype, filename: `${label}${extensionFor(mimetype)}` };
+}
+
+async function filePartFromProduct(product, timer) {
+  if (product.image?.path) return filePartFromUpload(product.image, 'product', timer);
+  if (!product.image?.remoteUrl) throw new Error('Product image is missing');
+
+  const originalUrl = product.image.remoteUrl;
+  const highResUrl = highResolutionAmazonImageUrl(originalUrl);
+  const candidateUrls = highResUrl && highResUrl !== originalUrl ? [highResUrl, originalUrl] : [originalUrl];
+  let lastError;
+  for (const url of candidateUrls) {
+    try {
+      return await filePartFromRemoteUrl(url, 'product', timer);
+    } catch (error) {
+      lastError = error;
+      if (url !== candidateUrls[candidateUrls.length - 1]) timer?.mark('product image candidate failed', { error: readableError(error) });
+    }
+  }
+  throw lastError || new Error('Could not fetch product image');
+}
+
+function filePartFromMemoryFile(file, label, timer) {
+  if (!file?.buffer) throw new Error(`${label} image is missing`);
+  const mimetype = file.mimetype || 'image/jpeg';
+  timer?.mark(`${label} upload file prepared`, { kb: Math.round(file.buffer.length / 1024), mimetype });
+  return {
+    bytes: file.buffer,
+    mimetype,
+    filename: file.originalname || `${label}${extensionFor(mimetype)}`
+  };
+}
+
+function appendFilePart(form, name, file) {
+  form.append(name, new Blob([file.bytes], { type: file.mimetype }), file.filename);
+}
+
+async function fitRoomJson(pathname, options = {}) {
+  const response = await fetch(`${fitRoomBaseUrl()}${pathname}`, {
+    ...options,
+    headers: { ...fitRoomHeaders(), ...options.headers }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(readableError(data.error || data.message || data, 'FitRoom try-on request failed'));
+  return data;
+}
+
+async function waitForFitRoomTask(taskId, timer) {
+  const maxAttempts = fitRoomPollAttempts();
+  const pollMs = fitRoomPollMs();
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const status = await fitRoomJson(`/api/tryon/v2/tasks/${encodeURIComponent(taskId)}`);
+    if (attempt === 0 || attempt % 5 === 0 || status.status === 'COMPLETED') {
+      timer?.mark('fitroom status poll', { attempt, status: status.status, progress: status.progress });
+    }
+    if (status.status === 'COMPLETED') {
+      if (!status.download_signed_url) throw new Error('FitRoom completed the task without a download URL');
+      return status;
+    }
+    if (status.status === 'FAILED') throw new Error(readableError(status.error || status, 'FitRoom try-on generation failed'));
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+
+  throw new Error(`FitRoom try-on generation timed out after ${Math.round((maxAttempts * pollMs) / 1000)} seconds`);
+}
+
+async function callFitRoomTryOn({ user, product, garmentFile, clothType, timer }) {
+  const [person, garment] = await Promise.all([
+    filePartFromUpload(user.bodyPhoto, 'person', timer),
+    garmentFile ? Promise.resolve(filePartFromMemoryFile(garmentFile, 'garment', timer)) : filePartFromProduct(product, timer)
+  ]);
+  const selectedClothType = clothType || (product ? fitRoomClothTypeForProduct(product) : fitRoomDefaultClothType());
+  const form = new FormData();
+  appendFilePart(form, 'model_image', person);
+  appendFilePart(form, 'cloth_image', garment);
+  form.append('cloth_type', selectedClothType);
+  if (fitRoomHdMode()) form.append('hd_mode', 'true');
+
+  timer?.mark('fitroom task submit attempt', {
+    clothType: selectedClothType,
+    hdMode: fitRoomHdMode()
+  });
+  const submission = await fitRoomJson('/api/tryon/v2/tasks', {
+    method: 'POST',
+    body: form
+  });
+  if (!submission.task_id) throw new Error('FitRoom did not return a task id');
+  timer?.mark('fitroom task submitted', { taskId: submission.task_id, status: submission.status });
+
+  const result = await waitForFitRoomTask(submission.task_id, timer);
+  const { bytes, mimetype } = await generatedBytesFromUrl(result.download_signed_url, timer);
+  timer?.mark('fitroom generated image downloaded', { outputKb: Math.round(bytes.length / 1024), mimetype });
+  return {
+    bytes,
+    mimetype,
+    prompt: `FitRoom virtual try-on (${selectedClothType})`,
+    model: 'fitroom/tryon-v2',
+    quality: fitRoomHdMode() ? 'hd' : 'standard'
+  };
 }
 
 function tryOnPrompt(product) {
@@ -496,9 +671,10 @@ async function generatedBytesFromUrl(url, timer) {
       }
     });
     if (response.ok) {
+      const bytes = Buffer.from(await response.arrayBuffer());
       return {
-        bytes: Buffer.from(await response.arrayBuffer()),
-        mimetype: response.headers.get('content-type') || 'image/png'
+        bytes,
+        mimetype: imageMimeTypeFromResponse(response, bytes)
       };
     }
     lastStatus = `${response.status} ${response.statusText}`.trim();
@@ -618,16 +794,9 @@ async function saveUserCacheFile({ user, bytes, filename, mimetype }) {
 }
 
 async function saveGeneratedTryOn({ user, product, timer }) {
-  const selectedModel = tryOnModelForProduct(product);
-  timer?.mark('try-on model selected', { selectedModel });
-  const generated = selectedModel === 'wan-v2.6-image-to-image'
-    ? await callFalWanImageToImage({ user, product, timer })
-    : {
-        ...(await callFalImageEdit({ user, product, timer })),
-        mimetype: 'image/png',
-        model: imageModel(),
-        quality: imageQuality()
-      };
+  const clothType = fitRoomClothTypeForProduct(product);
+  timer?.mark('fitroom cloth type selected', { clothType });
+  const generated = await callFitRoomTryOn({ user, product, clothType, timer });
   const filename = `tryon-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   timer?.mark('generated image saved', { path: image.path });
@@ -635,7 +804,7 @@ async function saveGeneratedTryOn({ user, product, timer }) {
   return TryOn.create({
     user: user._id,
     product: product._id,
-    provider: 'fal',
+    provider: 'fitroom',
     model: generated.model,
     quality: generated.quality,
     prompt: generated.prompt,
@@ -645,16 +814,9 @@ async function saveGeneratedTryOn({ user, product, timer }) {
 }
 
 async function replaceGeneratedTryOn({ user, product, tryOnModel, timer }) {
-  const selectedModel = normalizeTryOnModel(tryOnModel);
-  timer?.mark('try-on override model selected', { selectedModel });
-  const generated = selectedModel === 'wan-v2.6-image-to-image'
-    ? await callFalWanImageToImage({ user, product, timer })
-    : {
-        ...(await callFalImageEdit({ user, product, timer })),
-        mimetype: 'image/png',
-        model: imageModel(),
-        quality: imageQuality()
-      };
+  const clothType = fitRoomClothTypeForProduct(product);
+  timer?.mark('fitroom regenerate cloth type selected', { clothType, requestedModel: tryOnModel || '' });
+  const generated = await callFitRoomTryOn({ user, product, clothType, timer });
   const filename = `tryon-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   timer?.mark('generated image replaced', { path: image.path });
@@ -663,7 +825,7 @@ async function replaceGeneratedTryOn({ user, product, tryOnModel, timer }) {
     { user: user._id, product: product._id },
     {
       $set: {
-        provider: 'fal',
+        provider: 'fitroom',
         model: generated.model,
         quality: generated.quality,
         prompt: generated.prompt,
@@ -707,16 +869,9 @@ function externalProductFromBody(value = {}) {
 }
 
 async function saveGeneratedExternalTryOn({ user, product, timer }) {
-  const selectedModel = tryOnModelForProduct(product);
-  timer?.mark('external try-on model selected', { selectedModel });
-  const generated = selectedModel === 'wan-v2.6-image-to-image'
-    ? await callFalWanImageToImage({ user, product, timer })
-    : {
-        ...(await callFalImageEdit({ user, product, timer })),
-        mimetype: 'image/png',
-        model: imageModel(),
-        quality: imageQuality()
-      };
+  const clothType = fitRoomClothTypeForProduct(product);
+  timer?.mark('external fitroom cloth type selected', { clothType });
+  const generated = await callFitRoomTryOn({ user, product, clothType, timer });
   const filename = `tryon-external-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   timer?.mark('external try-on saved', { path: image.path });
@@ -729,7 +884,7 @@ async function saveGeneratedExternalTryOn({ user, product, timer }) {
     brand: product.brand,
     category: product.category,
     imageUrl: product.imageUrl,
-    provider: 'fal',
+    provider: 'fitroom',
     model: generated.model,
     quality: generated.quality,
     prompt: generated.prompt,
@@ -754,29 +909,9 @@ async function saveUploadFile(file, prefix, user) {
 }
 
 async function saveGeneratedCustomTryOn({ user, garmentFile, tryOnModel, timer }) {
-  const selectedModel = normalizeTryOnModel(tryOnModel);
-  timer?.mark('custom try-on model selected', { selectedModel });
-  const minReferenceSize = selectedModel === 'wan-v2.6-image-to-image' ? 384 : 0;
-  const garmentDataUri = dataUriFromBuffer(garmentFile, 'garment', { minWidth: minReferenceSize, minHeight: minReferenceSize });
-  timer?.mark('custom garment prepared', { garmentKb: Math.round(garmentDataUri.length / 1024) });
-  const generated = selectedModel === 'wan-v2.6-image-to-image'
-    ? await callFalWanImageToImage({
-        user,
-        garmentDataUri,
-        prompt: wanCustomTryOnPrompt(),
-        timer
-      })
-    : {
-        ...(await callFalImageEdit({
-          user,
-          garmentDataUri,
-          prompt: customTryOnPrompt(),
-          timer
-        })),
-        mimetype: 'image/png',
-        model: imageModel(),
-        quality: imageQuality()
-      };
+  const clothType = fitRoomDefaultClothType();
+  timer?.mark('custom fitroom cloth type selected', { clothType, requestedModel: tryOnModel || '' });
+  const generated = await callFitRoomTryOn({ user, garmentFile, clothType, timer });
   const filename = `tryon-custom-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   const garment = await saveUploadFile(garmentFile, 'garment', user);
@@ -784,7 +919,7 @@ async function saveGeneratedCustomTryOn({ user, garmentFile, tryOnModel, timer }
 
   return CustomTryOn.create({
     user: user._id,
-    provider: 'fal',
+    provider: 'fitroom',
     model: generated.model,
     quality: generated.quality,
     prompt: generated.prompt,
