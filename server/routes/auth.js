@@ -1,12 +1,29 @@
 import bcrypt from 'bcryptjs';
 import express from 'express';
+import heicConvert from 'heic-convert';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import User from '../models/User.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
 
 const router = express.Router();
+const heicExtensions = new Set(['.heic', '.heif']);
+const heicMimeTypes = new Set(['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence']);
+
+function extensionForFile(file) {
+  return path.extname(file.originalname || file.filename || '').toLowerCase();
+}
+
+function isHeicUpload(file) {
+  return heicMimeTypes.has(String(file.mimetype || '').toLowerCase()) || heicExtensions.has(extensionForFile(file));
+}
+
+function isAllowedImageUpload(file) {
+  return String(file.mimetype || '').startsWith('image/') || isHeicUpload(file);
+}
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: 'uploads/',
@@ -17,9 +34,51 @@ const upload = multer({
   }),
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    cb(null, file.mimetype.startsWith('image/'));
+    cb(null, isAllowedImageUpload(file));
   }
 });
+
+async function normalizeBodyPhotoUpload(file) {
+  if (!file || !isHeicUpload(file)) return file;
+
+  const inputPath = file.path;
+  const parsed = path.parse(file.filename);
+  const filename = `${parsed.name}.jpg`;
+  const outputPath = path.join(path.dirname(inputPath), filename);
+
+  try {
+    const inputBuffer = await fs.readFile(inputPath);
+    const outputBuffer = await heicConvert({
+      buffer: inputBuffer,
+      format: 'JPEG',
+      quality: 0.9
+    });
+
+    await fs.writeFile(outputPath, Buffer.from(outputBuffer));
+    await fs.unlink(inputPath).catch(() => {});
+    const stats = await fs.stat(outputPath);
+    return {
+      ...file,
+      filename,
+      path: outputPath,
+      mimetype: 'image/jpeg',
+      size: stats.size
+    };
+  } catch (error) {
+    await fs.unlink(outputPath).catch(() => {});
+    throw new Error('Could not convert the HEIC/HEIF profile photo. Please try another image.');
+  }
+}
+
+async function bodyPhotoFromUpload(file) {
+  const bodyPhoto = await normalizeBodyPhotoUpload(file);
+  return {
+    filename: bodyPhoto.filename,
+    path: `uploads/${bodyPhoto.filename}`,
+    mimetype: bodyPhoto.mimetype,
+    size: bodyPhoto.size
+  };
+}
 
 function sign(user) {
   return jwt.sign({ sub: user._id.toString() }, process.env.JWT_SECRET, { expiresIn: '14d' });
@@ -89,6 +148,7 @@ router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
   if (existing?.username === username) return res.status(409).json({ message: 'This username is already taken' });
 
   try {
+    const bodyPhoto = await bodyPhotoFromUpload(req.file);
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await User.create({
       name,
@@ -97,16 +157,12 @@ router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
       genderPreference,
       passwordHash,
       devMode: parseBoolean(req.body.devMode),
-      bodyPhoto: {
-        filename: req.file.filename,
-        path: `uploads/${req.file.filename}`,
-        mimetype: req.file.mimetype,
-        size: req.file.size
-      }
+      bodyPhoto
     });
 
     res.status(201).json({ token: sign(user), user: user.toClient() });
   } catch (error) {
+    if (error.message?.includes('HEIC/HEIF')) return res.status(400).json({ message: error.message });
     if (error.code === 11000 && error.keyPattern?.username) return res.status(409).json({ message: 'This username is already taken' });
     if (error.code === 11000 && error.keyPattern?.email) return res.status(409).json({ message: 'An account already exists for this email' });
     throw error;
@@ -152,14 +208,14 @@ router.patch('/dev-mode', requireUser, async (req, res) => {
 
 router.post('/body-photo', requireUser, upload.single('bodyPhoto'), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Upload a profile photo first' });
-  req.user.bodyPhoto = {
-    filename: req.file.filename,
-    path: `uploads/${req.file.filename}`,
-    mimetype: req.file.mimetype,
-    size: req.file.size
-  };
-  await req.user.save();
-  res.json({ user: req.user.toClient() });
+  try {
+    req.user.bodyPhoto = await bodyPhotoFromUpload(req.file);
+    await req.user.save();
+    res.json({ user: req.user.toClient() });
+  } catch (error) {
+    if (error.message?.includes('HEIC/HEIF')) return res.status(400).json({ message: error.message });
+    throw error;
+  }
 });
 
 export default router;

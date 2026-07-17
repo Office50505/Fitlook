@@ -3,9 +3,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 const asset = (name) => `/assets/${name}`;
 const MAX_BODY_PHOTO_BYTES = 8 * 1024 * 1024;
 const TARGET_BODY_PHOTO_BYTES = 6.5 * 1024 * 1024;
+const BODY_PHOTO_ACCEPT = 'image/*,.heic,.heif,image/heic,image/heif';
 
 function formatFileSize(bytes) {
   return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
+}
+
+function isHeicFile(file) {
+  const type = String(file?.type || '').toLowerCase();
+  const name = String(file?.name || '').toLowerCase();
+  return type === 'image/heic' || type === 'image/heif' || name.endsWith('.heic') || name.endsWith('.heif');
 }
 
 function imageFromFile(file) {
@@ -18,7 +25,7 @@ function imageFromFile(file) {
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Please upload a JPG or PNG profile photo.'));
+      reject(new Error('Please upload a JPG, PNG, WebP, HEIC, or HEIF profile photo.'));
     };
     image.src = url;
   });
@@ -35,6 +42,10 @@ function canvasToBlob(canvas, quality) {
 
 async function prepareBodyPhoto(file) {
   if (!file) return file;
+  if (isHeicFile(file)) {
+    if (file.size > MAX_BODY_PHOTO_BYTES) throw new Error(`HEIC/HEIF profile photo is ${formatFileSize(file.size)}. Please choose one under 8 MB.`);
+    return file;
+  }
 
   const image = await imageFromFile(file);
   const maxSide = 1600;
@@ -1332,7 +1343,7 @@ function ProfilePage({ user, setUser }) {
     setMessage('Updating profile photo...');
     try {
       const form = new FormData();
-      form.append('bodyPhoto', file);
+      form.append('bodyPhoto', await prepareBodyPhoto(file));
       const data = await api('/auth/body-photo', { method: 'POST', body: form });
       setUser(data.user);
       if (fileRef.current) fileRef.current.value = '';
@@ -1390,7 +1401,7 @@ function ProfilePage({ user, setUser }) {
           </div>
           <form className="profile-photo-form" onSubmit={submitPhoto}>
             <label className={`upload-box profile-photo-upload ${photoSrc ? 'has-preview' : ''}`}>
-              <input ref={fileRef} name="bodyPhoto" type="file" accept="image/*" onChange={selectPhoto} />
+              <input ref={fileRef} name="bodyPhoto" type="file" accept={BODY_PHOTO_ACCEPT} onChange={selectPhoto} />
               {photoSrc ? (
                 <>
                   <img className="upload-preview" src={photoSrc} alt="Current try-on profile" />
@@ -1823,7 +1834,7 @@ function AuthPage({ mode, setUser }) {
 
   const previewBodyPhoto = (event) => {
     const file = event.currentTarget.files?.[0];
-    setMessage(file && file.size > MAX_BODY_PHOTO_BYTES ? 'Large profile photo selected. It will be optimized before upload.' : '');
+    setMessage(file && file.size > MAX_BODY_PHOTO_BYTES ? (isHeicFile(file) ? 'Large HEIC/HEIF photo selected. Please choose one under 8 MB.' : 'Large profile photo selected. It will be optimized before upload.') : '');
     setBodyPhotoPreview(file ? URL.createObjectURL(file) : '');
   };
 
@@ -1884,7 +1895,7 @@ function AuthPage({ mode, setUser }) {
             {isSignup && (
               <>
                 <label className={`upload-box ${bodyPhotoPreview ? 'has-preview' : ''}`}>
-                  <input name="bodyPhoto" type="file" accept="image/*" required onChange={previewBodyPhoto} />
+                  <input name="bodyPhoto" type="file" accept={BODY_PHOTO_ACCEPT} required onChange={previewBodyPhoto} />
                   {bodyPhotoPreview ? (
                     <>
                       <img className="upload-preview" src={bodyPhotoPreview} alt="Uploaded profile preview" />
