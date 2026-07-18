@@ -2,6 +2,8 @@ function clean(value = '') {
   return String(value || '').trim().toLowerCase();
 }
 
+const womenSpecificFashionPattern = /\b(bras?|bralettes?|sports?\s+bras?|lingerie|pant(?:y|ies)|bikinis?|swimsuits?|swimwear|one\s*piece\s+swimsuits?|monokinis?)\b/i;
+
 export function normalizeGenderPreference(value = '') {
   const gender = clean(value);
   if (['male', 'man', 'men'].includes(gender)) return 'male';
@@ -17,8 +19,13 @@ export function productGenderForPreference(value = '') {
   return '';
 }
 
+export function genderPreferenceForQuery(query = '', preference = '') {
+  if (womenSpecificFashionPattern.test(String(query || ''))) return 'female';
+  return normalizeGenderPreference(preference);
+}
+
 export function genderedSearchQuery(query = '', preference = '') {
-  const target = productGenderForPreference(preference);
+  const target = productGenderForPreference(genderPreferenceForQuery(query, preference));
   if (!target) return String(query || '').trim();
   const withoutGender = String(query || '')
     .replace(/\b(male|female|men'?s?|women'?s?|mans?|womans?|boys?|girls?|ladies|gentlemen)\b/gi, ' ')

@@ -5,10 +5,13 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import sharp from 'sharp';
 import User from '../models/User.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
 
 const router = express.Router();
+const avifExtensions = new Set(['.avif']);
+const avifMimeTypes = new Set(['image/avif', 'image/x-avif']);
 const heicExtensions = new Set(['.heic', '.heif']);
 const heicMimeTypes = new Set(['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence']);
 
@@ -55,8 +58,16 @@ function isHeicUpload(file) {
   return heicMimeTypes.has(String(file.mimetype || '').toLowerCase()) || heicExtensions.has(extensionForFile(file));
 }
 
+function isAvifUpload(file) {
+  return avifMimeTypes.has(String(file.mimetype || '').toLowerCase()) || avifExtensions.has(extensionForFile(file));
+}
+
+function isAvifBuffer(bytes) {
+  return imageMimeTypeFromBuffer(bytes) === 'image/avif';
+}
+
 function isAllowedImageUpload(file) {
-  return String(file.mimetype || '').startsWith('image/') || isHeicUpload(file);
+  return String(file.mimetype || '').startsWith('image/') || isHeicUpload(file) || isAvifUpload(file);
 }
 
 const upload = multer({
@@ -174,6 +185,7 @@ function fullBodyProfilePrompt() {
     'Create one photorealistic full-body standing profile image for a virtual fashion try-on app.',
     'Use the uploaded image only as the identity and face reference. Preserve the same person, face, facial features, skin tone, hairstyle, and natural expression as closely as possible.',
     'If the uploaded image is a selfie, cropped portrait, or half-body photo, create a plausible full-body view of the same person in a simple neutral standing pose.',
+    'If the uploaded image shows the person from a side pose, three-quarter angle, turned body, seated pose, or tilted posture, convert them into a straight front-facing pose looking at the camera.',
     'Show exactly one person, head to toe, complete face visible, both arms and hands visible, both legs and feet visible, no cropping at head, shoulders, waist, knees, ankles, or feet.',
     'Use simple fitted neutral clothing, plain shoes, clean studio lighting, and a simple neutral background. Do not add logos, text, accessories, hats, sunglasses, or extra people.',
     'Keep the result non-sexualized and suitable as a body reference image for ecommerce clothing try-on.'
@@ -221,7 +233,7 @@ function isBodyPhotoPreparationError(error) {
 }
 
 async function normalizeBodyPhotoUpload(file) {
-  if (!file || !isHeicUpload(file)) return file;
+  if (!file || (!isHeicUpload(file) && !isAvifUpload(file))) return file;
 
   const inputPath = file.path;
   const parsed = path.parse(file.filename);
@@ -230,13 +242,15 @@ async function normalizeBodyPhotoUpload(file) {
 
   try {
     const inputBuffer = await fs.readFile(inputPath);
-    const outputBuffer = await heicConvert({
-      buffer: inputBuffer,
-      format: 'JPEG',
-      quality: 0.9
-    });
+    const outputBuffer = isAvifUpload(file) || isAvifBuffer(inputBuffer)
+      ? await sharp(inputBuffer).jpeg({ quality: 90 }).toBuffer()
+      : Buffer.from(await heicConvert({
+        buffer: inputBuffer,
+        format: 'JPEG',
+        quality: 0.9
+      }));
 
-    await fs.writeFile(outputPath, Buffer.from(outputBuffer));
+    await fs.writeFile(outputPath, outputBuffer);
     await fs.unlink(inputPath).catch(() => {});
     const stats = await fs.stat(outputPath);
     return {
@@ -248,7 +262,7 @@ async function normalizeBodyPhotoUpload(file) {
     };
   } catch (error) {
     await fs.unlink(outputPath).catch(() => {});
-    throw new Error('Could not convert the HEIC/HEIF profile photo. Please try another image.');
+    throw new Error('Could not convert the AVIF/HEIC/HEIF profile photo. Please try another image.');
   }
 }
 

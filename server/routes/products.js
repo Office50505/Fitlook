@@ -7,7 +7,7 @@ import { clearRecommendationCaches } from './recommendations.js';
 import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { createHybridCache } from '../utils/cache.js';
 import { wearableCompatibility } from '../utils/wearable.js';
-import { genderCompatibility, genderedSearchQuery, normalizeGenderPreference } from '../utils/genderPreference.js';
+import { genderCompatibility, genderedSearchQuery, genderPreferenceForQuery } from '../utils/genderPreference.js';
 
 const router = express.Router();
 const readCacheTtlMs = Number(process.env.PRODUCT_READ_CACHE_TTL_MS || 30 * 1000);
@@ -396,7 +396,7 @@ function hostBrand(url) {
 const categoryRules = [
   ['ethnic wear', /\b(sarees?|saris?|lehenga(?:s)?|dupatta(?:s)?|kurta(?:s)?|kurtis?|salwar(?:s)?|churidar(?:s)?|anarkali|palazzo(?:s)?|ethnic|traditional|sharara(?:s)?)\b/i, 28],
   ['eyewear', /\b(sun\s*glasses|sunglasses|eye\s*glasses|eyeglasses|glasses|spectacles?|optical\s*frames?|frames?|lenses?|goggles?|aviator|wayfarer)\b/i, 30],
-  ['innerwear', /\b(underwear|briefs?|boxers?|trunks?|vests?|innerwear|lingerie|bras?|pant(?:y|ies)|camisoles?|shapewear)\b/i, 30],
+  ['innerwear', /\b(underwear|briefs?|boxers?|trunks?|vests?|innerwear|lingerie|bras?|bralettes?|sports?\s+bras?|pant(?:y|ies)|camisoles?|shapewear|bikinis?|swimsuits?|swimwear|monokinis?|tankinis?)\b/i, 30],
   ['sleepwear', /\b(night(?:y|ie|wear|gown|suit|dress)|sleepwear|pajamas?|pyjamas?|loungewear|robe)\b/i, 26],
   ['dresses', /\b(dresses?|gowns?|bodycon|maxi|midi|mini\s*dress|a-line\s*dress|wrap\s*dress|party\s*dress)\b/i, 24],
   ['skirts', /\b(skirts?|skorts?)\b/i, 24],
@@ -898,6 +898,27 @@ function draftToExternalProduct(draft, fallbackQuery = '') {
   };
 }
 
+function textForIntent(product = {}) {
+  return [
+    product.name,
+    product.brand,
+    product.category,
+    product.description,
+    Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
+  ].filter(Boolean).join(' ');
+}
+
+function queryIntentCompatibility(product = {}, query = '') {
+  const prompt = String(query || '');
+  const text = textForIntent(product);
+  const braIntent = /\b(bras?|bralettes?|sports?\s+bras?)\b/i.test(prompt);
+  const swimIntent = /\b(bikinis?|swimsuits?|swimwear|monokinis?|one\s*piece\s+swimsuits?)\b/i.test(prompt);
+
+  if (braIntent && !/\b(bras?|bralettes?|sports?\s+bras?|lingerie)\b/i.test(text)) return false;
+  if (swimIntent && !/\b(bikinis?|swimsuits?|swimwear|monokinis?|tankinis?|one\s*piece)\b/i.test(text)) return false;
+  return true;
+}
+
 function requireAdmin(req, res, next) {
   const adminKey = process.env.ADMIN_KEY;
   if (!adminKey) return res.status(500).json({ message: 'ADMIN_KEY is missing on the server' });
@@ -963,7 +984,7 @@ router.get('/', async (req, res) => {
 router.post('/amazon-search', requireUser, async (req, res) => {
   const query = String(req.body?.query || '').trim();
   const limit = Math.min(Math.max(Number(req.body?.limit) || 2, 1), 2);
-  const genderPreference = normalizeGenderPreference(req.body?.genderPreference || req.user.genderPreference);
+  const genderPreference = genderPreferenceForQuery(query, req.body?.genderPreference || req.user.genderPreference);
   if (!query) return res.status(400).json({ message: 'Tell the style bot what you want first' });
 
   try {
@@ -999,6 +1020,7 @@ router.post('/amazon-search', requireUser, async (req, res) => {
     for (const result of settled) {
       if (result.status !== 'fulfilled') continue;
       if (products.some((product) => product.sourceUrl === result.value.sourceUrl)) continue;
+      if (!queryIntentCompatibility(result.value, query)) continue;
       if (!wearableCompatibility(result.value, { query }).compatible) continue;
       if (!genderCompatibility(result.value, genderPreference).compatible) continue;
       products.push(result.value);

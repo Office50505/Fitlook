@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 const asset = (name) => `/assets/${name}`;
 const MAX_BODY_PHOTO_BYTES = 8 * 1024 * 1024;
 const TARGET_BODY_PHOTO_BYTES = 6.5 * 1024 * 1024;
-const BODY_PHOTO_ACCEPT = 'image/*,.heic,.heif,image/heic,image/heif';
+const BODY_PHOTO_ACCEPT = 'image/*,.avif,.heic,.heif,image/avif,image/heic,image/heif';
 
 function formatFileSize(bytes) {
   return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
@@ -13,6 +13,12 @@ function isHeicFile(file) {
   const type = String(file?.type || '').toLowerCase();
   const name = String(file?.name || '').toLowerCase();
   return type === 'image/heic' || type === 'image/heif' || name.endsWith('.heic') || name.endsWith('.heif');
+}
+
+function isAvifFile(file) {
+  const type = String(file?.type || '').toLowerCase();
+  const name = String(file?.name || '').toLowerCase();
+  return type === 'image/avif' || type === 'image/x-avif' || name.endsWith('.avif');
 }
 
 function imageFromFile(file) {
@@ -25,7 +31,7 @@ function imageFromFile(file) {
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Please upload a JPG, PNG, WebP, HEIC, or HEIF profile photo.'));
+      reject(new Error('Please upload a JPG, PNG, WebP, AVIF, HEIC, or HEIF profile photo.'));
     };
     image.src = url;
   });
@@ -42,8 +48,8 @@ function canvasToBlob(canvas, quality) {
 
 async function prepareBodyPhoto(file) {
   if (!file) return file;
-  if (isHeicFile(file)) {
-    if (file.size > MAX_BODY_PHOTO_BYTES) throw new Error(`HEIC/HEIF profile photo is ${formatFileSize(file.size)}. Please choose one under 8 MB.`);
+  if (isHeicFile(file) || isAvifFile(file)) {
+    if (file.size > MAX_BODY_PHOTO_BYTES) throw new Error(`AVIF/HEIC/HEIF profile photo is ${formatFileSize(file.size)}. Please choose one under 8 MB.`);
     return file;
   }
 
@@ -145,7 +151,7 @@ const styleBotWearablePatterns = [
   /\b(cloth(?:e|es|ing)?|apparel|garments?|outfits?|fashion|wearable|style|look)\b/i,
   /\b(sarees?|saris?|lehenga(?:s)?|dupatta(?:s)?|kurta(?:s)?|kurtis?|salwar(?:s)?|churidar(?:s)?|anarkali|palazzo(?:s)?|sharara(?:s)?)\b/i,
   /\b(sun\s*glasses|sunglasses|eye\s*glasses|eyeglasses|spectacles?|optical\s*frames?|goggles?|aviator|wayfarer)\b/i,
-  /\b(underwear|briefs?|boxers?|trunks?|vests?|innerwear|lingerie|bras?|pant(?:y|ies)|camisoles?|shapewear)\b/i,
+  /\b(underwear|briefs?|boxers?|trunks?|vests?|innerwear|lingerie|bras?|bralettes?|sports?\s+bras?|pant(?:y|ies)|camisoles?|shapewear|bikinis?|swimsuits?|swimwear|monokinis?)\b/i,
   /\b(night(?:y|ie|wear|gown|suit|dress)|sleepwear|pajamas?|pyjamas?|loungewear|robe)\b/i,
   /\b(dress(?:es)?|gowns?|suits?|skirts?|skorts?|jeans?|pants?|trousers?|joggers?|leggings?|chinos?|shorts?|bermudas?)\b/i,
   /\b(hoodies?|sweatshirts?|sweaters?|pullovers?|jumpers?|jackets?|overshirts?|blazers?|coats?|windcheaters?|parkas?|shrugs?)\b/i,
@@ -183,13 +189,19 @@ function styleBotCompatibility(value = '') {
 }
 
 function styleBotProductCompatibility(product = {}, query = '') {
-  return styleBotCompatibility([
-    query,
+  const productText = [
     product.name,
     product.brand,
+    product.category,
     product.description,
     Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
-  ].filter(Boolean).join(' '));
+  ].filter(Boolean).join(' ');
+  const braIntent = /\b(bras?|bralettes?|sports?\s+bras?)\b/i.test(query);
+  const swimIntent = /\b(bikinis?|swimsuits?|swimwear|monokinis?|one\s*piece\s+swimsuits?)\b/i.test(query);
+
+  if (braIntent && !/\b(bras?|bralettes?|sports?\s+bras?|lingerie)\b/i.test(productText)) return { compatible: false };
+  if (swimIntent && !/\b(bikinis?|swimsuits?|swimwear|monokinis?|tankinis?|one\s*piece)\b/i.test(productText)) return { compatible: false };
+  return styleBotCompatibility([query, productText].filter(Boolean).join(' '));
 }
 
 function productGenderForPreference(value = '') {
@@ -198,8 +210,13 @@ function productGenderForPreference(value = '') {
   return '';
 }
 
+function genderPreferenceForStyleQuery(query = '', preference = '') {
+  if (/\b(bras?|bralettes?|sports?\s+bras?|lingerie|pant(?:y|ies)|bikinis?|swimsuits?|swimwear|one\s*piece\s+swimsuits?|monokinis?)\b/i.test(query)) return 'female';
+  return preference;
+}
+
 function genderedStyleBotQuery(query = '', preference = '') {
-  const target = productGenderForPreference(preference);
+  const target = productGenderForPreference(genderPreferenceForStyleQuery(query, preference));
   if (!target) return query;
   const withoutGender = String(query || '')
     .replace(/\b(male|female|men'?s?|women'?s?|mans?|womans?|boys?|girls?|ladies|gentlemen)\b/gi, ' ')
@@ -920,27 +937,30 @@ function CustomTryOnPage({ user, setUser }) {
 
 function CustomClothingTryOn({ setUser }) {
   const fileRef = useRef(null);
+  const cameraRef = useRef(null);
+  const [garmentFile, setGarmentFile] = useState(null);
   const [garmentPreview, setGarmentPreview] = useState('');
   const [result, setResult] = useState(null);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState(null);
-  const [tryOnModel, setTryOnModel] = useState('gpt-image-2');
 
   const chooseGarment = (event) => {
     const file = event.currentTarget.files?.[0];
     setResult(null);
     setMessage('');
     if (!file) {
+      setGarmentFile(null);
       setGarmentPreview('');
       return;
     }
+    setGarmentFile(file);
     setGarmentPreview(URL.createObjectURL(file));
   };
 
   const submit = async (event) => {
     event.preventDefault();
-    const file = fileRef.current?.files?.[0];
+    const file = garmentFile || fileRef.current?.files?.[0] || cameraRef.current?.files?.[0];
     if (!file) {
       setMessage('Upload a clothing photo first.');
       return;
@@ -950,10 +970,9 @@ function CustomClothingTryOn({ setUser }) {
     try {
       const form = new FormData();
       form.append('garment', file);
-      form.append('tryOnModel', tryOnModel);
       const data = await api('/tryons/custom', { method: 'POST', body: form });
       setResult(data.tryOn);
-      recordEvent('custom_tryon', { metadata: { tryOnModel } });
+      recordEvent('custom_tryon');
       if (data.user) {
         setUser((current) => {
           if (!current) return data.user;
@@ -985,16 +1004,8 @@ function CustomClothingTryOn({ setUser }) {
               <span className="upload-help">Use a front-facing product photo with the garment clearly visible.</span>
             </span>
           </label>
-          <div className="tryon-model-select" role="radiogroup" aria-label="Custom try-on clothing type">
-            <label className={tryOnModel === 'gpt-image-2' ? 'active' : ''}>
-              <input type="radio" name="tryOnModel" value="gpt-image-2" checked={tryOnModel === 'gpt-image-2'} onChange={(event) => setTryOnModel(event.target.value)} />
-              <span>Everyday Clothing</span>
-            </label>
-            <label className={tryOnModel === 'wan-v2.6-image-to-image' ? 'active' : ''}>
-              <input type="radio" name="tryOnModel" value="wan-v2.6-image-to-image" checked={tryOnModel === 'wan-v2.6-image-to-image'} onChange={(event) => setTryOnModel(event.target.value)} />
-              <span>Fitted & Swimwear</span>
-            </label>
-          </div>
+          <input ref={cameraRef} className="camera-input" type="file" accept="image/*" capture="environment" onChange={chooseGarment} />
+          <button className="secondary-button camera-button" type="button" onClick={() => cameraRef.current?.click()}>Take Photo</button>
           <div className="custom-preview-grid">
             <div className="custom-preview">
               {garmentPreview ? <ZoomableImage src={garmentPreview} alt="Uploaded clothing preview" /> : <span>Garment preview</span>}
@@ -1037,7 +1048,7 @@ function StyleBotPage({ user, setUser }) {
     if (!prompt || busy) return;
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const promptCompatibility = styleBotCompatibility(prompt);
-    const genderPreference = user.genderPreference || 'other';
+    const genderPreference = genderPreferenceForStyleQuery(prompt, user.genderPreference || 'other');
     const searchPrompt = genderedStyleBotQuery(prompt, genderPreference);
     setQuery('');
     setBusy(true);
@@ -1315,7 +1326,9 @@ function TokenPage({ user, setUser }) {
 
 function ProfilePage({ user, setUser }) {
   const fileRef = useRef(null);
+  const cameraRef = useRef(null);
   const [preview, setPreview] = useState('');
+  const [photoFile, setPhotoFile] = useState(null);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
@@ -1348,13 +1361,14 @@ function ProfilePage({ user, setUser }) {
   const photoSrc = preview || user.bodyPhotoUrl;
   const selectPhoto = (event) => {
     const file = event.currentTarget.files?.[0];
+    setPhotoFile(file || null);
     setPreview(file ? URL.createObjectURL(file) : '');
     setMessage('');
   };
 
   const submitPhoto = async (event) => {
     event.preventDefault();
-    const file = fileRef.current?.files?.[0];
+    const file = photoFile || fileRef.current?.files?.[0] || cameraRef.current?.files?.[0];
     if (!file) {
       setMessage('Choose a new profile photo first.');
       return;
@@ -1368,6 +1382,8 @@ function ProfilePage({ user, setUser }) {
       const data = await api('/auth/body-photo', { method: 'POST', body: form });
       setUser(data.user);
       if (fileRef.current) fileRef.current.value = '';
+      if (cameraRef.current) cameraRef.current.value = '';
+      setPhotoFile(null);
       setPreview('');
       setMessage(data.user?.bodyPhotoStatus === 'generating' ? 'Photo saved. Full-body try-on profile is preparing in the background.' : 'Profile photo updated.');
     } catch (err) {
@@ -1434,6 +1450,8 @@ function ProfilePage({ user, setUser }) {
                 <span><span className="upload-icon">↑</span><span className="upload-title">Upload selfie or photo</span><span className="upload-help">FitLook will create a full-body try-on profile.</span></span>
               )}
             </label>
+            <input ref={cameraRef} className="camera-input" type="file" accept={BODY_PHOTO_ACCEPT} capture="user" onChange={selectPhoto} />
+            <button className="secondary-button camera-button" type="button" onClick={() => cameraRef.current?.click()}>Take Photo</button>
             <div className="tryon-model-select" role="radiogroup" aria-label="Profile photo mode">
               <label className={profilePhotoMode === 'ai-full-body' ? 'active' : ''}>
                 <input type="radio" name="profilePhotoMode" value="ai-full-body" checked={profilePhotoMode === 'ai-full-body'} onChange={(event) => setProfilePhotoMode(event.target.value)} />
@@ -1825,11 +1843,13 @@ function InfoPage({ meta, children, user, ctaLabel, ctaHref }) {
 }
 
 function AuthPage({ mode, setUser }) {
+  const bodyPhotoCameraRef = useRef(null);
   const [message, setMessage] = useState('');
   const [nameValue, setNameValue] = useState('');
   const [username, setUsername] = useState('');
   const [usernameTouched, setUsernameTouched] = useState(false);
   const [usernameSuggestions, setUsernameSuggestions] = useState([]);
+  const [bodyPhotoFile, setBodyPhotoFile] = useState(null);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
   const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
   const isSignup = mode === 'signup';
@@ -1868,7 +1888,8 @@ function AuthPage({ mode, setUser }) {
 
   const previewBodyPhoto = (event) => {
     const file = event.currentTarget.files?.[0];
-    setMessage(file && file.size > MAX_BODY_PHOTO_BYTES ? (isHeicFile(file) ? 'Large HEIC/HEIF photo selected. Please choose one under 8 MB.' : 'Large profile photo selected. It will be optimized before upload.') : '');
+    setBodyPhotoFile(file || null);
+    setMessage(file && file.size > MAX_BODY_PHOTO_BYTES ? ((isHeicFile(file) || isAvifFile(file)) ? 'Large AVIF/HEIC/HEIF photo selected. Please choose one under 8 MB.' : 'Large profile photo selected. It will be optimized before upload.') : '');
     setBodyPhotoPreview(file ? URL.createObjectURL(file) : '');
   };
 
@@ -1879,7 +1900,8 @@ function AuthPage({ mode, setUser }) {
       const form = event.currentTarget;
       const body = isSignup ? new FormData(form) : JSON.stringify(Object.fromEntries(new FormData(form)));
       if (isSignup) {
-        const bodyPhoto = form.elements.bodyPhoto?.files?.[0];
+        const bodyPhoto = bodyPhotoFile || form.elements.bodyPhoto?.files?.[0] || bodyPhotoCameraRef.current?.files?.[0];
+        if (!bodyPhoto) throw new Error('Choose or take a profile photo first.');
         body.set('bodyPhoto', await prepareBodyPhoto(bodyPhoto));
       }
       const data = await api(isSignup ? '/auth/signup' : '/auth/login', { method: 'POST', body });
@@ -1929,7 +1951,7 @@ function AuthPage({ mode, setUser }) {
             {isSignup && (
               <>
                 <label className={`upload-box ${bodyPhotoPreview ? 'has-preview' : ''}`}>
-                  <input name="bodyPhoto" type="file" accept={BODY_PHOTO_ACCEPT} required onChange={previewBodyPhoto} />
+                  <input name="bodyPhoto" type="file" accept={BODY_PHOTO_ACCEPT} onChange={previewBodyPhoto} />
                   {bodyPhotoPreview ? (
                     <>
                       <img className="upload-preview" src={bodyPhotoPreview} alt="Uploaded profile preview" />
@@ -1939,6 +1961,8 @@ function AuthPage({ mode, setUser }) {
                     <span><span className="upload-icon">↑</span><span className="upload-title">Upload a selfie or photo</span><span className="upload-help">FitLook will create your full-body try-on profile.</span></span>
                   )}
                 </label>
+                <input ref={bodyPhotoCameraRef} className="camera-input" type="file" accept={BODY_PHOTO_ACCEPT} capture="user" onChange={previewBodyPhoto} />
+                <button className="secondary-button camera-button" type="button" onClick={() => bodyPhotoCameraRef.current?.click()}>Take Photo</button>
                 <div className="tryon-model-select" role="radiogroup" aria-label="Profile photo mode">
                   <label className={profilePhotoMode === 'ai-full-body' ? 'active' : ''}>
                     <input type="radio" name="profilePhotoMode" value="ai-full-body" checked={profilePhotoMode === 'ai-full-body'} onChange={(event) => setProfilePhotoMode(event.target.value)} />

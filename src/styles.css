@@ -620,6 +620,17 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
   box-shadow: 0 16px 42px rgba(74, 53, 31, .08);
 }
 .custom-upload { min-height: 120px; }
+.camera-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.camera-button {
+  width: 100%;
+  cursor: pointer;
+}
 .tryon-model-select {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

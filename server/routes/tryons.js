@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'node:fs/promises';
 import multer from 'multer';
 import path from 'node:path';
+import sharp from 'sharp';
 import { fileURLToPath } from 'node:url';
 import CustomTryOn from '../models/CustomTryOn.js';
 import ExternalTryOn from '../models/ExternalTryOn.js';
@@ -22,13 +23,27 @@ const imageCacheMaxItems = Number(process.env.TRYON_IMAGE_CACHE_MAX_ITEMS || 80)
 const localImageDataUriCache = new Map();
 const remoteImageDataUriCache = new Map();
 const inFlightImageDataUriCache = new Map();
+const avifExtensions = new Set(['.avif']);
+const avifMimeTypes = new Set(['image/avif', 'image/x-avif']);
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    cb(null, file.mimetype.startsWith('image/'));
+    cb(null, isAllowedImageUpload(file));
   }
 });
+
+function extensionForFile(file) {
+  return path.extname(file.originalname || file.filename || '').toLowerCase();
+}
+
+function isAvifUpload(file) {
+  return avifMimeTypes.has(String(file.mimetype || '').toLowerCase()) || avifExtensions.has(extensionForFile(file));
+}
+
+function isAllowedImageUpload(file) {
+  return String(file.mimetype || '').startsWith('image/') || isAvifUpload(file);
+}
 
 function tokenCost() {
   const value = Number(process.env.TRYON_TOKEN_COST || 1);
@@ -266,6 +281,33 @@ function imageMimeTypeFromResponse(response, bytes) {
   return imageMimeTypeFromBuffer(bytes) || declared || 'image/png';
 }
 
+function isAvifBytes(bytes, mimetype = '') {
+  return avifMimeTypes.has(String(mimetype || '').toLowerCase()) || imageMimeTypeFromBuffer(bytes) === 'image/avif';
+}
+
+function filenameWithExtension(filename = '', fallbackName = 'image', extension = '.jpg') {
+  const parsed = path.parse(filename || fallbackName);
+  return `${parsed.name || fallbackName}${extension}`;
+}
+
+async function normalizeAvifImage({ bytes, mimetype, filename, label, timer }) {
+  if (!isAvifBytes(bytes, mimetype) && !avifExtensions.has(path.extname(filename || '').toLowerCase())) {
+    return { bytes, mimetype, filename };
+  }
+
+  const outputBytes = await sharp(bytes).jpeg({ quality: 90 }).toBuffer();
+  const outputFilename = filenameWithExtension(filename, label, '.jpg');
+  timer?.mark(`${label} avif converted`, {
+    inputKb: Math.round(bytes.length / 1024),
+    outputKb: Math.round(outputBytes.length / 1024)
+  });
+  return {
+    bytes: outputBytes,
+    mimetype: 'image/jpeg',
+    filename: outputFilename
+  };
+}
+
 function ensureMinimumImageDimensions({ bytes, label, minWidth, minHeight }) {
   if (!minWidth && !minHeight) return null;
   const dimensions = imageDimensionsFromBuffer(bytes);
@@ -337,9 +379,16 @@ async function dataUriFromUpload(image, label, timer, options = {}) {
     label,
     load: async () => {
       const bytes = await fs.readFile(localPath);
-      const dimensions = ensureMinimumImageDimensions({ bytes, label, minWidth, minHeight });
+      const normalized = await normalizeAvifImage({
+        bytes,
+        mimetype,
+        filename: image.filename,
+        label,
+        timer
+      });
+      const dimensions = ensureMinimumImageDimensions({ bytes: normalized.bytes, label, minWidth, minHeight });
       if (dimensions) timer?.mark(`${label} dimensions checked`, dimensions);
-      return `data:${mimetype};base64,${bytes.toString('base64')}`;
+      return `data:${normalized.mimetype};base64,${normalized.bytes.toString('base64')}`;
     }
   });
 }
@@ -373,9 +422,16 @@ async function dataUriFromProduct(product, timer, options = {}) {
           const mimetype = response.headers.get('content-type') || 'image/jpeg';
           if (!mimetype.startsWith('image/')) throw new Error('Product image URL is not an image');
           const bytes = Buffer.from(await response.arrayBuffer());
-          const dimensions = ensureMinimumImageDimensions({ bytes, label: 'product', minWidth, minHeight });
+          const normalized = await normalizeAvifImage({
+            bytes,
+            mimetype,
+            filename: path.basename(new URL(url).pathname) || 'product',
+            label: 'product',
+            timer
+          });
+          const dimensions = ensureMinimumImageDimensions({ bytes: normalized.bytes, label: 'product', minWidth, minHeight });
           if (dimensions) timer?.mark('product dimensions checked', { ...dimensions, highRes: url !== originalUrl });
-          return `data:${mimetype};base64,${bytes.toString('base64')}`;
+          return `data:${normalized.mimetype};base64,${normalized.bytes.toString('base64')}`;
         } catch (error) {
           lastError = error;
           if (url !== candidateUrls[candidateUrls.length - 1]) timer?.mark('product image candidate failed', { error: readableError(error) });
@@ -391,11 +447,18 @@ async function filePartFromUpload(image, label, timer) {
   const localPath = safeLocalPath(image.path);
   const bytes = await fs.readFile(localPath);
   const mimetype = image.mimetype || 'image/jpeg';
-  timer?.mark(`${label} file prepared`, { kb: Math.round(bytes.length / 1024), mimetype });
-  return {
+  const normalized = await normalizeAvifImage({
     bytes,
     mimetype,
-    filename: image.filename || `${label}${extensionFor(mimetype)}`
+    filename: image.filename,
+    label,
+    timer
+  });
+  timer?.mark(`${label} file prepared`, { kb: Math.round(normalized.bytes.length / 1024), mimetype: normalized.mimetype });
+  return {
+    bytes: normalized.bytes,
+    mimetype: normalized.mimetype,
+    filename: normalized.filename || image.filename || `${label}${extensionFor(normalized.mimetype)}`
   };
 }
 
@@ -410,8 +473,19 @@ async function filePartFromRemoteUrl(url, label, timer) {
   const mimetype = response.headers.get('content-type') || 'image/jpeg';
   if (!mimetype.startsWith('image/')) throw new Error(`${label} image URL is not an image`);
   const bytes = Buffer.from(await response.arrayBuffer());
-  timer?.mark(`${label} remote file prepared`, { kb: Math.round(bytes.length / 1024), mimetype });
-  return { bytes, mimetype, filename: `${label}${extensionFor(mimetype)}` };
+  const normalized = await normalizeAvifImage({
+    bytes,
+    mimetype,
+    filename: path.basename(new URL(url).pathname) || label,
+    label,
+    timer
+  });
+  timer?.mark(`${label} remote file prepared`, { kb: Math.round(normalized.bytes.length / 1024), mimetype: normalized.mimetype });
+  return {
+    bytes: normalized.bytes,
+    mimetype: normalized.mimetype,
+    filename: normalized.filename || `${label}${extensionFor(normalized.mimetype)}`
+  };
 }
 
 async function filePartFromProduct(product, timer) {
@@ -433,14 +507,21 @@ async function filePartFromProduct(product, timer) {
   throw lastError || new Error('Could not fetch product image');
 }
 
-function filePartFromMemoryFile(file, label, timer) {
+async function filePartFromMemoryFile(file, label, timer) {
   if (!file?.buffer) throw new Error(`${label} image is missing`);
   const mimetype = file.mimetype || 'image/jpeg';
-  timer?.mark(`${label} upload file prepared`, { kb: Math.round(file.buffer.length / 1024), mimetype });
-  return {
+  const normalized = await normalizeAvifImage({
     bytes: file.buffer,
     mimetype,
-    filename: file.originalname || `${label}${extensionFor(mimetype)}`
+    filename: file.originalname,
+    label,
+    timer
+  });
+  timer?.mark(`${label} upload file prepared`, { kb: Math.round(normalized.bytes.length / 1024), mimetype: normalized.mimetype });
+  return {
+    bytes: normalized.bytes,
+    mimetype: normalized.mimetype,
+    filename: normalized.filename || file.originalname || `${label}${extensionFor(normalized.mimetype)}`
   };
 }
 
@@ -481,7 +562,7 @@ async function waitForFitRoomTask(taskId, timer) {
 async function callFitRoomTryOn({ user, product, garmentFile, clothType, timer }) {
   const [person, garment] = await Promise.all([
     filePartFromUpload(user.bodyPhoto, 'person', timer),
-    garmentFile ? Promise.resolve(filePartFromMemoryFile(garmentFile, 'garment', timer)) : filePartFromProduct(product, timer)
+    garmentFile ? filePartFromMemoryFile(garmentFile, 'garment', timer) : filePartFromProduct(product, timer)
   ]);
   const selectedClothType = clothType || (product ? fitRoomClothTypeForProduct(product) : fitRoomDefaultClothType());
   const form = new FormData();
@@ -903,6 +984,25 @@ async function saveGeneratedExternalTryOn({ user, product, timer }) {
   });
 }
 
+async function normalizeMemoryImageFile(file, label, timer) {
+  if (!file?.buffer) return file;
+  const normalized = await normalizeAvifImage({
+    bytes: file.buffer,
+    mimetype: file.mimetype || 'image/jpeg',
+    filename: file.originalname,
+    label,
+    timer
+  });
+  if (normalized.bytes === file.buffer && normalized.mimetype === file.mimetype) return file;
+  return {
+    ...file,
+    buffer: normalized.bytes,
+    mimetype: normalized.mimetype,
+    originalname: normalized.filename || file.originalname,
+    size: normalized.bytes.length
+  };
+}
+
 async function saveUploadFile(file, prefix, user) {
   const filename = `${prefix}-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(file.mimetype)}`;
   const storedPath = user
@@ -918,9 +1018,9 @@ async function saveUploadFile(file, prefix, user) {
   };
 }
 
-async function saveGeneratedCustomTryOn({ user, garmentFile, tryOnModel, timer }) {
+async function saveGeneratedCustomTryOn({ user, garmentFile, timer }) {
   const clothType = fitRoomDefaultClothType();
-  timer?.mark('custom fitroom cloth type selected', { clothType, requestedModel: tryOnModel || '' });
+  timer?.mark('custom fitroom cloth type selected', { clothType });
   const generated = await callFitRoomTryOn({ user, garmentFile, clothType, timer });
   const filename = `tryon-custom-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
@@ -985,6 +1085,7 @@ router.post('/custom', requireUser, upload.single('garment'), async (req, res) =
   try {
     if (!req.file) return res.status(400).json({ message: 'Upload a clothing image first' });
     ensureTryOnProfileReady(req.user);
+    const garmentFile = await normalizeMemoryImageFile(req.file, 'garment', timer);
     const chargedUser = await reserveToken(req.user, timer);
     if (!chargedUser) {
       timer.end({ error: 'insufficient tokens' });
@@ -995,8 +1096,7 @@ router.post('/custom', requireUser, upload.single('garment'), async (req, res) =
 
     const tryOn = await saveGeneratedCustomTryOn({
       user: req.user,
-      garmentFile: req.file,
-      tryOnModel: req.body?.tryOnModel,
+      garmentFile,
       timer
     });
     timer.end({ tokensRemaining: req.user.tokens });
