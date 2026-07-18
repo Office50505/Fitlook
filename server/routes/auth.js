@@ -182,13 +182,11 @@ async function generatedBytesFromUrl(url) {
 
 function fullBodyProfilePrompt() {
   return [
-    'Create one photorealistic full-body standing profile image for a virtual fashion try-on app.',
-    'Use the uploaded image only as the identity and face reference. Preserve the same person, face, facial features, skin tone, hairstyle, and natural expression as closely as possible.',
-    'If the uploaded image is a selfie, cropped portrait, or half-body photo, create a plausible full-body view of the same person in a simple neutral standing pose.',
-    'If the uploaded image shows the person from a side pose, three-quarter angle, turned body, seated pose, or tilted posture, convert them into a straight front-facing pose looking at the camera.',
-    'Show exactly one person, head to toe, complete face visible, both arms and hands visible, both legs and feet visible, no cropping at head, shoulders, waist, knees, ankles, or feet.',
-    'Use simple fitted neutral clothing, plain shoes, clean studio lighting, and a simple neutral background. Do not add logos, text, accessories, hats, sunglasses, or extra people.',
-    'Keep the result non-sexualized and suitable as a body reference image for ecommerce clothing try-on.'
+    'Create one photorealistic, full-body, head-to-toe image of the exact person shown in the uploaded reference photo, standing upright in a straight front-facing pose, looking directly at the camera. This is a neutral body reference image for an ecommerce virtual clothing try-on app.',
+    'FACE PRESERVATION — ABSOLUTE, NON-NEGOTIABLE RULE: The face must be a 100% exact, unaltered match to the uploaded reference. Do NOT change, redesign, beautify, smooth, slim, age, de-age, or reinterpret the face in any way — not even slightly. Preserve the identical face shape, eyes, eyebrows, nose, lips, jawline, chin, ears, hairline, hairstyle, skin tone, skin texture, and any marks or moles. If the reference face is at a side angle, three-quarter view, or tilted, render it front-facing but reconstruct the SAME face — never substitute a similar or generic face. If the reference face shows any expression, keep the exact same facial features and render a calm, natural, neutral expression — change only the expression, never the features or identity. The output face must be instantly recognizable as the same individual.',
+    'BODY & POSE: Exactly one person, complete full body visible from top of head to soles of feet. Straight, relaxed standing pose, body squared to the camera, arms relaxed at the sides, both hands and all fingers visible, feet slightly apart, weight evenly balanced. If the reference is a selfie, cropped portrait, or half-body photo, generate a plausible realistic full body consistent with the person\'s visible build, age, and skin tone. If the reference shows a seated, turned, angled, or tilted posture, convert it to the straight front-facing standing pose above — without altering the face. No cropping at the head, shoulders, arms, hands, waist, hips, knees, ankles, or feet.',
+    'CLOTHING & SCENE: Simple fitted neutral clothing: plain fitted t-shirt and plain fitted pants in solid neutral colors, plain simple shoes. Clean even studio lighting, soft shadows, sharp focus, realistic proportions, true-to-life skin. Plain seamless neutral background, light gray or off-white.',
+    'DO NOT: Do not modify the face or identity in any way, under any condition. No logos, text, watermarks, accessories, jewelry, hats, sunglasses, bags, or props. No extra people, mirrors, reflections, or duplicated limbs. No stylization, cartoon, illustration, or beauty filters — photorealistic only. Output must be non-sexualized, modest, and suitable as an ecommerce body reference.'
   ].join(' ');
 }
 

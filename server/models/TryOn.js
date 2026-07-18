@@ -14,6 +14,16 @@ const tryOnSchema = new mongoose.Schema(
       path: String,
       mimetype: String,
       size: Number
+    },
+    video: {
+      filename: String,
+      path: String,
+      mimetype: String,
+      size: Number,
+      model: String,
+      prompt: String,
+      tokenCost: Number,
+      generatedAt: Date
     }
   },
   { timestamps: true }
@@ -27,6 +37,10 @@ function tryOnToClient(tryOn) {
     id: tryOn._id.toString(),
     productId: tryOn.product.toString(),
     imageUrl: tryOn.image?.path ? `/${tryOn.image.path}` : null,
+    videoUrl: tryOn.video?.path ? `/${tryOn.video.path}` : null,
+    videoModel: tryOn.video?.model || '',
+    videoTokenCost: tryOn.video?.tokenCost || 0,
+    videoGeneratedAt: tryOn.video?.generatedAt || null,
     provider: tryOn.provider,
     model: tryOn.model,
     quality: tryOn.quality,

@@ -78,6 +78,32 @@ async function prepareBodyPhoto(file) {
   return file;
 }
 
+async function prepareClosetItemPhoto(file) {
+  if (!file) return file;
+  try {
+    const image = await imageFromFile(file);
+    const maxSide = 1800;
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+    const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+    const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    const blob = await canvasToBlob(canvas, 0.88);
+    const name = `${file.name.replace(/\.[^.]+$/, '') || 'closet-item'}.jpg`;
+    return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() });
+  } catch (error) {
+    if (isHeicFile(file) || isAvifFile(file)) {
+      return file;
+    }
+    throw error;
+  }
+}
+
 function formatMoney(value, currency = 'USD') {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return 'Price unavailable';
@@ -97,7 +123,25 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 }
 
-function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1.65, onError }) {
+function dateInputValue(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+function nextPlannerDays(count = 7) {
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() + index);
+    date.setHours(0, 0, 0, 0);
+    return {
+      value: dateInputValue(date),
+      label: index === 0 ? 'Today' : index === 1 ? 'Tomorrow' : new Intl.DateTimeFormat('en-IN', { weekday: 'short', month: 'short', day: 'numeric' }).format(date)
+    };
+  });
+}
+
+function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1.65, disableZoom = false, onError }) {
   const [zooming, setZooming] = useState(false);
   const [origin, setOrigin] = useState({ x: 50, y: 50 });
   const frameRef = useRef(null);
@@ -112,12 +156,14 @@ function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1
   };
 
   const startZoom = (event) => {
+    if (disableZoom || zoom <= 1) return;
     moveOrigin(event);
     setZooming(true);
     if (event.pointerType !== 'mouse') event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
   const stopZoom = (event) => {
+    if (disableZoom || zoom <= 1) return;
     setZooming(false);
     if (event.pointerType !== 'mouse') event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
@@ -125,7 +171,7 @@ function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1
   return (
     <div
       ref={frameRef}
-      className={`zoomable-image ${zooming ? 'is-zoomed' : ''} ${className}`.trim()}
+      className={`zoomable-image ${zooming ? 'is-zoomed' : ''} ${disableZoom || zoom <= 1 ? 'no-zoom' : ''} ${className}`.trim()}
       style={{
         '--zoom-origin-x': `${origin.x}%`,
         '--zoom-origin-y': `${origin.y}%`,
@@ -483,6 +529,7 @@ function Header({ user, setUser }) {
   };
   const navLinks = [
     ['Shop', '/search'],
+    ['Closet', '/closet'],
     ['For Men', '/search?gender=men'],
     ['For Women', '/search?gender=women'],
     ['Categories', '/categories'],
@@ -690,12 +737,13 @@ function CategoriesPage() {
   );
 }
 
-function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, tryOnLoading = false, tryOnError = '', onTryOn }) {
+function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, tryOnLoading = false, tryOnVideoLoading = false, tryOnError = '', tryOnVideoError = '', onTryOn, onTryOnVideo }) {
   const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? `${Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}% OFF` : '';
   const productImage = product.imageUrl || asset('hero2.png');
   const hasUsableTryOn = Boolean(tryOn?.imageUrl) && !tryOnImageFailed;
+  const hasTryOnVideo = Boolean(tryOn?.videoUrl) && hasUsableTryOn;
   const image = hasUsableTryOn ? tryOn.imageUrl : productImage;
   const detailHref = `/product/${encodeURIComponent(product.id)}`;
   const brand = displayBrand(product);
@@ -707,17 +755,21 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
   const content = (
     <>
       <div className="product-media">
-        <img
-          src={image}
-          alt={product.name}
-          onError={(event) => {
-            if (hasUsableTryOn) setTryOnImageFailed(true);
-            else if (event.currentTarget.src !== window.location.origin + asset('hero2.png')) event.currentTarget.src = asset('hero2.png');
-          }}
-        />
+        {hasTryOnVideo ? (
+          <video src={tryOn.videoUrl} poster={tryOn.imageUrl} autoPlay muted loop playsInline />
+        ) : (
+          <img
+            src={image}
+            alt={product.name}
+            onError={(event) => {
+              if (hasUsableTryOn) setTryOnImageFailed(true);
+              else if (event.currentTarget.src !== window.location.origin + asset('hero2.png')) event.currentTarget.src = asset('hero2.png');
+            }}
+          />
+        )}
         {product.badge && <span className="badge">{product.badge}</span>}
-        {hasUsableTryOn && <span className="badge tryon-badge">AI Try-On</span>}
-        {tryOnLoading && <TryOnGenerating />}
+        {hasUsableTryOn && <span className="badge tryon-badge">{hasTryOnVideo ? 'Video Try-On' : 'AI Try-On'}</span>}
+        {(tryOnLoading || tryOnVideoLoading) && <TryOnGenerating text={tryOnVideoLoading ? 'Generating video' : 'Generating try-on'} />}
         {!locked && <span className="heart"><HeartIcon /></span>}
       </div>
       <div className="product-info">
@@ -745,11 +797,936 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
           ) : (
             <a href={user ? detailHref : '/signup'}>{hasUsableTryOn ? 'Generate Again' : 'Try On'}</a>
           )}
+          {hasUsableTryOn && onTryOnVideo && (
+            <button className="video-action" type="button" onClick={() => onTryOnVideo(product, { force: Boolean(tryOn?.videoUrl) })} disabled={tryOnVideoLoading || tryOnLoading}>
+              {tryOnVideoLoading ? 'Video...' : tryOn?.videoUrl ? 'New Video' : 'Video Try-On'}
+            </button>
+          )}
           {product.affiliateLink && <a className="shop-action" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop</a>}
           {tryOnError && <p>{tryOnError}</p>}
+          {tryOnVideoError && <p>{tryOnVideoError}</p>}
         </div>
       )}
     </article>
+  );
+}
+
+const closetCategories = [
+  ['All', 'all'],
+  ['Tops', 'tops'],
+  ['Bottoms', 'bottoms'],
+  ['Dresses', 'dresses'],
+  ['Suits', 'suits'],
+  ['Outerwear', 'outerwear'],
+  ['Shoes', 'shoes'],
+  ['Accessories', 'accessories'],
+  ['Activewear', 'activewear'],
+  ['Ethnic', 'ethnic'],
+  ['Other', 'other']
+];
+
+const closetOccasions = ['today casual', 'office meeting', 'date night', 'party', 'wedding function', 'college day', 'travel', 'rainy weather'];
+const closetComboSlots = [
+  { key: 'topwear', label: 'Topwear', helper: 'Choose shirt/top', categories: ['tops', 'ethnic'] },
+  { key: 'bottomwear', label: 'Bottomwear', helper: 'Choose pant/bottom', categories: ['bottoms'] },
+  { key: 'outerwear', label: 'Layer', helper: 'Jacket or suit', categories: ['outerwear', 'suits'] },
+  { key: 'footwear', label: 'Footwear', helper: 'Choose shoes', categories: ['shoes'] },
+  { key: 'accessory', label: 'Accessory', helper: 'Cap, goggles, watch', categories: ['accessories'] }
+];
+
+function ClosetPage({ user, setUser }) {
+  const [state, setState] = useState({ items: [], outfits: [], stats: {}, suggestions: [], loading: true, error: '' });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [comboSlots, setComboSlots] = useState({});
+  const [activeWardrobeKey, setActiveWardrobeKey] = useState('topwear');
+  const [filter, setFilter] = useState('all');
+  const [generating, setGenerating] = useState(false);
+  const [message, setMessage] = useState('');
+  const [occasion, setOccasion] = useState('today casual');
+  const [weather, setWeather] = useState('');
+  const [mood, setMood] = useState('');
+  const [plannedFor, setPlannedFor] = useState(dateInputValue());
+  const [backdrop, setBackdrop] = useState('neutral studio');
+  const [pose, setPose] = useState('front facing');
+  const [lighting, setLighting] = useState('natural light');
+  const [chatInput, setChatInput] = useState('');
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chat, setChat] = useState([
+    { role: 'assistant', text: 'Ask what to wear today, for an occasion, or which pants fit a shirt from your closet.' }
+  ]);
+  const [fullscreenImage, setFullscreenImage] = useState(null);
+
+  const loadCloset = () => {
+    if (!user) return;
+    setState((current) => ({ ...current, loading: true, error: '' }));
+    api('/closet')
+      .then((data) => {
+        setState({ items: data.items || [], outfits: data.outfits || [], stats: data.stats || {}, suggestions: data.suggestions || [], loading: false, error: '' });
+      })
+      .catch((err) => setState({ items: [], outfits: [], stats: {}, suggestions: [], loading: false, error: err.message }));
+  };
+
+  useEffect(() => {
+    loadCloset();
+  }, [user?.id]);
+
+  if (!user) return <AuthPage mode="signup" setUser={setUser} />;
+
+  const selectedItems = selectedIds.map((id) => state.items.find((item) => item.id === id)).filter(Boolean);
+  const filteredItems = state.items.filter((item) => filter === 'all' || item.category === filter);
+  const plannerDays = nextPlannerDays(7);
+  const plannedByDay = new Map((state.outfits || []).filter((outfit) => outfit.plannedFor).map((outfit) => [dateInputValue(outfit.plannedFor), outfit]));
+  const latestOutfit = state.outfits?.[0] || null;
+  const mainPreview = latestOutfit?.imageUrl || user.bodyPhotoUrl || asset('hero2.png');
+  const wardrobeSlots = [
+    { key: 'topwear', label: 'Topwear', helper: 'Shirts, tops, kurtas', short: 'To', categories: ['tops', 'outerwear', 'ethnic'] },
+    { key: 'bottomwear', label: 'Bottomwear', helper: 'Pants, denim, skirts', short: 'Bo', categories: ['bottoms'] },
+    { key: 'goggles', label: 'Goggles', helper: 'Glasses and shades', short: 'Go', categories: ['accessories'], keywords: ['goggle', 'goggles', 'glass', 'glasses', 'sunglass', 'eyewear'] },
+    { key: 'cap', label: 'Cap', helper: 'Caps and hats', short: 'Ca', categories: ['accessories'], keywords: ['cap', 'hat'] },
+    { key: 'footwear', label: 'Footwear', helper: 'Shoes, boots, sandals', short: 'Fo', categories: ['shoes'] }
+  ];
+  const wardrobeSlotMatches = (slot, item, strict = false) => {
+    if (!slot.categories.includes(item.category)) return false;
+    if (!slot.keywords?.length) return true;
+    const text = [item.name, item.category, item.color, item.formality, ...(item.tags || []), ...(item.occasions || [])].filter(Boolean).join(' ').toLowerCase();
+    const keywordMatch = slot.keywords.some((keyword) => text.includes(keyword));
+    return strict ? keywordMatch : keywordMatch || slot.categories.includes(item.category);
+  };
+  const wardrobeOptionsForSlot = (slot) => {
+    const exactOptions = state.items.filter((item) => wardrobeSlotMatches(slot, item, true));
+    return exactOptions.length ? exactOptions : state.items.filter((item) => wardrobeSlotMatches(slot, item));
+  };
+  const wardrobeRail = wardrobeSlots.map((slot) => {
+    const options = wardrobeOptionsForSlot(slot);
+    const selected = state.items.find((item) => item.id === comboSlots[slot.key]) || null;
+    return {
+      ...slot,
+      item: selected || options[0] || null,
+      selected,
+      options
+    };
+  });
+  const activeWardrobeSlot = wardrobeRail.find((slot) => slot.key === activeWardrobeKey) || wardrobeRail[0];
+  const lookbookCards = state.outfits.length
+    ? state.outfits.slice(0, 5).map((outfit) => ({ id: outfit.id, title: outfit.title, imageUrl: outfit.imageUrl, items: outfit.items || [] }))
+    : state.suggestions.slice(0, 5).map((suggestion, index) => ({ id: suggestion.key || `${suggestion.title}-${index}`, title: suggestion.title, items: suggestion.items || [] }));
+  const comboOptions = state.suggestions.slice(0, 6);
+  const selectedKey = selectedIds.slice().sort().join(':');
+  const comboPreviewItems = (selectedItems.length ? selectedItems : state.items.filter((item) => ['tops', 'bottoms', 'suits', 'outerwear', 'shoes'].includes(item.category))).slice(0, 4);
+  const closetSelectionCards = [
+    {
+      href: '/closet/add',
+      step: '01',
+      title: 'Add Clothes',
+      copy: 'Upload wardrobe photos and save category, color, fabric, season and occasion tags.',
+      meta: `${state.stats.total || state.items.length} saved`,
+      action: 'Open Add Page',
+      tone: 'add',
+      items: state.items.slice(0, 3)
+    },
+    {
+      href: '/closet/combo',
+      step: '02',
+      title: 'Build Combo',
+      copy: 'Select which pant fits which shirt, add shoes or accessories, then generate it on you.',
+      meta: selectedItems.length ? `${selectedItems.length} selected` : 'Shirt + pant picker',
+      action: 'Choose Items',
+      tone: 'combo',
+      items: comboPreviewItems
+    },
+    {
+      href: '/closet/items',
+      step: '03',
+      title: 'Your Closet',
+      copy: 'Browse all saved clothes with category filters and send selected pieces to the combo page.',
+      meta: `${closetCategories.length - 1} filters`,
+      action: 'View Wardrobe',
+      tone: 'items',
+      items: state.items.slice(0, 4)
+    }
+  ];
+
+  const slotItems = closetComboSlots.map((slot) => ({
+    ...slot,
+    selected: state.items.find((item) => item.id === comboSlots[slot.key]) || null,
+    options: state.items.filter((item) => slot.categories.includes(item.category))
+  }));
+
+  const selectedIdsFromSlots = (slots) => [...new Set(Object.values(slots).filter(Boolean))];
+
+  const slotsFromItems = (items) => {
+    const next = {};
+    closetComboSlots.forEach((slot) => {
+      const item = items.find((entry) => slot.categories.includes(entry.category));
+      if (item) next[slot.key] = item.id;
+    });
+    return next;
+  };
+
+  const updateItem = async (item, updates) => {
+    const data = await api(`/closet/items/${encodeURIComponent(item.id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+    setState((current) => ({ ...current, items: current.items.map((entry) => (entry.id === item.id ? data.item : entry)) }));
+  };
+
+  const deleteItem = async (item) => {
+    await api(`/closet/items/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+    setSelectedIds((current) => current.filter((id) => id !== item.id));
+    setState((current) => ({ ...current, items: current.items.filter((entry) => entry.id !== item.id) }));
+  };
+
+  const toggleSelected = (item) => {
+    setSelectedIds((current) => {
+      if (current.includes(item.id)) return current.filter((id) => id !== item.id);
+      return [...current, item.id].slice(-5);
+    });
+  };
+
+  const chooseSlotItem = (slotKey, item) => {
+    setComboSlots((current) => {
+      const next = { ...current };
+      if (!item) delete next[slotKey];
+      else next[slotKey] = item.id;
+      setSelectedIds(selectedIdsFromSlots(next));
+      return next;
+    });
+  };
+
+  const applyComboItems = (items = []) => {
+    const nextSlots = slotsFromItems(items);
+    setComboSlots(nextSlots);
+    setSelectedIds(items.map((item) => item.id).filter(Boolean));
+  };
+
+  const swapSelected = (item) => {
+    const replacement = state.items
+      .filter((candidate) => candidate.id !== item.id && candidate.category === item.category && !selectedIds.includes(candidate.id))
+      .sort((a, b) => Number(b.favorite) - Number(a.favorite) || new Date(b.updatedAt) - new Date(a.updatedAt))[0];
+    if (!replacement) {
+      setMessage(`No other ${item.category} item is available to swap.`);
+      return;
+    }
+    setSelectedIds((current) => current.map((id) => (id === item.id ? replacement.id : id)));
+    setComboSlots((current) => {
+      const matchedSlot = closetComboSlots.find((slot) => slot.categories.includes(item.category));
+      if (!matchedSlot || current[matchedSlot.key] !== item.id) return current;
+      return { ...current, [matchedSlot.key]: replacement.id };
+    });
+    setMessage(`Swapped ${item.name} with ${replacement.name}.`);
+  };
+
+  const scheduleOutfit = async (outfit, date) => {
+    try {
+      const data = await api(`/closet/outfits/${encodeURIComponent(outfit.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ plannedFor: date })
+      });
+      setState((current) => ({ ...current, outfits: current.outfits.map((entry) => (entry.id === outfit.id ? data.outfit : entry)) }));
+      setMessage(`Planned ${outfit.title} for ${formatDate(date)}.`);
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
+  const askForSuggestions = async (nextOccasion = occasion) => {
+    setOccasion(nextOccasion);
+    setMessage('Finding the best combos from your closet...');
+    try {
+      const data = await api('/closet/suggest', {
+        method: 'POST',
+        body: JSON.stringify({ occasion: nextOccasion, weather, mood })
+      });
+      setState((current) => ({ ...current, suggestions: data.suggestions || [] }));
+      setMessage('Suggestions ready.');
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
+  const generateOutfit = async (ids = selectedIds, details = {}) => {
+    if (!ids.length) {
+      setMessage('Select closet items or choose a suggested combo first.');
+      return;
+    }
+    setGenerating(true);
+    setMessage('Generating your closet look with FitRoom...');
+    try {
+      const data = await api('/closet/outfits/generate', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemIds: ids,
+          occasion: details.occasion || occasion,
+          weather,
+          mood,
+          plannedFor,
+          backdrop,
+          pose,
+          lighting,
+          notes: [backdrop, pose, lighting].filter(Boolean).join(' · '),
+          title: details.title || `Closet look for ${details.occasion || occasion || 'today'}`
+        })
+      });
+      setState((current) => ({ ...current, outfits: [data.outfit, ...current.outfits] }));
+      setSelectedIds(ids);
+      if (data.user) setUser(data.user);
+      setMessage('Closet look is ready.');
+      if (data.outfit?.imageUrl) setFullscreenImage({ src: data.outfit.imageUrl, alt: data.outfit.title, title: data.outfit.title });
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const submitChat = async (event) => {
+    event.preventDefault();
+    const text = chatInput.trim();
+    if (!text || chatBusy) return;
+    setChatInput('');
+    setChat((current) => [...current, { role: 'user', text }]);
+    setChatBusy(true);
+    try {
+      const data = await api('/closet/chat', { method: 'POST', body: JSON.stringify({ message: text }) });
+      setChat((current) => [...current, { role: 'assistant', text: data.reply || 'I found a few closet options for you.' }]);
+      if (data.suggestions) setState((current) => ({ ...current, suggestions: data.suggestions }));
+    } catch (err) {
+      setChat((current) => [...current, { role: 'assistant', text: err.message }]);
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
+  return (
+    <main className="closet-page">
+      <section className="wrap stylist-console" aria-label="AI stylist wardrobe preview">
+        <div className="stylist-topbar">
+          <strong>BeSpoke AI Stylist</strong>
+          <button type="button" onClick={() => askForSuggestions('today')}>Get Daily Recommendations</button>
+        </div>
+        <div className="stylist-board-head">
+          <h1>Daily Recommendations</h1>
+          <h2>Lookbook & OOTD</h2>
+        </div>
+        <div className="stylist-board">
+          <aside className="wardrobe-rail" aria-label="Wardrobe categories">
+            {wardrobeRail.map((entry) => (
+              <button type="button" key={entry.key} onClick={() => setActiveWardrobeKey(entry.key)} className={`${activeWardrobeKey === entry.key ? 'active' : ''} ${entry.selected ? 'selected' : ''}`}>
+                <span className="rail-thumb">
+                  {entry.item?.imageUrl ? <img src={entry.item.imageUrl} alt="" /> : <small>{entry.short}</small>}
+                </span>
+                <span>{entry.label}</span>
+                <small>{entry.selected ? entry.selected.name : `${entry.options.length} options`}</small>
+              </button>
+            ))}
+          </aside>
+
+          <section className="stylist-preview-card">
+            <div className="stylist-preview-frame">
+              <ZoomableImage src={mainPreview} alt={latestOutfit?.title || 'FitLook body profile'} />
+              {generating && <TryOnGenerating text="Generating outfit" />}
+            </div>
+            <div className="stylist-preview-strip">
+              <span />
+              <i />
+              <span />
+            </div>
+            <div className="stylist-selected-row">
+              {(selectedItems.length ? selectedItems : state.items.slice(0, 4)).slice(0, 4).map((item) => <img src={item.imageUrl} alt="" key={item.id} />)}
+            </div>
+          </section>
+
+          <aside className="lookbook-rail" aria-label="Lookbook outfits">
+            {lookbookCards.length ? lookbookCards.map((card) => (
+              <button type="button" key={card.id} onClick={() => card.imageUrl ? setFullscreenImage({ src: card.imageUrl, alt: card.title, title: card.title }) : applyComboItems(card.items || [])}>
+                {card.imageUrl ? <img className="lookbook-main-thumb" src={card.imageUrl} alt="" /> : null}
+                <span>
+                  {(card.items || []).slice(0, 4).map((item) => <img src={item.imageUrl} alt="" key={item.id} />)}
+                </span>
+              </button>
+            )) : Array.from({ length: 4 }).map((_, index) => (
+              <button type="button" key={`empty-look-${index}`} onClick={() => askForSuggestions()}>
+                <span><small>OOTD</small></span>
+              </button>
+            ))}
+          </aside>
+        </div>
+        <div className="stylist-slot-panel">
+          <div className="stylist-slot-head">
+            <div>
+              <p className="kicker">Choose {activeWardrobeSlot.label}</p>
+              <h3>{activeWardrobeSlot.selected ? activeWardrobeSlot.selected.name : `Select ${activeWardrobeSlot.label}`}</h3>
+              <span>{activeWardrobeSlot.helper}</span>
+            </div>
+            {activeWardrobeSlot.selected && (
+              <button type="button" onClick={() => chooseSlotItem(activeWardrobeSlot.key, null)}>Clear</button>
+            )}
+          </div>
+          <div className="stylist-slot-options">
+            {activeWardrobeSlot.options.length ? activeWardrobeSlot.options.map((item) => (
+              <button type="button" key={item.id} onClick={() => chooseSlotItem(activeWardrobeSlot.key, item)} className={comboSlots[activeWardrobeSlot.key] === item.id ? 'active' : ''}>
+                <img src={item.imageUrl} alt="" />
+                <span>{item.name}</span>
+              </button>
+            )) : (
+              <a className="stylist-slot-empty" href="/closet/add">Add {activeWardrobeSlot.label}</a>
+            )}
+          </div>
+        </div>
+        <div className="stylist-console-actions">
+          <div>
+            <strong>{state.stats.total || state.items.length}</strong>
+            <span>items in your wardrobe</span>
+          </div>
+          <div>
+            <strong>{user.tokens}</strong>
+            <span>try-on tokens</span>
+          </div>
+          <button type="button" onClick={() => generateOutfit(selectedIds, { title: 'My closet combo' })} disabled={generating || selectedIds.length === 0}>{generating ? 'Generating...' : `Generate ${selectedIds.length ? `(${selectedIds.length})` : ''}`}</button>
+        </div>
+      </section>
+
+      <section className="wrap closet-selection-hub" aria-label="Closet selection">
+        <div className="closet-selection-head">
+          <div>
+            <p className="kicker">Selection</p>
+            <h2>Choose your closet action.</h2>
+          </div>
+          <span>{user.tokens} try-on tokens</span>
+        </div>
+        <div className="closet-selection-grid">
+          {closetSelectionCards.map((card) => (
+            <a className={`closet-selection-card ${card.tone}`} href={card.href} key={card.href}>
+              <div className="closet-selection-card-top">
+                <span>{card.step}</span>
+                <small>{card.meta}</small>
+              </div>
+              <div className={`closet-selection-preview ${card.items.length ? '' : 'empty'}`}>
+                {card.items.length ? card.items.map((item) => <img src={item.imageUrl} alt="" key={item.id} />) : <strong>{card.title.slice(0, 2)}</strong>}
+              </div>
+              <div className="closet-selection-copy">
+                <h3>{card.title}</h3>
+                <p>{card.copy}</p>
+              </div>
+              <span className="closet-selection-action">{card.action}</span>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="wrap closet-quick-actions closet-console-chips">
+        {closetOccasions.map((idea) => <button type="button" key={idea} onClick={() => askForSuggestions(idea)}>{idea}</button>)}
+      </section>
+
+      <section className="wrap closet-shell">
+        <aside className="closet-sidebar">
+          <section className="closet-assistant">
+            <div className="chat-panel-head"><div><strong>Closet Stylist</strong><span>Your clothes only</span></div><small>{user.tokens} tokens</small></div>
+            <div className="closet-chat-scroll">
+              {chat.map((entry, index) => <div className={`chat-row ${entry.role}`} key={`${entry.role}-${index}`}><div className="chat-bubble">{entry.text}</div></div>)}
+            </div>
+            <form className="chat-composer" onSubmit={submitChat}>
+              <input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="What should I wear today?" />
+              <button type="submit" disabled={chatBusy || !chatInput.trim()}>{chatBusy ? '...' : 'Ask'}</button>
+            </form>
+          </section>
+        </aside>
+
+        <div className="closet-main">
+          {message && <p className={`form-message closet-message ${/error|missing|not enough|failed|could not/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
+          {state.loading && <StatusPanel text="Loading your closet..." />}
+          {state.error && <StatusPanel text={state.error} />}
+
+          {state.outfits.length > 0 && (
+            <section className="closet-looks-section">
+              <div className="section-head"><h2>Generated looks</h2><span className="count">{state.outfits.length} saved</span></div>
+              <div className="closet-look-grid">
+                {state.outfits.map((outfit) => (
+                  <article className="closet-look-card" key={outfit.id}>
+                    <div className="closet-look-media">
+                      <ZoomableImage src={outfit.imageUrl} alt={outfit.title} />
+                      <button className="fullscreen-button" type="button" aria-label="Open outfit full screen" title="Open full screen" onClick={() => setFullscreenImage({ src: outfit.imageUrl, alt: outfit.title, title: outfit.title })}><FullscreenIcon /></button>
+                    </div>
+                    <div className="closet-look-info">
+                      <h3>{outfit.title}</h3>
+                      <p>{[outfit.occasion, outfit.weather, outfit.mood, outfit.plannedFor ? `planned ${formatDate(outfit.plannedFor)}` : ''].filter(Boolean).join(' · ') || 'Generated closet outfit'}</p>
+                      <div>{(outfit.items || []).slice(0, 4).map((item) => <span key={item.id}>{item.name}</span>)}</div>
+                      <button className="secondary-button" type="button" onClick={() => scheduleOutfit(outfit, plannedFor)}>Plan For Selected Date</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      </section>
+      {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
+    </main>
+  );
+}
+
+function ClosetComboPage({ user, setUser }) {
+  const [state, setState] = useState({ items: [], suggestions: [], loading: true, error: '' });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [comboSlots, setComboSlots] = useState({});
+  const [occasion, setOccasion] = useState('today casual');
+  const [weather, setWeather] = useState('');
+  const [mood, setMood] = useState('');
+  const [plannedFor, setPlannedFor] = useState(dateInputValue());
+  const [backdrop, setBackdrop] = useState('neutral studio');
+  const [pose, setPose] = useState('front facing');
+  const [lighting, setLighting] = useState('natural light');
+  const [generating, setGenerating] = useState(false);
+  const [message, setMessage] = useState('');
+  const [fullscreenImage, setFullscreenImage] = useState(null);
+
+  useEffect(() => {
+    if (!user) return;
+    let alive = true;
+    api('/closet')
+      .then((data) => {
+        if (!alive) return;
+        const items = data.items || [];
+        setState({ items, suggestions: data.suggestions || [], loading: false, error: '' });
+        const seededIds = JSON.parse(localStorage.getItem('fitlook_combo_seed') || '[]').filter((id) => items.some((item) => item.id === id));
+        if (seededIds.length) {
+          const seededItems = seededIds.map((id) => items.find((item) => item.id === id)).filter(Boolean);
+          setSelectedIds(seededIds);
+          setComboSlots(slotsFromItems(seededItems));
+          localStorage.removeItem('fitlook_combo_seed');
+        }
+      })
+      .catch((err) => {
+        if (alive) setState({ items: [], suggestions: [], loading: false, error: err.message });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user?.id]);
+
+  if (!user) return <AuthPage mode="signup" setUser={setUser} />;
+
+  const selectedItems = selectedIds.map((id) => state.items.find((item) => item.id === id)).filter(Boolean);
+  const selectedKey = selectedIds.slice().sort().join(':');
+  const comboOptions = state.suggestions.slice(0, 6);
+  const slotItems = closetComboSlots.map((slot) => ({
+    ...slot,
+    selected: state.items.find((item) => item.id === comboSlots[slot.key]) || null,
+    options: state.items.filter((item) => slot.categories.includes(item.category))
+  }));
+
+  const selectedIdsFromSlots = (slots) => [...new Set(Object.values(slots).filter(Boolean))];
+  const slotsFromItems = (items) => {
+    const next = {};
+    closetComboSlots.forEach((slot) => {
+      const item = items.find((entry) => slot.categories.includes(entry.category));
+      if (item) next[slot.key] = item.id;
+    });
+    return next;
+  };
+
+  const chooseSlotItem = (slotKey, item) => {
+    setComboSlots((current) => {
+      const next = { ...current };
+      if (!item) delete next[slotKey];
+      else next[slotKey] = item.id;
+      setSelectedIds(selectedIdsFromSlots(next));
+      return next;
+    });
+  };
+
+  const applyComboItems = (items = []) => {
+    setComboSlots(slotsFromItems(items));
+    setSelectedIds(items.map((item) => item.id).filter(Boolean));
+  };
+
+  const toggleSelected = (item) => {
+    setSelectedIds((current) => current.filter((id) => id !== item.id));
+    setComboSlots((current) => {
+      const next = { ...current };
+      Object.entries(next).forEach(([key, id]) => {
+        if (id === item.id) delete next[key];
+      });
+      return next;
+    });
+  };
+
+  const swapSelected = (item) => {
+    const replacement = state.items
+      .filter((candidate) => candidate.id !== item.id && candidate.category === item.category && !selectedIds.includes(candidate.id))
+      .sort((a, b) => Number(b.favorite) - Number(a.favorite) || new Date(b.updatedAt) - new Date(a.updatedAt))[0];
+    if (!replacement) {
+      setMessage(`No other ${item.category} item is available to swap.`);
+      return;
+    }
+    setSelectedIds((current) => current.map((id) => (id === item.id ? replacement.id : id)));
+    setComboSlots((current) => {
+      const matchedSlot = closetComboSlots.find((slot) => slot.categories.includes(item.category));
+      if (!matchedSlot || current[matchedSlot.key] !== item.id) return current;
+      return { ...current, [matchedSlot.key]: replacement.id };
+    });
+    setMessage(`Swapped ${item.name} with ${replacement.name}.`);
+  };
+
+  const askForSuggestions = async (nextOccasion = occasion) => {
+    setOccasion(nextOccasion);
+    setMessage('Finding combo ideas...');
+    try {
+      const data = await api('/closet/suggest', {
+        method: 'POST',
+        body: JSON.stringify({ occasion: nextOccasion, weather, mood })
+      });
+      setState((current) => ({ ...current, suggestions: data.suggestions || [] }));
+      setMessage('Combo ideas ready.');
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
+  const generateOutfit = async (ids = selectedIds, details = {}) => {
+    if (!ids.length) {
+      setMessage('Choose at least one shirt, pant, shoe, or accessory.');
+      return;
+    }
+    setGenerating(true);
+    setMessage('Generating your selected combo with FitRoom...');
+    try {
+      const data = await api('/closet/outfits/generate', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemIds: ids,
+          occasion: details.occasion || occasion,
+          weather,
+          mood,
+          plannedFor,
+          backdrop,
+          pose,
+          lighting,
+          notes: [backdrop, pose, lighting].filter(Boolean).join(' · '),
+          title: details.title || `Closet combo for ${details.occasion || occasion || 'today'}`
+        })
+      });
+      if (data.user) setUser(data.user);
+      setMessage('Combo preview is ready.');
+      if (data.outfit?.imageUrl) setFullscreenImage({ src: data.outfit.imageUrl, alt: data.outfit.title, title: data.outfit.title });
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <main className="closet-combo-page">
+      <section className="wrap closet-add-hero">
+        <div>
+          <p className="kicker">Outfit Builder</p>
+          <h1>Build a combo.</h1>
+          <p className="lead">Choose which shirt goes with which pant, then add shoes or accessories and generate the outfit on you.</p>
+        </div>
+        <a className="secondary-button" href="/closet">Back To Closet</a>
+      </section>
+
+      <section className="wrap closet-combo-layout">
+        <div className="closet-builder">
+          <div className="closet-builder-controls">
+            <input value={occasion} onChange={(event) => setOccasion(event.target.value)} placeholder="Occasion" />
+            <input value={weather} onChange={(event) => setWeather(event.target.value)} placeholder="Weather" />
+            <input value={mood} onChange={(event) => setMood(event.target.value)} placeholder="Mood" />
+            <button type="button" onClick={() => askForSuggestions()} disabled={state.items.length === 0}>Suggest</button>
+          </div>
+          <div className="closet-scene-controls">
+            <label><span>Plan date</span><input type="date" value={plannedFor} onChange={(event) => setPlannedFor(event.target.value)} /></label>
+            <label><span>Backdrop</span><select value={backdrop} onChange={(event) => setBackdrop(event.target.value)}><option>neutral studio</option><option>office lobby</option><option>cafe</option><option>outdoor street</option><option>wedding venue</option></select></label>
+            <label><span>Pose</span><select value={pose} onChange={(event) => setPose(event.target.value)}><option>front facing</option><option>relaxed standing</option><option>walking pose</option><option>three-quarter angle</option></select></label>
+            <label><span>Lighting</span><select value={lighting} onChange={(event) => setLighting(event.target.value)}><option>natural light</option><option>studio softbox</option><option>evening warm</option><option>bright daylight</option></select></label>
+          </div>
+          <div className="selected-strip">
+            {selectedItems.length ? selectedItems.map((item) => (
+              <div className="selected-chip" key={item.id}>
+                <img src={item.imageUrl} alt="" />
+                <span>{item.name}</span>
+                <button type="button" onClick={() => swapSelected(item)}>Swap</button>
+                <button type="button" onClick={() => toggleSelected(item)}>Remove</button>
+              </div>
+            )) : <span>Select a shirt and pant below, or use an AI suggestion.</span>}
+          </div>
+          <button className="submit" type="button" disabled={generating || selectedIds.length === 0} onClick={() => generateOutfit()}>{generating ? 'Generating...' : 'Generate Combo On Me'}</button>
+          {message && <p className={`form-message ${/error|missing|not enough|failed|could not/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
+          {state.loading && <StatusPanel text="Loading closet items..." />}
+          {state.error && <StatusPanel text={state.error} />}
+        </div>
+
+        <section className="combo-selection-panel closet-combo-selection-page" aria-label="Combo selection">
+          <div className="combo-selection-head">
+            <strong>Combo Selection</strong>
+            <span>{selectedItems.length ? `${selectedItems.length} pieces selected` : 'Choose shirt, pant and more'}</span>
+          </div>
+          <div className="slot-combo-builder" aria-label="Build a custom clothing combo">
+            {slotItems.map((slot) => (
+              <article className="slot-picker" key={slot.key}>
+                <div className="slot-picker-head">
+                  <div><strong>{slot.label}</strong><span>{slot.helper}</span></div>
+                  {slot.selected && <button type="button" onClick={() => chooseSlotItem(slot.key, null)}>Clear</button>}
+                </div>
+                <div className="slot-selected-preview">
+                  {slot.selected ? <><img src={slot.selected.imageUrl} alt="" /><span>{slot.selected.name}</span></> : <span>No {slot.label.toLowerCase()} selected</span>}
+                </div>
+                <div className="slot-options">
+                  {slot.options.length ? slot.options.slice(0, 10).map((item) => (
+                    <button className={slot.selected?.id === item.id ? 'active' : ''} type="button" key={item.id} onClick={() => chooseSlotItem(slot.key, item)} title={item.name}>
+                      <img src={item.imageUrl} alt="" />
+                    </button>
+                  )) : <small>Add {slot.label.toLowerCase()} items to your closet.</small>}
+                </div>
+              </article>
+            ))}
+          </div>
+          <div className="combo-options">
+            {comboOptions.length ? comboOptions.map((combo, index) => {
+              const comboIds = combo.itemIds || [];
+              const comboKey = comboIds.slice().sort().join(':');
+              const active = comboKey && comboKey === selectedKey;
+              return (
+                <button className={active ? 'active' : ''} type="button" key={combo.key || combo.title || index} onClick={() => applyComboItems(combo.items || [])}>
+                  <span className="combo-number">{String(index + 1).padStart(2, '0')}</span>
+                  <span className="combo-thumbs">{(combo.items || []).slice(0, 4).map((item) => <img src={item.imageUrl} alt="" key={item.id} />)}</span>
+                  <span className="combo-copy"><strong>{combo.title || `Combo ${index + 1}`}</strong><small>{combo.reason || 'AI-picked from your closet'}</small></span>
+                </button>
+              );
+            }) : (
+              <button className="empty-combo-option" type="button" onClick={() => askForSuggestions()}>
+                <span className="combo-number">AI</span>
+                <span className="combo-copy"><strong>Create combos</strong><small>Get recommendations from your uploaded closet.</small></span>
+              </button>
+            )}
+          </div>
+        </section>
+      </section>
+      {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
+    </main>
+  );
+}
+
+function ClosetItemsPage({ user, setUser }) {
+  const [state, setState] = useState({ items: [], loading: true, error: '' });
+  const [filter, setFilter] = useState('all');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+    let alive = true;
+    api('/closet')
+      .then((data) => {
+        if (alive) setState({ items: data.items || [], loading: false, error: '' });
+      })
+      .catch((err) => {
+        if (alive) setState({ items: [], loading: false, error: err.message });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user?.id]);
+
+  if (!user) return <AuthPage mode="signup" setUser={setUser} />;
+
+  const filteredItems = state.items.filter((item) => filter === 'all' || item.category === filter);
+
+  const updateItem = async (item, updates) => {
+    try {
+      const data = await api(`/closet/items/${encodeURIComponent(item.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates)
+      });
+      setState((current) => ({ ...current, items: current.items.map((entry) => (entry.id === item.id ? data.item : entry)) }));
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
+  const deleteItem = async (item) => {
+    try {
+      await api(`/closet/items/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+      setSelectedIds((current) => current.filter((id) => id !== item.id));
+      setState((current) => ({ ...current, items: current.items.filter((entry) => entry.id !== item.id) }));
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
+  const toggleSelected = (item) => {
+    setSelectedIds((current) => (current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id].slice(-5)));
+  };
+
+  const openComboBuilder = () => {
+    localStorage.setItem('fitlook_combo_seed', JSON.stringify(selectedIds));
+    window.location.href = '/closet/combo';
+  };
+
+  return (
+    <main className="closet-items-page">
+      <section className="wrap closet-items-hero">
+        <div>
+          <p className="kicker">Wardrobe</p>
+          <h1>Your closet</h1>
+          <p className="lead">Browse clothes by type, save favorites, remove old items, or send selected pieces to the combo builder.</p>
+        </div>
+        <div className="closet-items-actions">
+          <a className="secondary-button" href="/closet">Back To Closet</a>
+          <a className="button" href="/closet/add">Add Clothes</a>
+        </div>
+      </section>
+
+      <section className="wrap closet-items-section standalone">
+        <div className="section-head">
+          <h2>Your closet</h2>
+          <div className="closet-tabs">{closetCategories.map(([label, value]) => <button className={filter === value ? 'active' : ''} type="button" key={value} onClick={() => setFilter(value)}>{label}</button>)}</div>
+        </div>
+        {message && <p className={`form-message ${/error|missing|failed|could not|cannot|upload/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
+        {selectedIds.length > 0 && (
+          <div className="closet-selection-bar">
+            <span>{selectedIds.length} selected for combo</span>
+            <button type="button" onClick={openComboBuilder}>Build Combo</button>
+          </div>
+        )}
+        {state.loading && <StatusPanel text="Loading closet items..." />}
+        {state.error && <StatusPanel text={state.error} />}
+        {!state.loading && !state.error && filteredItems.length === 0 && <EmptyProducts search={filter === 'all' ? '' : filter} />}
+        <div className="closet-grid">
+          {filteredItems.map((item) => (
+            <article className={`closet-item-card ${selectedIds.includes(item.id) ? 'selected' : ''}`} key={item.id}>
+              <button className="closet-item-media" type="button" onClick={() => toggleSelected(item)}>
+                <img src={item.imageUrl} alt={item.name} />
+                <span>{selectedIds.includes(item.id) ? 'Selected' : 'Add to combo'}</span>
+              </button>
+              <div className="closet-item-info">
+                <h3>{item.name}</h3>
+                <p>{[item.color, item.fabric, item.category, item.formality].filter(Boolean).join(' · ')}</p>
+                <div>
+                  <button type="button" onClick={() => updateItem(item, { favorite: !item.favorite })}>{item.favorite ? 'Saved' : 'Save'}</button>
+                  <button type="button" onClick={() => deleteItem(item)}>Remove</button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ClosetAddPage({ user, setUser }) {
+  const fileRef = useRef(null);
+  const cameraRef = useRef(null);
+  const [uploadPreview, setUploadPreview] = useState('');
+  const [message, setMessage] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [savedItems, setSavedItems] = useState([]);
+
+  useEffect(() => () => {
+    if (uploadPreview) URL.revokeObjectURL(uploadPreview);
+  }, [uploadPreview]);
+
+  if (!user) return <AuthPage mode="signup" setUser={setUser} />;
+
+  const selectUpload = (event) => {
+    const file = event.currentTarget.files?.[0];
+    setUploadPreview(file ? URL.createObjectURL(file) : '');
+    setMessage('');
+  };
+
+  const submitUpload = async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const chosenFile = form.get('item');
+    const file = chosenFile?.name ? chosenFile : cameraRef.current?.files?.[0] || fileRef.current?.files?.[0];
+    if (!file || !file.name) {
+      setMessage('Upload a clothing photo first.');
+      return;
+    }
+    if (!form.get('name')) form.set('name', file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '));
+    setUploading(true);
+    setMessage('Saving closet item...');
+    try {
+      form.set('item', await prepareClosetItemPhoto(file));
+      const data = await api('/closet/items', { method: 'POST', body: form });
+      setSavedItems((current) => [data.item, ...current].slice(0, 6));
+      event.currentTarget.reset();
+      if (cameraRef.current) cameraRef.current.value = '';
+      setUploadPreview('');
+      setMessage('Added to your closet.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <main className="closet-add-page">
+      <section className="wrap closet-add-hero">
+        <div>
+          <p className="kicker">Add Clothes</p>
+          <h1>Build your digital wardrobe.</h1>
+          <p className="lead">Add each shirt, pant, dress, suit, shoe, cap or accessory here. Then return to AI Closet to mix shirt and pant combinations.</p>
+        </div>
+        <a className="secondary-button" href="/closet">Back To Closet</a>
+      </section>
+
+      <section className="wrap closet-add-layout">
+        <form className="closet-upload-card closet-add-form" onSubmit={submitUpload}>
+          <label className={`upload-box closet-add-upload ${uploadPreview ? 'has-preview' : ''}`}>
+            <input ref={fileRef} name="item" type="file" accept="image/*" onChange={selectUpload} />
+            {uploadPreview ? <img className="upload-preview" src={uploadPreview} alt="Closet item preview" /> : <span><span className="upload-icon">↑</span><span className="upload-title">Upload clothing photo</span><span className="upload-help">Use one clear item per photo for best combo selection.</span></span>}
+          </label>
+          <input ref={cameraRef} className="camera-input" type="file" accept="image/*" capture="environment" onChange={selectUpload} />
+          <button className="secondary-button camera-button" type="button" onClick={() => cameraRef.current?.click()}>Take Photo</button>
+          <label className="field"><span>Name</span><input name="name" placeholder="Black formal shirt" /></label>
+          <div className="two-col">
+            <label className="field"><span>Type</span><select name="category" defaultValue=""><option value="">Auto</option>{closetCategories.slice(1).map(([label, value]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="field"><span>Color</span><input name="color" placeholder="black" /></label>
+          </div>
+          <div className="two-col">
+            <label className="field"><span>Fabric</span><input name="fabric" placeholder="denim, cotton, silk" /></label>
+            <label className="field"><span>Pattern</span><input name="pattern" placeholder="solid, striped" /></label>
+          </div>
+          <div className="two-col">
+            <label className="field"><span>Season</span><select name="season" defaultValue="all-season"><option>all-season</option><option>summer</option><option>winter</option><option>rainy</option></select></label>
+            <label className="field"><span>Vibe</span><select name="formality" defaultValue="any"><option>any</option><option>casual</option><option>smart-casual</option><option>formal</option><option>party</option><option>active</option></select></label>
+          </div>
+          <label className="field"><span>Occasions</span><input name="occasions" placeholder="office, date, wedding" /></label>
+          <label className="field"><span>Tags</span><input name="tags" placeholder="linen, oversized, modest" /></label>
+          <button className="submit" type="submit" disabled={uploading}>{uploading ? 'Saving...' : 'Save Clothing Item'}</button>
+          {message && <p className={`form-message ${/error|missing|failed|could not|cannot|upload/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
+        </form>
+
+        <aside className="closet-add-guide">
+          <h2>Best photos</h2>
+          <div className="photo-rules">
+            <strong>For better shirt and pant matching</strong>
+            <ul>
+              <li>Upload one item per photo.</li>
+              <li>Use a plain background if possible.</li>
+              <li>Choose the correct type for shirts, pants and shoes.</li>
+              <li>Add color and fabric so AI can suggest better combos.</li>
+            </ul>
+          </div>
+          {savedItems.length > 0 && (
+            <div className="closet-added-list">
+              <h3>Recently added</h3>
+              {savedItems.map((item) => (
+                <article key={item.id}>
+                  <img src={item.imageUrl} alt="" />
+                  <div><strong>{item.name}</strong><span>{[item.color, item.category].filter(Boolean).join(' · ')}</span></div>
+                </article>
+              ))}
+            </div>
+          )}
+        </aside>
+      </section>
+    </main>
   );
 }
 
@@ -830,7 +1807,9 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
   const state = useProducts({ q, tag, category, brand, gender, sort, newArrival, limit: 60 });
   const [tryOns, setTryOns] = useTryOnCache(user, state.products);
   const [tryOnLoading, setTryOnLoading] = useState({});
+  const [tryOnVideoLoading, setTryOnVideoLoading] = useState({});
   const [tryOnErrors, setTryOnErrors] = useState({});
+  const [tryOnVideoErrors, setTryOnVideoErrors] = useState({});
   const [continueWithoutTryOn, setContinueWithoutTryOn] = useState(false);
   const autoTryOnStarted = useRef('');
   const searchEventStarted = useRef('');
@@ -863,6 +1842,29 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
       setTryOnErrors((current) => ({ ...current, [product.id]: err.message }));
     } finally {
       setTryOnLoading((current) => ({ ...current, [product.id]: false }));
+    }
+  };
+
+  const generateTryOnVideo = async (product, options = {}) => {
+    setTryOnVideoLoading((current) => ({ ...current, [product.id]: true }));
+    setTryOnVideoErrors((current) => ({ ...current, [product.id]: '' }));
+    try {
+      const data = await api(`/tryons/${product.id}/video`, {
+        method: 'POST',
+        body: options.force ? JSON.stringify({ force: true }) : undefined
+      });
+      setTryOns((current) => ({ ...current, [product.id]: data.tryOn }));
+      recordEvent('try_on', { productId: product.id, metadata: { video: true, regenerated: Boolean(options.force) } });
+      if (data.user) {
+        setUser((current) => {
+          if (!current) return data.user;
+          return { ...data.user, tokens: Math.min(current.tokens, data.user.tokens) };
+        });
+      }
+    } catch (err) {
+      setTryOnVideoErrors((current) => ({ ...current, [product.id]: err.message }));
+    } finally {
+      setTryOnVideoLoading((current) => ({ ...current, [product.id]: false }));
     }
   };
 
@@ -900,7 +1902,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
           {!state.loading && !state.error && state.products.length === 0 && <EmptyProducts search={title} />}
           {!state.loading && !state.error && state.products.length > 0 && (
             <div className="product-grid">
-              {visibleProducts.map((product, index) => <ProductCard key={product.id} product={product} user={user} tryOn={tryOns[product.id]} canTryOn={allowTryOnTrial && index < 4} tryOnLoading={Boolean(tryOnLoading[product.id])} tryOnError={tryOnErrors[product.id]} onTryOn={generateTryOn} />)}
+              {visibleProducts.map((product, index) => <ProductCard key={product.id} product={product} user={user} tryOn={tryOns[product.id]} canTryOn={allowTryOnTrial && index < 4} tryOnLoading={Boolean(tryOnLoading[product.id])} tryOnVideoLoading={Boolean(tryOnVideoLoading[product.id])} tryOnError={tryOnErrors[product.id]} tryOnVideoError={tryOnVideoErrors[product.id]} onTryOn={generateTryOn} onTryOnVideo={generateTryOnVideo} />)}
               {lockedProducts.length > 0 && (
                 <div className="locked-row">
                   {lockedProducts.map((product) => <ProductCard key={`locked-${product.id}`} product={product} locked />)}
@@ -1543,7 +2545,9 @@ function ProductPage({ id, user, setUser }) {
   const [tryOn, setTryOn] = useState(null);
   const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const [tryOnLoading, setTryOnLoading] = useState(false);
+  const [tryOnVideoLoading, setTryOnVideoLoading] = useState(false);
   const [tryOnError, setTryOnError] = useState('');
+  const [tryOnVideoError, setTryOnVideoError] = useState('');
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [detailImageView, setDetailImageView] = useState('tryon');
   const productViewStarted = useRef('');
@@ -1600,7 +2604,9 @@ function ProductPage({ id, user, setUser }) {
   const discount = hasDiscount ? `${Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}% off` : '';
   const productImage = product.imageUrl || asset('hero2.png');
   const hasUsableTryOn = Boolean(tryOn?.imageUrl) && !tryOnImageFailed;
+  const hasTryOnVideo = Boolean(tryOn?.videoUrl) && hasUsableTryOn;
   const showingTryOn = hasUsableTryOn && detailImageView !== 'product';
+  const showingTryOnVideo = showingTryOn && hasTryOnVideo;
   const image = showingTryOn ? tryOn.imageUrl : productImage;
   const swapPreview = hasUsableTryOn && product.imageUrl
     ? {
@@ -1648,24 +2654,55 @@ function ProductPage({ id, user, setUser }) {
     }
   };
 
+  const generateProductTryOnVideo = async () => {
+    if (!product || tryOnVideoLoading || !hasUsableTryOn) return;
+    const regenerate = Boolean(tryOn?.videoUrl);
+    setTryOnVideoLoading(true);
+    setTryOnVideoError('');
+    try {
+      const data = await api(`/tryons/${product.id}/video`, {
+        method: 'POST',
+        body: regenerate ? JSON.stringify({ force: true }) : undefined
+      });
+      setTryOn(data.tryOn);
+      setDetailImageView('tryon');
+      recordEvent('try_on', { productId: product.id, metadata: { video: true, regenerated: regenerate } });
+      if (data.user) {
+        setUser((current) => {
+          if (!current) return data.user;
+          return { ...data.user, tokens: Math.min(current.tokens, data.user.tokens) };
+        });
+      }
+    } catch (err) {
+      setTryOnVideoError(err.message);
+    } finally {
+      setTryOnVideoLoading(false);
+    }
+  };
+
   return (
     <main className="product-page">
       <section className="wrap product-detail">
         <div className="breadcrumb"><a href="/search">Shop</a><span>/</span><a href={`/search?category=${encodeURIComponent(product.category || '')}`}>{category}</a></div>
         <div className="product-detail-grid">
           <div className={`product-detail-media ${showingTryOn ? 'showing-tryon' : 'showing-product'}`}>
-            <ZoomableImage
-              src={image}
-              alt={product.name}
-              zoom={1.75}
-              onError={(event) => {
-                if (hasUsableTryOn) setTryOnImageFailed(true);
-                else if (event.currentTarget.src !== window.location.origin + asset('hero2.png')) event.currentTarget.src = asset('hero2.png');
-              }}
-            />
+            {showingTryOnVideo ? (
+              <video className="tryon-video-player" src={tryOn.videoUrl} poster={tryOn.imageUrl} autoPlay muted loop playsInline controls />
+            ) : (
+              <ZoomableImage
+                src={image}
+                alt={product.name}
+                zoom={showingTryOn ? 1 : 1.75}
+                disableZoom={showingTryOn}
+                onError={(event) => {
+                  if (hasUsableTryOn) setTryOnImageFailed(true);
+                  else if (event.currentTarget.src !== window.location.origin + asset('hero2.png')) event.currentTarget.src = asset('hero2.png');
+                }}
+              />
+            )}
             {product.badge && <span className="badge">{product.badge}</span>}
-            {showingTryOn && <span className="badge tryon-badge">AI Try-On</span>}
-            {hasUsableTryOn && (
+            {showingTryOn && <span className="badge tryon-badge">{showingTryOnVideo ? 'Video Try-On' : 'AI Try-On'}</span>}
+            {hasUsableTryOn && !showingTryOnVideo && (
               <button
                 className="fullscreen-button"
                 type="button"
@@ -1680,7 +2717,7 @@ function ProductPage({ id, user, setUser }) {
                 <FullscreenIcon />
               </button>
             )}
-            {tryOnLoading && <TryOnGenerating />}
+            {(tryOnLoading || tryOnVideoLoading) && <TryOnGenerating text={tryOnVideoLoading ? 'Generating video' : 'Generating try-on'} />}
             {swapPreview && (
               <button
                 className="original-product-preview"
@@ -1726,8 +2763,14 @@ function ProductPage({ id, user, setUser }) {
                   {tryOnLoading ? 'Generating Try-On...' : hasUsableTryOn ? 'Generate Try-On Again' : tryOnImageFailed ? 'Try Again' : 'Generate AI Try-On'}
                 </button>
               ) : <a className="secondary-button" href="/signup">Create Profile for Try-On</a>}
+              {user && hasUsableTryOn && (
+                <button className="secondary-button video-tryon-button" type="button" onClick={generateProductTryOnVideo} disabled={tryOnLoading || tryOnVideoLoading}>
+                  {tryOnVideoLoading ? 'Generating Video...' : hasTryOnVideo ? 'Generate Video Again' : 'Generate Video Try-On'}
+                </button>
+              )}
             </div>
             {tryOnError && <p className="form-message error-message">{tryOnError}</p>}
+            {tryOnVideoError && <p className="form-message error-message">{tryOnVideoError}</p>}
           </div>
         </div>
       </section>
@@ -2026,6 +3069,10 @@ function App() {
     if (path === '/search') return <SearchPage user={user} setUser={setUser} />;
     if (path === '/categories') return <CategoriesPage />;
     if (path === '/try-on') return user ? <SearchPage user={user} setUser={setUser} tryOnMode /> : <AuthPage mode="signup" setUser={setUser} />;
+    if (path === '/closet') return <ClosetPage user={user} setUser={setUser} />;
+    if (path === '/closet/add') return <ClosetAddPage user={user} setUser={setUser} />;
+    if (path === '/closet/combo') return <ClosetComboPage user={user} setUser={setUser} />;
+    if (path === '/closet/items') return <ClosetItemsPage user={user} setUser={setUser} />;
     if (path === '/custom-try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/style-bot') return <StyleBotPage user={user} setUser={setUser} />;
     if (path === '/tokens') return <TokenPage user={user} setUser={setUser} />;
@@ -2044,6 +3091,7 @@ function App() {
       <Header user={user} setUser={setUser} />
       {page}
       <div className="floating-actions" aria-label="FitLook quick actions">
+        <a className="floating-action closet" href="/closet" aria-label="Open AI closet"><span>CL</span><strong><small>Your wardrobe</small>AI Closet</strong></a>
         <a className="floating-action style" href="/style-bot" aria-label="Open style bot"><span><SearchIcon /></span><strong><small>Ask for a look</small>Style Bot</strong></a>
         <a className="floating-action custom" href="/custom-try-on" aria-label="Custom clothing try-on"><span>AI</span><strong><small>Upload clothing</small>Custom Try-On</strong></a>
       </div>

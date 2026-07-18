@@ -50,12 +50,21 @@ function tokenCost() {
   return Number.isFinite(value) && value > 0 ? Math.ceil(value) : 1;
 }
 
+function videoTokenCost() {
+  const value = Number(process.env.TRYON_VIDEO_TOKEN_COST || 2);
+  return Number.isFinite(value) && value > 0 ? Math.ceil(value) : 2;
+}
+
 function devMode(user) {
   return Boolean(user?.devMode);
 }
 
 function chargedTokenCost(user) {
   return devMode(user) ? 0 : tokenCost();
+}
+
+function chargedVideoTokenCost(user) {
+  return devMode(user) ? 0 : videoTokenCost();
 }
 
 function ensureTryOnProfileReady(user) {
@@ -148,6 +157,19 @@ function wanImageToImageModel() {
   return process.env.FAL_WAN_IMAGE_TO_IMAGE_MODEL || 'wan/v2.6/image-to-image';
 }
 
+function pixverseImageToVideoModel() {
+  return process.env.FAL_TRYON_VIDEO_MODEL || 'fal-ai/pixverse/v6/image-to-video';
+}
+
+function pixverseImageToVideoResolution() {
+  return process.env.FAL_TRYON_VIDEO_RESOLUTION || '540p';
+}
+
+function pixverseImageToVideoDuration() {
+  const value = Number(process.env.FAL_TRYON_VIDEO_DURATION || 5);
+  return Number.isFinite(value) && value > 0 ? value : 5;
+}
+
 function tryOnModelForProduct(product) {
   return inferTryOnModel(product);
 }
@@ -171,6 +193,9 @@ function wanImageSize() {
 }
 
 function extensionFor(mimetype) {
+  if (mimetype?.includes('mp4')) return '.mp4';
+  if (mimetype?.includes('quicktime')) return '.mov';
+  if (mimetype?.startsWith('video/')) return '.mp4';
   if (mimetype?.includes('png')) return '.png';
   if (mimetype?.includes('webp')) return '.webp';
   if (mimetype?.includes('gif')) return '.gif';
@@ -597,11 +622,12 @@ async function callFitRoomTryOn({ user, product, garmentFile, clothType, timer }
 function tryOnPrompt(product) {
   return [
     'Generate a photorealistic e-commerce fashion try-on image. This is a standard apparel catalog photo, similar to images on Zara, ASOS, or Nordstrom product pages, showing how a real clothing item fits and drapes on a person.',
-    'Reference image 1 is the shopper and is the only identity reference. Preserve their exact identity, face, facial features, hair, skin tone, body shape, pose, camera angle, crop, lighting, and background. Do not beautify, slim, age, sexualize, re-face, or otherwise alter the shopper.',
+    'Reference image 1 is the shopper and is the only identity reference. Preserve their exact identity, face, facial features, hair, skin tone, body shape, and natural proportions. Do not beautify, slim, age, sexualize, re-face, or otherwise alter the shopper.',
     `Reference image 2 is only the garment/product reference: "${product.name}" by ${product.brand}. If this product image contains a model, mannequin, face, hair, skin, hands, body, pose, or background, ignore all of those completely. Do not copy, blend, borrow, or average any identity, face, hairstyle, skin tone, body shape, pose, expression, or background from reference image 2.`,
     'Transfer only the visible clothing item from reference image 2 as-is, including its original color, fabric texture, neckline, sleeve length, hemline, cut, seams, buttons, logos, pockets, pattern, and silhouette. Do not modify the garment design.',
     'Fit the garment naturally onto the shopper with correct scale, seams, neckline, sleeve length, hem length, folds, shadows, occlusion, and fabric texture, matching how the garment fits in the original product photo.',
     'The final face must match reference image 1. Keep the shopper eyes, nose, mouth, jawline, facial proportions, hairline, hairstyle, and expression from reference image 1 unchanged.',
+    'Create a clean full-body studio catalog image with soft even lighting and a simple neutral light gray or off-white ecommerce background. Do not preserve messy rooms, green screens, curtains, camera equipment, walls, floors, or background clutter from the shopper reference.',
     'This is professional, non-sexualized commercial fashion photography intended for a retail product page. The pose, framing, and styling should remain catalog-appropriate and editorial in tone, consistent with mainstream fashion retail imagery.',
     'Keep the shopper hands, face, legs, footwear, and non-target clothing unchanged unless they must be naturally covered by the new garment.',
     'Do not invent extra accessories, logos, text, patterns, buttons, pockets, or colors that are not present in the product image.',
@@ -615,13 +641,14 @@ function wanTryOnPrompt(product) {
   const productBrand = String(product?.brand || 'the listed brand').slice(0, 120);
   return [
     'Create one photorealistic virtual try-on image for an ecommerce product page.',
-    'Image 1 is the shopper and must remain the identity, body, pose, camera, lighting, and background reference.',
-    'Preserve the shopper face, hair, skin tone, body shape, hands, legs, pose, framing, and expression exactly.',
+    'Image 1 is the shopper and must remain the identity, face, hair, skin tone, body shape, hands, legs, natural proportions, and expression reference.',
+    'Preserve the shopper face, hair, skin tone, body shape, hands, legs, and expression exactly.',
     `Image 2 is only the garment reference for "${productName}" by ${productBrand}.`,
     'Transfer only the garment design, color, fabric, texture, neckline, sleeves, hem, seams, closures, logos, pattern, pockets, and silhouette from image 2.',
     'Ignore any model, mannequin, person, face, body, pose, camera angle, crop, lighting, and background present in image 2.',
     'Fit the garment naturally onto the shopper with correct scale, drape, folds, wrinkles, occlusion, and shadows.',
-    'Keep every non-garment region from image 1 unchanged. Do not add accessories, styling, text, logos, background details, body changes, or extra skin exposure.',
+    'Create a clean full-body studio catalog image with soft even lighting and a simple neutral light gray or off-white ecommerce background. Do not preserve messy rooms, green screens, curtains, camera equipment, walls, floors, or background clutter from image 1.',
+    'Keep every non-garment body region from image 1 unchanged. Do not add accessories, styling, text, logos, body changes, or extra skin exposure.',
     'MANDATORY OUTPUT CHECK — the image is invalid unless ALL of these are true: (1) full body visible head-to-toe in one frame, (2) complete face and hair visible and unobstructed, (3) both arms and both hands fully visible, (4) both legs and both feet or footwear fully visible, (5) no cropping at the head, shoulders, waist, knees, or ankles, (6) exactly one person in one single continuous photo. If the input framing does not allow a full body composition, zoom out rather than cropping any body part out of frame.',
     'Return one clean, full-body, non-sexualized, photorealistic retail try-on preview.'
   ].join(' ');
@@ -734,6 +761,32 @@ function firstGeneratedImageUrl(value, depth = 0) {
   return '';
 }
 
+function firstGeneratedVideoUrl(value, depth = 0) {
+  if (!value || depth > 8) return '';
+  if (typeof value === 'string') return /^https?:\/\//i.test(value) || /^data:video\//i.test(value) ? value : '';
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = firstGeneratedVideoUrl(item, depth + 1);
+      if (found) return found;
+    }
+    return '';
+  }
+  if (typeof value !== 'object') return '';
+  for (const key of ['url', 'video_url', 'videoUrl']) {
+    const found = firstGeneratedVideoUrl(value[key], depth + 1);
+    if (found) return found;
+  }
+  for (const key of ['video', 'videos', 'output', 'result', 'data']) {
+    const found = firstGeneratedVideoUrl(value[key], depth + 1);
+    if (found) return found;
+  }
+  for (const child of Object.values(value)) {
+    const found = firstGeneratedVideoUrl(child, depth + 1);
+    if (found) return found;
+  }
+  return '';
+}
+
 function shortUrlForLog(url = '') {
   try {
     const parsed = new URL(url);
@@ -778,6 +831,192 @@ async function generatedBytesFromUrl(url, timer) {
   }
 
   throw new Error(`Could not download generated try-on image from ${shortUrlForLog(url)} (${lastStatus || 'request failed'})`);
+}
+
+function videoMimeTypeFromResponse(response, bytes) {
+  const declared = response.headers.get('content-type') || '';
+  if (declared.startsWith('video/')) return declared.split(';')[0];
+  if (Buffer.isBuffer(bytes) && bytes.length > 12 && bytes.toString('ascii', 4, 8) === 'ftyp') return 'video/mp4';
+  return declared || 'video/mp4';
+}
+
+async function generatedVideoBytesFromUrl(url, timer) {
+  if (/^data:video\//i.test(url)) {
+    const [, metadata = '', base64 = ''] = url.match(/^data:([^;]+);base64,(.+)$/i) || [];
+    if (!base64) throw new Error('Generated video data URI was invalid');
+    return {
+      bytes: Buffer.from(base64, 'base64'),
+      mimetype: metadata || 'video/mp4'
+    };
+  }
+
+  const response = await fetch(url, {
+    headers: {
+      accept: 'video/mp4,video/quicktime,video/*,*/*;q=0.8',
+      'user-agent': 'Mozilla/5.0 FitLook generated video fetcher'
+    }
+  });
+  if (!response.ok) throw new Error(`Could not download generated try-on video from ${shortUrlForLog(url)}`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  return {
+    bytes,
+    mimetype: videoMimeTypeFromResponse(response, bytes)
+  };
+}
+
+function modelGenderForVideo(user, product) {
+  const preference = String(user?.genderPreference || '').toLowerCase();
+  const productGender = String(product?.gender || '').toLowerCase();
+  if (preference === 'male' || /\b(men|man|male|boys?)\b/.test(productGender)) return 'male';
+  if (preference === 'female' || /\b(women|woman|female|girls?)\b/.test(productGender)) return 'female';
+  return 'neutral';
+}
+
+function pixverseTryOnVideoPrompt(product, user) {
+  const gender = modelGenderForVideo(user, product);
+  const expression = gender === 'male'
+    ? 'calm masculine expression'
+    : gender === 'female'
+      ? 'calm elegant expression'
+      : 'calm natural expression';
+  return [
+    'Clean ecommerce product photo animation from the exact input image.',
+    'Keep the same person, face, hairstyle, outfit, fabric, colors, lighting, and background unchanged.',
+    `Keep a ${expression}.`,
+    'Full body remains visible head to toe with space above head and below feet.',
+    'Locked camera, no zoom, no close-up, no crop.',
+    'Very subtle natural idle motion with a tiny 10 to 20 degree in-place shoulder turn.',
+    'Do not walk, approach, dance, pose dramatically, or change the scene. Smooth realistic motion only.'
+  ].join(' ');
+}
+
+function pixverseTryOnVideoNegativePrompt() {
+  return [
+    'face change, different face, identity change, re-faced, face swap, beautified face, altered eyes, altered nose, altered mouth, altered jaw, altered hairstyle, altered facial hair, expression change, gender change',
+    'close-up, medium shot, upper body only, portrait shot, detail shot, zoom in, camera push in, camera dolly, camera orbit, camera tracking, camera shake',
+    'walking toward camera, approaching camera, full 180 turn, back to camera, cropped head, cropped feet, cropped body, cropped legs, cut off outfit, cut off hands',
+    'clothing change, outfit change, color change, body deformation, extra arms, extra legs, extra fingers, missing fingers, distorted anatomy, flickering, blur, ghosting, warping, melting, AI artifacts, background change, scene change, low quality'
+  ].join(', ');
+}
+
+function safeFalResultForLog(value, depth = 0) {
+  if (depth > 4) return '[truncated]';
+  if (typeof value === 'string') return redactLargeData(value).slice(0, 240);
+  if (Array.isArray(value)) return value.slice(0, 8).map((item) => safeFalResultForLog(item, depth + 1));
+  if (!value || typeof value !== 'object') return value;
+  const safe = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (/url/i.test(key) && typeof child === 'string') {
+      safe[key] = child.slice(0, 96);
+    } else {
+      safe[key] = safeFalResultForLog(child, depth + 1);
+    }
+  }
+  return safe;
+}
+
+function readableVideoError(value, fallback = 'Could not generate video try-on') {
+  const text = value instanceof Error
+    ? value.message
+    : typeof value === 'string'
+      ? value
+      : (() => {
+          try {
+            return JSON.stringify(value);
+          } catch {
+            return '';
+          }
+        })();
+  if (/content[_\s-]?policy|safety|flagged|content[_\s-]?policy[_\s-]?violation/i.test(text)) {
+    return 'The video provider blocked this generated clip. Regenerate the AI try-on image with a neutral full-body result, then try video again.';
+  }
+  return readableError(value, fallback);
+}
+
+async function videoFirstFrameDataUri(image, label, timer) {
+  if (!image?.path) throw new Error(`${label} image is missing`);
+  const localPath = safeLocalPath(image.path);
+  const bytes = await fs.readFile(localPath);
+  const normalized = await normalizeAvifImage({
+    bytes,
+    mimetype: image.mimetype || 'image/jpeg',
+    filename: image.filename,
+    label,
+    timer
+  });
+  const maxWidth = Number(process.env.FAL_VIDEO_FRAME_MAX_WIDTH || 1024);
+  const maxHeight = Number(process.env.FAL_VIDEO_FRAME_MAX_HEIGHT || 1536);
+  const output = await sharp(normalized.bytes)
+    .rotate()
+    .resize({
+      width: maxWidth,
+      height: maxHeight,
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+    .jpeg({ quality: 92 })
+    .toBuffer();
+  const metadata = await sharp(output).metadata();
+  timer?.mark(`${label} video first frame prepared`, {
+    inputKb: Math.round(normalized.bytes.length / 1024),
+    outputKb: Math.round(output.length / 1024),
+    width: metadata.width,
+    height: metadata.height
+  });
+  return `data:image/jpeg;base64,${output.toString('base64')}`;
+}
+
+async function runVideoAttempt({ endpoint, payload, prompt, label, providerName, timer }) {
+  const pixverseTimer = {
+    ...timer,
+    maxAttempts: Number(process.env.FAL_VIDEO_POLL_ATTEMPTS || 180),
+    pollMs: Number(process.env.FAL_VIDEO_POLL_MS || 2000)
+  };
+
+  timer?.mark(`${label} submit attempt`, { model: endpoint, resolution: payload.resolution, duration: payload.duration });
+  const submission = await falJson(`https://queue.fal.run/${endpoint}`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  timer?.mark(`${label} submitted`, { requestId: submission.request_id });
+  const result = await waitForFalResult(submission, pixverseTimer);
+  const generatedUrl = firstGeneratedVideoUrl(result);
+  if (!generatedUrl) {
+    timer?.mark(`${label} returned no video`, { result: safeFalResultForLog(result) });
+    throw new Error(`${providerName || 'Video provider'} returned no video. Response keys: ${Object.keys(result || {}).join(', ')}`);
+  }
+  const { bytes, mimetype } = await generatedVideoBytesFromUrl(generatedUrl, timer);
+  timer?.mark(`${label} downloaded`, { outputKb: Math.round(bytes.length / 1024), mimetype });
+  return {
+    bytes,
+    mimetype,
+    prompt,
+    model: endpoint,
+    quality: `${payload.resolution} ${payload.duration}s`
+  };
+}
+
+async function callPixverseTryOnVideo({ tryOn, product, user, timer }) {
+  const imageUrl = await videoFirstFrameDataUri(tryOn.image, 'try-on image', timer);
+  const prompt = pixverseTryOnVideoPrompt(product, user);
+  const payload = {
+    prompt,
+    image_url: imageUrl,
+    resolution: pixverseImageToVideoResolution(),
+    duration: pixverseImageToVideoDuration(),
+    negative_prompt: pixverseTryOnVideoNegativePrompt(),
+    generate_audio_switch: false,
+    generate_multi_clip_switch: false,
+    thinking_type: 'disabled'
+  };
+  return runVideoAttempt({
+    endpoint: pixverseImageToVideoModel(),
+    payload,
+    prompt,
+    label: 'pixverse image-to-video',
+    providerName: 'PixVerse',
+    timer
+  });
 }
 
 async function callFalWanImageToImage({ user, product, garmentDataUri, prompt, timer }) {
@@ -867,8 +1106,15 @@ async function callFalImageEdit({ user, product, garmentDataUri, prompt, timer }
   const imageResponse = await fetch(generated.url);
   if (!imageResponse.ok) throw new Error('Could not download generated try-on image');
   const bytes = Buffer.from(await imageResponse.arrayBuffer());
+  const mimetype = imageMimeTypeFromResponse(imageResponse, bytes);
   timer?.mark('generated image downloaded', { outputKb: Math.round(bytes.length / 1024) });
-  return { bytes, prompt: finalPrompt };
+  return {
+    bytes,
+    mimetype,
+    prompt: finalPrompt,
+    model: endpoint,
+    quality: imageQuality()
+  };
 }
 
 async function saveUserCacheFile({ user, bytes, filename, mimetype }) {
@@ -884,10 +1130,22 @@ async function saveUserCacheFile({ user, bytes, filename, mimetype }) {
   };
 }
 
-async function saveGeneratedTryOn({ user, product, timer }) {
+async function generateProductTryOnImage({ user, product, tryOnModel, timer }) {
+  const selectedModel = normalizeTryOnModel(tryOnModel || tryOnModelForProduct(product));
+  timer?.mark('image generator selected', { tryOnModel: selectedModel });
+  if (selectedModel === 'wan-v2.6-image-to-image') {
+    return callFalWanImageToImage({ user, product, timer });
+  }
+  if (selectedModel === 'gpt-image-2') {
+    return callFalImageEdit({ user, product, timer });
+  }
   const clothType = fitRoomClothTypeForProduct(product);
-  timer?.mark('fitroom cloth type selected', { clothType });
-  const generated = await callFitRoomTryOn({ user, product, clothType, timer });
+  timer?.mark('fitroom fallback cloth type selected', { clothType });
+  return callFitRoomTryOn({ user, product, clothType, timer });
+}
+
+async function saveGeneratedTryOn({ user, product, tryOnModel, timer }) {
+  const generated = await generateProductTryOnImage({ user, product, tryOnModel, timer });
   const filename = `tryon-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   timer?.mark('generated image saved', { path: image.path });
@@ -895,7 +1153,7 @@ async function saveGeneratedTryOn({ user, product, timer }) {
   return TryOn.create({
     user: user._id,
     product: product._id,
-    provider: 'fitroom',
+    provider: generated.model?.includes('fitroom') ? 'fitroom' : 'fal',
     model: generated.model,
     quality: generated.quality,
     prompt: generated.prompt,
@@ -905,9 +1163,7 @@ async function saveGeneratedTryOn({ user, product, timer }) {
 }
 
 async function replaceGeneratedTryOn({ user, product, tryOnModel, timer }) {
-  const clothType = fitRoomClothTypeForProduct(product);
-  timer?.mark('fitroom regenerate cloth type selected', { clothType, requestedModel: tryOnModel || '' });
-  const generated = await callFitRoomTryOn({ user, product, clothType, timer });
+  const generated = await generateProductTryOnImage({ user, product, tryOnModel, timer });
   const filename = `tryon-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   timer?.mark('generated image replaced', { path: image.path });
@@ -916,12 +1172,15 @@ async function replaceGeneratedTryOn({ user, product, tryOnModel, timer }) {
     { user: user._id, product: product._id },
     {
       $set: {
-        provider: 'fitroom',
+        provider: generated.model?.includes('fitroom') ? 'fitroom' : 'fal',
         model: generated.model,
         quality: generated.quality,
         prompt: generated.prompt,
         tokenCost: chargedTokenCost(user),
         image
+      },
+      $unset: {
+        video: ''
       },
       $setOnInsert: {
         user: user._id,
@@ -1039,12 +1298,11 @@ async function saveGeneratedCustomTryOn({ user, garmentFile, timer }) {
   });
 }
 
-async function reserveToken(user, timer) {
+async function reserveToken(user, timer, cost = tokenCost()) {
   if (devMode(user)) {
     timer.mark('dev mode token bypass', { tokensRemaining: user.tokens, cost: 0 });
     return user;
   }
-  const cost = tokenCost();
   const chargedUser = await User.findOneAndUpdate(
     { _id: user._id, tokens: { $gte: cost } },
     { $inc: { tokens: -cost } },
@@ -1055,12 +1313,11 @@ async function reserveToken(user, timer) {
   return chargedUser;
 }
 
-async function refundToken(user, timer) {
+async function refundToken(user, timer, cost = tokenCost()) {
   if (devMode(user)) {
     timer.mark('dev mode refund skipped', { tokensRemaining: user.tokens, cost: 0 });
     return user;
   }
-  const cost = tokenCost();
   const refundedUser = await User.findByIdAndUpdate(user._id, { $inc: { tokens: cost } }, { new: true });
   if (refundedUser) timer.mark('token refunded', { cost, tokensRemaining: refundedUser.tokens });
   return refundedUser || user;
@@ -1170,6 +1427,64 @@ router.post('/external', requireUser, async (req, res) => {
   }
 });
 
+router.post('/:productId/video', requireUser, async (req, res) => {
+  const forceGenerate = Boolean(req.body?.force || req.body?.refresh);
+  const timer = createTimer('video', {
+    userId: req.user._id.toString(),
+    productId: req.params.productId,
+    forceGenerate
+  });
+  const cost = videoTokenCost();
+  let reserved = false;
+
+  try {
+    const [product, existing] = await Promise.all([
+      Product.findOne({ _id: req.params.productId, isActive: true }),
+      TryOn.findOne({ user: req.user._id, product: req.params.productId })
+    ]);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+    if (!existing?.image?.path) return res.status(400).json({ message: 'Generate the AI clothing try-on image before creating a video.' });
+    if (existing.video?.path && !forceGenerate) {
+      timer.end({ reused: true });
+      return res.json({ tryOn: existing.toClient(), user: req.user.toClient(), reused: true });
+    }
+
+    const chargedUser = await reserveToken(req.user, timer, cost);
+    if (!chargedUser) {
+      timer.end({ error: 'insufficient tokens' });
+      return res.status(402).json({ message: 'Not enough tokens for video try-on' });
+    }
+    reserved = true;
+    req.user = chargedUser;
+
+    const generated = await callPixverseTryOnVideo({ tryOn: existing, product, user: req.user, timer });
+    const filename = `tryon-video-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
+    const video = await saveUserCacheFile({ user: req.user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
+    const updated = await TryOn.findOneAndUpdate(
+      { user: req.user._id, product: req.params.productId },
+      {
+        $set: {
+          video: {
+            ...video,
+            model: generated.model,
+            prompt: generated.prompt,
+            tokenCost: chargedVideoTokenCost(req.user),
+            generatedAt: new Date()
+          }
+        }
+      },
+      { new: true }
+    );
+    timer.end({ reused: false, tokensRemaining: req.user.tokens, path: video.path });
+    res.status(201).json({ tryOn: updated.toClient(), user: req.user.toClient(), reused: false });
+  } catch (error) {
+    if (reserved) req.user = await refundToken(req.user, timer, cost);
+    const message = readableVideoError(error, 'Could not generate video try-on');
+    timer.end({ error: message });
+    res.status(400).json({ message });
+  }
+});
+
 router.post('/:productId', requireUser, async (req, res) => {
   const requestedModel = normalizeTryOnModel(req.body?.tryOnModel);
   const hasRequestedModel = Boolean(req.body?.tryOnModel);
@@ -1188,7 +1503,7 @@ router.post('/:productId', requireUser, async (req, res) => {
     const existing = await TryOn.findOne({ user: req.user._id, product: req.params.productId });
     const selectedModel = hasRequestedModel
       ? requestedModel
-      : forceGenerate && existing?.model
+      : forceGenerate && existing?.model && !String(existing.model).includes('fitroom')
         ? normalizeTryOnModel(existing.model)
         : tryOnModelForProduct(product);
     timer.mark('product loaded', {
@@ -1212,7 +1527,7 @@ router.post('/:productId', requireUser, async (req, res) => {
 
     const tryOn = forceGenerate
       ? await replaceGeneratedTryOn({ user: req.user, product, tryOnModel: selectedModel, timer })
-      : await saveGeneratedTryOn({ user: req.user, product, timer });
+      : await saveGeneratedTryOn({ user: req.user, product, tryOnModel: selectedModel, timer });
     timer.end({ reused: false, tokensRemaining: req.user.tokens });
 
     res.status(201).json({ tryOn: tryOn.toClient(), user: req.user.toClient(), reused: false });

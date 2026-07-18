@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import authRoutes from './routes/auth.js';
+import closetRoutes from './routes/closet.js';
 import paymentRoutes from './routes/payments.js';
 import productRoutes from './routes/products.js';
 import recommendationRoutes from './routes/recommendations.js';
@@ -57,6 +58,7 @@ app.use(cors({
 app.use(express.json());
 app.use('/uploads', express.static(path.join(rootDir, 'uploads')));
 app.use('/api/auth', authRoutes);
+app.use('/api/closet', closetRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/recommendations', recommendationRoutes);
