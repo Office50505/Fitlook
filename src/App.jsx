@@ -791,7 +791,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
       {!locked && (
         <div className="product-card-actions">
           {canTryOn && onTryOn ? (
-            <button type="button" onClick={() => onTryOn(product, { force: Boolean(tryOn?.imageUrl), tryOnModel: tryOn?.model })} disabled={tryOnLoading}>
+            <button type="button" onClick={() => onTryOn(product, { force: Boolean(tryOn?.imageUrl) })} disabled={tryOnLoading}>
               {tryOnLoading ? 'Generating...' : hasUsableTryOn ? 'Generate Again' : tryOnImageFailed ? 'Try Again' : 'Try On'}
             </button>
           ) : (
@@ -1828,7 +1828,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
     try {
       const data = await api(`/tryons/${product.id}`, {
         method: 'POST',
-        body: options.force ? JSON.stringify({ force: true, tryOnModel: options.tryOnModel }) : undefined
+        body: options.force ? JSON.stringify({ force: true }) : undefined
       });
       setTryOns((current) => ({ ...current, [product.id]: data.tryOn }));
       recordEvent('try_on', { productId: product.id, metadata: { regenerated: Boolean(options.force) } });
@@ -2635,7 +2635,7 @@ function ProductPage({ id, user, setUser }) {
     try {
       const data = await api(`/tryons/${product.id}`, {
         method: 'POST',
-        body: regenerate ? JSON.stringify({ force: true, tryOnModel: tryOn?.model }) : undefined
+        body: regenerate ? JSON.stringify({ force: true }) : undefined
       });
       setTryOn(data.tryOn);
       setDetailImageView('tryon');

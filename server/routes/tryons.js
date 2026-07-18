@@ -170,8 +170,8 @@ function pixverseImageToVideoDuration() {
   return Number.isFinite(value) && value > 0 ? value : 5;
 }
 
-function tryOnModelForProduct(product) {
-  return product?.tryOnModel ? inferTryOnModel(product) : 'fitroom/tryon-v2';
+function tryOnModelForProduct() {
+  return 'fitroom/tryon-v2';
 }
 
 function imageQuality() {
