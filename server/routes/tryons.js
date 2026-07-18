@@ -171,7 +171,7 @@ function pixverseImageToVideoDuration() {
 }
 
 function tryOnModelForProduct(product) {
-  return inferTryOnModel(product);
+  return product?.tryOnModel ? inferTryOnModel(product) : 'fitroom/tryon-v2';
 }
 
 function imageQuality() {
@@ -1131,16 +1131,22 @@ async function saveUserCacheFile({ user, bytes, filename, mimetype }) {
 }
 
 async function generateProductTryOnImage({ user, product, tryOnModel, timer }) {
-  const selectedModel = normalizeTryOnModel(tryOnModel || tryOnModelForProduct(product));
+  const selectedModel = tryOnModel || tryOnModelForProduct(product);
   timer?.mark('image generator selected', { tryOnModel: selectedModel });
-  if (selectedModel === 'wan-v2.6-image-to-image') {
+  if (selectedModel === 'fitroom/tryon-v2') {
+    const clothType = fitRoomClothTypeForProduct(product);
+    timer?.mark('fitroom cloth type selected', { clothType });
+    return callFitRoomTryOn({ user, product, clothType, timer });
+  }
+  const falModel = normalizeTryOnModel(selectedModel);
+  if (falModel === 'wan-v2.6-image-to-image') {
     return callFalWanImageToImage({ user, product, timer });
   }
-  if (selectedModel === 'gpt-image-2') {
+  if (falModel === 'gpt-image-2') {
     return callFalImageEdit({ user, product, timer });
   }
   const clothType = fitRoomClothTypeForProduct(product);
-  timer?.mark('fitroom fallback cloth type selected', { clothType });
+  timer?.mark('fitroom cloth type selected', { clothType });
   return callFitRoomTryOn({ user, product, clothType, timer });
 }
 
@@ -1503,9 +1509,7 @@ router.post('/:productId', requireUser, async (req, res) => {
     const existing = await TryOn.findOne({ user: req.user._id, product: req.params.productId });
     const selectedModel = hasRequestedModel
       ? requestedModel
-      : forceGenerate && existing?.model && !String(existing.model).includes('fitroom')
-        ? normalizeTryOnModel(existing.model)
-        : tryOnModelForProduct(product);
+      : tryOnModelForProduct(product);
     timer.mark('product loaded', {
       tryOnModel: selectedModel,
       existingModel: existing?.model || ''
