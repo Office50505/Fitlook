@@ -7,6 +7,28 @@ const closetImageSchema = {
   size: Number
 };
 
+const closetVisualProfileSchema = {
+  source: { type: String, trim: true, default: '' },
+  model: { type: String, trim: true, default: '' },
+  analyzedAt: Date,
+  cost: { type: Number, default: 0 },
+  confidence: { type: Number, default: 0 },
+  subcategory: { type: String, trim: true, default: '' },
+  primaryColor: { type: String, trim: true, default: '' },
+  secondaryColors: [{ type: String, trim: true }],
+  pattern: { type: String, trim: true, default: '' },
+  fabricGuess: { type: String, trim: true, default: '' },
+  texture: { type: String, trim: true, default: '' },
+  fit: { type: String, trim: true, default: '' },
+  silhouette: { type: String, trim: true, default: '' },
+  formality: { type: String, trim: true, default: '' },
+  occasions: [{ type: String, trim: true }],
+  seasons: [{ type: String, trim: true }],
+  styleTags: [{ type: String, trim: true }],
+  pairingNotes: { type: String, trim: true, default: '' },
+  rawDescription: { type: String, trim: true, default: '' }
+};
+
 const closetItemSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -27,7 +49,8 @@ const closetItemSchema = new mongoose.Schema(
     favorite: { type: Boolean, default: false },
     wearCount: { type: Number, default: 0 },
     lastWornAt: Date,
-    image: closetImageSchema
+    image: closetImageSchema,
+    visualProfile: closetVisualProfileSchema
   },
   { timestamps: true }
 );
@@ -51,6 +74,7 @@ closetItemSchema.methods.toClient = function toClient() {
     wearCount: this.wearCount || 0,
     lastWornAt: this.lastWornAt || null,
     imageUrl: this.image?.path ? `/${this.image.path}` : null,
+    visualProfile: this.visualProfile || null,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt
   };

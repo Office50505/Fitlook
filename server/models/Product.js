@@ -2,6 +2,18 @@ import mongoose from 'mongoose';
 
 const LEGACY_UNRESTRICTED_MODEL = ['v' + 'to', 'unrestricted'].join('-');
 
+function inferGarmentPlacement(product = {}) {
+  if (product.garmentPlacement === 'bottom' || product.garmentPlacement === 'top') return product.garmentPlacement;
+  const text = [
+    product.name,
+    product.category,
+    product.description,
+    Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (/\b(pants?|trousers?|jeans?|denim|shorts?|skirts?|leggings?|joggers?|palazzos?|bottoms?|lower)\b/.test(text)) return 'bottom';
+  return 'top';
+}
+
 function decodeHtml(value) {
   if (typeof value !== 'string') return value;
   return value
@@ -20,6 +32,12 @@ const productSchema = new mongoose.Schema(
     brand: { type: String, trim: true, required: true },
     category: { type: String, trim: true, required: true },
     gender: { type: String, trim: true, default: 'unisex' },
+    garmentPlacement: {
+      type: String,
+      enum: ['top', 'bottom'],
+      default: 'top',
+      index: true
+    },
     price: { type: Number, required: true, min: 0 },
     compareAtPrice: { type: Number, min: 0 },
     currency: { type: String, trim: true, uppercase: true, default: 'USD' },
@@ -72,6 +90,7 @@ function productToClient(product) {
     brand: decodeHtml(product.brand),
     category: decodeHtml(product.category),
     gender: product.gender,
+    garmentPlacement: inferGarmentPlacement(product),
     price: product.price,
     compareAtPrice: product.compareAtPrice,
     currency: product.currency || 'USD',

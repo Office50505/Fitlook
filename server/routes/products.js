@@ -54,6 +54,20 @@ function toBoolean(value) {
   return value === true || value === 'true' || value === 'on' || value === '1';
 }
 
+function normalizeGarmentPlacement(value, product = {}) {
+  const explicit = String(value || '').trim().toLowerCase();
+  if (explicit === 'bottom' || explicit === 'bottomwear' || explicit === 'lower') return 'bottom';
+  if (explicit === 'top' || explicit === 'topwear' || explicit === 'upper') return 'top';
+  const text = [
+    product.name,
+    product.category,
+    product.description,
+    Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (/\b(pants?|trousers?|jeans?|denim|shorts?|skirts?|leggings?|joggers?|palazzos?|bottoms?|lower)\b/.test(text)) return 'bottom';
+  return 'top';
+}
+
 function readableError(value, fallback = 'Request failed') {
   if (!value) return fallback;
   if (typeof value === 'string') return value;
@@ -1105,6 +1119,7 @@ router.post('/', requireAdmin, upload.single('image'), async (req, res) => {
     brand,
     category,
     gender: gender || 'unisex',
+    garmentPlacement: normalizeGarmentPlacement(req.body.garmentPlacement, req.body),
     price: Number(price),
     compareAtPrice: req.body.compareAtPrice ? Number(req.body.compareAtPrice) : undefined,
     currency: normalizeCurrency(req.body.currency) || 'USD',
@@ -1124,6 +1139,17 @@ router.post('/', requireAdmin, upload.single('image'), async (req, res) => {
 
   await clearReadCachesAfterProductWrite();
   res.status(201).json({ product: product.toClient() });
+});
+
+router.patch('/:id/garment-placement', requireAdmin, async (req, res) => {
+  const product = await Product.findByIdAndUpdate(
+    req.params.id,
+    { garmentPlacement: normalizeGarmentPlacement(req.body.garmentPlacement) },
+    { new: true }
+  );
+  if (!product) return res.status(404).json({ message: 'Product not found' });
+  await clearReadCachesAfterProductWrite();
+  res.json({ product: product.toClient() });
 });
 
 router.patch('/:id/tryon-model', requireAdmin, async (req, res) => {

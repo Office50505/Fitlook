@@ -170,6 +170,11 @@ function pixverseImageToVideoDuration() {
   return Number.isFinite(value) && value > 0 ? value : 5;
 }
 
+function pixverseImageToVideoCameraMovement() {
+  const value = String(process.env.FAL_TRYON_VIDEO_CAMERA_MOVEMENT || 'fix_bg').trim();
+  return value && !['0', 'false', 'none', 'off'].includes(value.toLowerCase()) ? value : '';
+}
+
 function tryOnModelForProduct() {
   return 'fitroom/tryon-v2';
 }
@@ -976,7 +981,7 @@ async function runVideoAttempt({ endpoint, payload, prompt, label, providerName,
     pollMs: Number(process.env.FAL_VIDEO_POLL_MS || 2000)
   };
 
-  timer?.mark(`${label} submit attempt`, { model: endpoint, resolution: payload.resolution, duration: payload.duration });
+  timer?.mark(`${label} submit attempt`, { model: endpoint, resolution: payload.resolution, duration: payload.duration, cameraMovement: payload.camera_movement });
   const submission = await falJson(`https://queue.fal.run/${endpoint}`, {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -1012,6 +1017,8 @@ async function callPixverseTryOnVideo({ tryOn, product, user, timer }) {
     generate_multi_clip_switch: false,
     thinking_type: 'disabled'
   };
+  const cameraMovement = pixverseImageToVideoCameraMovement();
+  if (cameraMovement) payload.camera_movement = cameraMovement;
   return runVideoAttempt({
     endpoint: pixverseImageToVideoModel(),
     payload,

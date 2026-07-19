@@ -1618,11 +1618,15 @@ function ClosetItemsPage({ user, setUser }) {
 }
 
 function ClosetAddPage({ user, setUser }) {
+  const formRef = useRef(null);
   const fileRef = useRef(null);
   const cameraRef = useRef(null);
+  const analysisRunRef = useRef(0);
   const [uploadPreview, setUploadPreview] = useState('');
   const [message, setMessage] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [detectedProfile, setDetectedProfile] = useState(null);
   const [savedItems, setSavedItems] = useState([]);
 
   useEffect(() => () => {
@@ -1631,10 +1635,58 @@ function ClosetAddPage({ user, setUser }) {
 
   if (!user) return <AuthPage mode="signup" setUser={setUser} />;
 
+  const applyDetectedDetails = (details = {}) => {
+    const form = formRef.current;
+    if (!form) return;
+    const setField = (name, value, defaults = ['', 'any', 'all-season']) => {
+      const field = form.elements[name];
+      const next = Array.isArray(value) ? value.join(', ') : String(value || '');
+      if (!field || !next) return;
+      if (!field.value || defaults.includes(field.value)) field.value = next;
+    };
+    setField('name', details.name);
+    setField('category', details.category);
+    setField('color', details.color);
+    setField('fabric', details.fabric);
+    setField('pattern', details.pattern);
+    setField('season', details.season);
+    setField('formality', details.formality);
+    setField('occasions', details.occasions);
+    setField('tags', details.tags);
+  };
+
+  const analyzeUpload = async (file, runId) => {
+    setAnalyzing(true);
+    setDetectedProfile(null);
+    setMessage('Analyzing clothing photo...');
+    try {
+      const prepared = await prepareClosetItemPhoto(file);
+      const form = new FormData();
+      form.set('item', prepared);
+      const data = await api('/closet/items/analyze', { method: 'POST', body: form });
+      if (analysisRunRef.current !== runId) return;
+      setDetectedProfile(data.visualProfile || null);
+      applyDetectedDetails(data.details || {});
+      setMessage('AI details detected. Review and save the item.');
+    } catch (err) {
+      if (analysisRunRef.current !== runId) return;
+      setMessage(`Could not auto-detect details. ${err.message}`);
+    } finally {
+      if (analysisRunRef.current === runId) setAnalyzing(false);
+    }
+  };
+
   const selectUpload = (event) => {
     const file = event.currentTarget.files?.[0];
     setUploadPreview(file ? URL.createObjectURL(file) : '');
-    setMessage('');
+    setDetectedProfile(null);
+    const runId = analysisRunRef.current + 1;
+    analysisRunRef.current = runId;
+    if (file) analyzeUpload(file, runId);
+    else {
+      setAnalyzing(false);
+      setMessage('');
+    }
   };
 
   const submitUpload = async (event) => {
@@ -1647,8 +1699,9 @@ function ClosetAddPage({ user, setUser }) {
       return;
     }
     if (!form.get('name')) form.set('name', file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '));
+    if (detectedProfile) form.set('visualProfile', JSON.stringify(detectedProfile));
     setUploading(true);
-    setMessage('Saving closet item...');
+    setMessage('Analyzing clothing photo and saving closet item...');
     try {
       form.set('item', await prepareClosetItemPhoto(file));
       const data = await api('/closet/items', { method: 'POST', body: form });
@@ -1656,7 +1709,7 @@ function ClosetAddPage({ user, setUser }) {
       event.currentTarget.reset();
       if (cameraRef.current) cameraRef.current.value = '';
       setUploadPreview('');
-      setMessage('Added to your closet.');
+      setMessage('Added to your closet with AI-detected details.');
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -1670,13 +1723,13 @@ function ClosetAddPage({ user, setUser }) {
         <div>
           <p className="kicker">Add Clothes</p>
           <h1>Build your digital wardrobe.</h1>
-          <p className="lead">Add each shirt, pant, dress, suit, shoe, cap or accessory here. Then return to AI Closet to mix shirt and pant combinations.</p>
+          <p className="lead">Add each shirt, pant, dress, suit, shoe, cap or accessory here. FitLook detects the item details, then AI Closet uses them for better combos.</p>
         </div>
         <a className="secondary-button" href="/closet">Back To Closet</a>
       </section>
 
       <section className="wrap closet-add-layout">
-        <form className="closet-upload-card closet-add-form" onSubmit={submitUpload}>
+        <form ref={formRef} className="closet-upload-card closet-add-form" onSubmit={submitUpload}>
           <label className={`upload-box closet-add-upload ${uploadPreview ? 'has-preview' : ''}`}>
             <input ref={fileRef} name="item" type="file" accept="image/*" onChange={selectUpload} />
             {uploadPreview ? <img className="upload-preview" src={uploadPreview} alt="Closet item preview" /> : <span><span className="upload-icon">↑</span><span className="upload-title">Upload clothing photo</span><span className="upload-help">Use one clear item per photo for best combo selection.</span></span>}
@@ -1693,12 +1746,12 @@ function ClosetAddPage({ user, setUser }) {
             <label className="field"><span>Pattern</span><input name="pattern" placeholder="solid, striped" /></label>
           </div>
           <div className="two-col">
-            <label className="field"><span>Season</span><select name="season" defaultValue="all-season"><option>all-season</option><option>summer</option><option>winter</option><option>rainy</option></select></label>
+            <label className="field"><span>Season</span><select name="season" defaultValue="all-season"><option>all-season</option><option>summer</option><option>winter</option><option>monsoon</option><option>rainy</option></select></label>
             <label className="field"><span>Vibe</span><select name="formality" defaultValue="any"><option>any</option><option>casual</option><option>smart-casual</option><option>formal</option><option>party</option><option>active</option></select></label>
           </div>
           <label className="field"><span>Occasions</span><input name="occasions" placeholder="office, date, wedding" /></label>
           <label className="field"><span>Tags</span><input name="tags" placeholder="linen, oversized, modest" /></label>
-          <button className="submit" type="submit" disabled={uploading}>{uploading ? 'Saving...' : 'Save Clothing Item'}</button>
+          <button className="submit" type="submit" disabled={uploading || analyzing}>{uploading ? 'Saving...' : analyzing ? 'Detecting Details...' : 'Save Clothing Item'}</button>
           {message && <p className={`form-message ${/error|missing|failed|could not|cannot|upload/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
         </form>
 
@@ -1709,8 +1762,8 @@ function ClosetAddPage({ user, setUser }) {
             <ul>
               <li>Upload one item per photo.</li>
               <li>Use a plain background if possible.</li>
-              <li>Choose the correct type for shirts, pants and shoes.</li>
-              <li>Add color and fabric so AI can suggest better combos.</li>
+              <li>Leave type, color and fabric on Auto when you want AI detection.</li>
+              <li>Add details manually only when you want to override the detected result.</li>
             </ul>
           </div>
           {savedItems.length > 0 && (
@@ -2636,6 +2689,7 @@ function ProductPage({ id, user, setUser }) {
   const detailFacts = [
     ['Brand', brand],
     ['Category', category],
+    ['Fit area', product.garmentPlacement === 'bottom' ? 'Bottomwear' : 'Topwear'],
     ['For', product.gender],
     ['Rating', `${Number(product.rating || 0).toFixed(1)}${product.ratingCount ? ` from ${product.ratingCount} reviews` : ''}`],
     ['Price', formatMoney(product.price, product.currency)]

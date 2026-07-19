@@ -51,6 +51,20 @@ function displayCategory(product) {
   return cleanDisplayText(product?.category, 'Products');
 }
 
+function garmentPlacementLabel(value) {
+  return value === 'bottom' ? 'Bottom' : 'Top';
+}
+
+function inferGarmentPlacement(product = {}) {
+  const text = [
+    product.name,
+    product.category,
+    product.description,
+    Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
+  ].filter(Boolean).join(' ').toLowerCase();
+  return /\b(pants?|trousers?|jeans?|denim|shorts?|skirts?|leggings?|joggers?|palazzos?|bottoms?|lower)\b/.test(text) ? 'bottom' : 'top';
+}
+
 function formatMoney(value, currency = 'USD') {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return 'Price unavailable';
@@ -61,6 +75,35 @@ function formatMoney(value, currency = 'USD') {
   } catch {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
   }
+}
+
+function formatNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '0';
+  return new Intl.NumberFormat('en-US').format(number);
+}
+
+function formatCompactNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '0';
+  return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(number);
+}
+
+function formatWeight(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '0';
+  return number % 1 === 0 ? formatCompactNumber(number) : formatCompactNumber(number.toFixed(1));
+}
+
+function formatEventType(value) {
+  return String(value || 'signal').replace(/_/g, ' ');
+}
+
+function formatSignalDate(value) {
+  if (!value) return 'Unknown time';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown time';
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date);
 }
 
 function useProducts(params) {
@@ -141,6 +184,7 @@ function useRecommendationStats(adminKey, refresh) {
 function AdminApp() {
   const formRef = useRef(null);
   const [adminKey, setAdminKey] = useState(localStorage.getItem('fitlook_admin_key') || '');
+  const [activePage, setActivePage] = useState(() => (window.location.hash === '#stats' ? 'stats' : 'products'));
   const [message, setMessage] = useState('');
   const [previewImage, setPreviewImage] = useState('');
   const [refresh, setRefresh] = useState(0);
@@ -161,6 +205,17 @@ function AdminApp() {
       .map(([category, count]) => ({ category, count }))
       .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
   }, [state.facets.categoryCounts, state.products]);
+
+  useEffect(() => {
+    const handleHashChange = () => setActivePage(window.location.hash === '#stats' ? 'stats' : 'products');
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const showPage = (page) => {
+    setActivePage(page);
+    window.history.replaceState(null, '', page === 'stats' ? '#stats' : '#products');
+  };
 
   const saveKey = (value) => {
     setAdminKey(value);
@@ -204,6 +259,7 @@ function AdminApp() {
         'remoteImageUrl',
         'sourceUrl'
       ].forEach((name) => setField(name, draft[name]));
+      setField('garmentPlacement', draft.garmentPlacement || inferGarmentPlacement(draft));
       if (draft.remoteImageUrl) setPreviewImage(draft.remoteImageUrl);
       setMessage('Draft filled. Review it, adjust anything missing, then save.');
     } catch (err) {
@@ -257,15 +313,15 @@ function AdminApp() {
     }
   };
 
-  const updateTryOnModel = async (id, tryOnModel) => {
-    setMessage('Updating try-on model...');
+  const updateGarmentPlacement = async (id, garmentPlacement) => {
+    setMessage('Updating fit area...');
     try {
-      await api(`/products/${id}/tryon-model`, {
+      await api(`/products/${id}/garment-placement`, {
         method: 'PATCH',
-        body: JSON.stringify({ tryOnModel }),
+        body: JSON.stringify({ garmentPlacement }),
         headers: { 'x-admin-key': adminKey }
       });
-      setMessage('Try-on model updated.');
+      setMessage('Fit area updated.');
       setRefresh((value) => value + 1);
     } catch (err) {
       setMessage(err.message);
@@ -289,7 +345,7 @@ function AdminApp() {
         <div>
           <p className="kicker">FitLook Admin</p>
           <h1>Catalog operations.</h1>
-          <p className="lead">Upload products, fetch affiliate details, manage categories, and select the try-on model per product.</p>
+          <p className="lead">Upload products and review recommendation signals from focused admin pages.</p>
         </div>
         <label className="field admin-key">
           <span>Admin key</span>
@@ -297,107 +353,149 @@ function AdminApp() {
         </label>
       </section>
 
-      <RecommendationStatsCard state={recommendationStats} onRefresh={() => setRefresh((value) => value + 1)} />
+      <nav className="admin-tabs" aria-label="Admin pages">
+        <button type="button" className={activePage === 'products' ? 'active' : ''} aria-current={activePage === 'products' ? 'page' : undefined} onClick={() => showPage('products')}>
+          <span>
+            <strong>Product Upload</strong>
+            <small>Upload and manage catalog</small>
+          </span>
+          <em>{formatNumber(state.total || 0)}</em>
+        </button>
+        <button type="button" className={activePage === 'stats' ? 'active' : ''} aria-current={activePage === 'stats' ? 'page' : undefined} onClick={() => showPage('stats')}>
+          <span>
+            <strong>Stats</strong>
+            <small>Recommendation signals</small>
+          </span>
+          <em>{formatNumber(recommendationStats.stats?.totals?.events || 0)}</em>
+        </button>
+      </nav>
 
-      <section className="admin-command-bar" aria-label="Catalog actions">
-        <div>
-          <strong>{state.total || 0} active products</strong>
-          <span>{message || 'Catalog tools are ready.'}</span>
-        </div>
-        <div>
-          <button type="button" onClick={rebuildCategories}>Rebuild Categories</button>
-          <button className="danger-action" type="button" onClick={removeAllProducts} disabled={state.loading || !state.total}>Remove All</button>
-        </div>
-      </section>
-
-      <section className="admin-grid">
-        <form className="admin-card admin-form" onSubmit={submit} ref={formRef}>
-          <div className="card-head">
-            <h2>New Product</h2>
-            <span>{API_BASE || 'Local API proxy'}</span>
-          </div>
-          <div className="affiliate-import">
-            <label className="field">
-              <span>Affiliate link</span>
-              <input name="affiliateLink" type="url" placeholder="https://brand.com/product-page" />
-            </label>
-            <button type="button" onClick={previewAffiliate}>Fetch Details</button>
-          </div>
-          <input name="remoteImageUrl" type="hidden" />
-          <input name="sourceUrl" type="hidden" />
-          <input name="currency" type="hidden" defaultValue="USD" />
-          {previewImage && (
-            <div className="link-preview">
-              <img src={mediaUrl(previewImage)} alt="" />
-              <div><strong>Remote image found</strong><span>This image URL will be linked directly unless you upload another one.</span></div>
-            </div>
-          )}
-          <label className="field"><span>Name</span><input name="name" required placeholder="Linen Blend Shirt" /></label>
-          <label className="field"><span>Brand</span><input name="brand" required placeholder="Zara" /></label>
-          <div className="two-col">
-            <label className="field"><span>Category</span><input name="category" required placeholder="shirts" /></label>
-            <label className="field"><span>Gender</span><select name="gender" defaultValue="men"><option value="men">Men</option><option value="women">Women</option><option value="unisex">Unisex</option></select></label>
-          </div>
-          <div className="two-col">
-            <label className="field"><span>Price</span><input name="price" type="number" step="0.01" min="0" required placeholder="29.99" /></label>
-            <label className="field"><span>Compare price</span><input name="compareAtPrice" type="number" step="0.01" min="0" placeholder="49.99" /></label>
-          </div>
-          <div className="two-col">
-            <label className="field"><span>Rating</span><input name="rating" type="number" step="0.1" min="0" max="5" defaultValue="4.5" /></label>
-            <label className="field"><span>Rating count</span><input name="ratingCount" type="number" min="0" defaultValue="0" /></label>
-          </div>
-          <label className="field"><span>Badge</span><input name="badge" placeholder="New" /></label>
-          <label className="field"><span>Try-on model</span><select name="tryOnModel" defaultValue="gpt-image-2"><option value="gpt-image-2">GPT Image 2</option><option value="wan-v2.6-image-to-image">Wan 2.6</option></select></label>
-          <label className="field"><span>Description</span><textarea name="description" rows="4" placeholder="Short product description" /></label>
-          <label className="field"><span>Tags</span><input name="tags" placeholder="linen, casual, summer" /></label>
-          <label className="field"><span>Colors</span><input name="colors" placeholder="#d9c8b4, #123323, white" /></label>
-          <label className="upload-box">
-            <input name="image" type="file" accept="image/*" />
-            <span><span className="upload-icon">+</span><span className="upload-title">Upload product image</span><span className="upload-help">Optional if the affiliate link found an image.</span></span>
-          </label>
-          <div className="checks">
-            <label><input name="isFeatured" type="checkbox" /> Featured</label>
-            <label><input name="isNewArrival" type="checkbox" defaultChecked /> New arrival</label>
-          </div>
-          <button className="submit">Upload Product</button>
-          {message && <p className="form-message">{message}</p>}
-        </form>
-
-        <section className="admin-card">
-          <div className="section-head admin-catalog-head">
-            <h2>Catalog</h2>
+      {activePage === 'stats' ? (
+        <RecommendationStatsCard state={recommendationStats} onRefresh={() => setRefresh((value) => value + 1)} />
+      ) : (
+        <>
+          <section className="admin-command-bar" aria-label="Catalog actions">
             <div>
-              <span className="count">{state.total} active</span>
+              <strong>{state.total || 0} active products</strong>
+              <span>{message || 'Catalog tools are ready.'}</span>
             </div>
-          </div>
-          {state.loading && <AdminProductSkeleton />}
-          {state.error && <StatusPanel text={state.error} />}
-          {!state.loading && !state.error && categoryDistribution.length > 0 && <CategoryDistribution items={categoryDistribution} total={state.total || state.products.length} />}
-          {!state.loading && !state.error && state.products.length === 0 && <StatusPanel text="No products yet." />}
-          <div className="admin-products">
-            {state.products.map((product) => (
-              <article className="admin-product" key={product.id}>
-                <img src={mediaUrl(product.imageUrl)} alt={product.name} />
+            <div>
+              <button type="button" onClick={rebuildCategories}>Rebuild Categories</button>
+              <button className="danger-action" type="button" onClick={removeAllProducts} disabled={state.loading || !state.total}>Remove All</button>
+            </div>
+          </section>
+
+          <section className="admin-grid">
+            <form className="admin-card admin-form" onSubmit={submit} ref={formRef}>
+              <div className="card-head">
                 <div>
-                  <h3>{product.name}</h3>
-                  <p>{displayBrand(product)} - {displayCategory(product)} - {formatMoney(product.price || 0, product.currency)}</p>
-                  {product.affiliateLink && <a className="admin-affiliate" href={product.affiliateLink} target="_blank" rel="noreferrer">Affiliate link</a>}
+                  <h2>New Product</h2>
+                  <p>Import, classify, price, and publish from one place.</p>
                 </div>
-                <div className="admin-product-actions">
-                  <label>
-                    <span>Try-on model</span>
-                    <select value={product.tryOnModel || 'gpt-image-2'} onChange={(event) => updateTryOnModel(product.id, event.target.value)}>
-                      <option value="gpt-image-2">GPT Image 2</option>
-                      <option value="wan-v2.6-image-to-image">Wan 2.6</option>
-                    </select>
+                <span>{API_BASE || 'Local API proxy'}</span>
+              </div>
+              <section className="form-section">
+                <div className="form-section-title"><strong>Import</strong><span>Start from an affiliate URL or fill manually.</span></div>
+                <div className="affiliate-import">
+                  <label className="field">
+                    <span>Affiliate link</span>
+                    <input name="affiliateLink" type="url" placeholder="https://brand.com/product-page" />
                   </label>
-                  <button type="button" onClick={() => removeProduct(product.id)}>Remove</button>
+                  <button type="button" onClick={previewAffiliate}>Fetch Details</button>
                 </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      </section>
+              </section>
+              <input name="remoteImageUrl" type="hidden" />
+              <input name="sourceUrl" type="hidden" />
+              <input name="currency" type="hidden" defaultValue="USD" />
+              {previewImage && (
+                <div className="link-preview">
+                  <img src={mediaUrl(previewImage)} alt="" />
+                  <div><strong>Remote image found</strong><span>This image URL will be linked directly unless you upload another one.</span></div>
+                </div>
+              )}
+              <section className="form-section">
+                <div className="form-section-title"><strong>Product Details</strong><span>Shown on product cards and detail pages.</span></div>
+                <label className="field"><span>Name</span><input name="name" required placeholder="Linen Blend Shirt" /></label>
+                <label className="field"><span>Brand</span><input name="brand" required placeholder="Zara" /></label>
+                <div className="two-col">
+                  <label className="field"><span>Category</span><input name="category" required placeholder="shirts" /></label>
+                  <label className="field"><span>Gender</span><select name="gender" defaultValue="men"><option value="men">Men</option><option value="women">Women</option><option value="unisex">Unisex</option></select></label>
+                </div>
+                <fieldset className="segmented-field">
+                  <legend>Fit area</legend>
+                  <label><input type="radio" name="garmentPlacement" value="top" defaultChecked /><span>Top</span></label>
+                  <label><input type="radio" name="garmentPlacement" value="bottom" /><span>Bottom</span></label>
+                </fieldset>
+                <label className="field"><span>Description</span><textarea name="description" rows="4" placeholder="Short product description" /></label>
+              </section>
+              <section className="form-section">
+                <div className="form-section-title"><strong>Pricing & Signals</strong><span>Used for filtering, recommendation ranking, and merchandising.</span></div>
+                <div className="two-col">
+                  <label className="field"><span>Price</span><input name="price" type="number" step="0.01" min="0" required placeholder="29.99" /></label>
+                  <label className="field"><span>Compare price</span><input name="compareAtPrice" type="number" step="0.01" min="0" placeholder="49.99" /></label>
+                </div>
+                <div className="two-col">
+                  <label className="field"><span>Rating</span><input name="rating" type="number" step="0.1" min="0" max="5" defaultValue="4.5" /></label>
+                  <label className="field"><span>Rating count</span><input name="ratingCount" type="number" min="0" defaultValue="0" /></label>
+                </div>
+                <label className="field"><span>Badge</span><input name="badge" placeholder="New" /></label>
+                <label className="field"><span>Tags</span><input name="tags" placeholder="linen, casual, summer" /></label>
+                <label className="field"><span>Colors</span><input name="colors" placeholder="#d9c8b4, #123323, white" /></label>
+              </section>
+              <section className="form-section">
+                <div className="form-section-title"><strong>Media & Publish</strong><span>Upload an image only if affiliate fetch did not find one.</span></div>
+                <label className="upload-box">
+                  <input name="image" type="file" accept="image/*" />
+                  <span><span className="upload-icon">+</span><span className="upload-title">Upload product image</span><span className="upload-help">Optional if the affiliate link found an image.</span></span>
+                </label>
+                <div className="checks">
+                  <label><input name="isFeatured" type="checkbox" /> Featured</label>
+                  <label><input name="isNewArrival" type="checkbox" defaultChecked /> New arrival</label>
+                </div>
+              </section>
+              <button className="submit">Upload Product</button>
+              {message && <p className="form-message">{message}</p>}
+            </form>
+
+            <section className="admin-card">
+              <div className="section-head admin-catalog-head">
+                <h2>Catalog</h2>
+                <div>
+                  <span className="count">{state.total} active</span>
+                </div>
+              </div>
+              {state.loading && <AdminProductSkeleton />}
+              {state.error && <StatusPanel text={state.error} />}
+              {!state.loading && !state.error && categoryDistribution.length > 0 && <CategoryDistribution items={categoryDistribution} total={state.total || state.products.length} />}
+              {!state.loading && !state.error && state.products.length === 0 && <StatusPanel text="No products yet." />}
+              <div className="admin-products">
+                {state.products.map((product) => (
+                  <article className="admin-product" key={product.id}>
+                    <img src={mediaUrl(product.imageUrl)} alt={product.name} />
+                    <div>
+                      <h3>{product.name}</h3>
+                      <p>{displayBrand(product)} - {displayCategory(product)} - {formatMoney(product.price || 0, product.currency)}</p>
+                      <div className="product-admin-meta">
+                        <span>{garmentPlacementLabel(product.garmentPlacement)}</span>
+                        {product.gender && <span>{product.gender}</span>}
+                        {product.isNewArrival && <span>New arrival</span>}
+                      </div>
+                      {product.affiliateLink && <a className="admin-affiliate" href={product.affiliateLink} target="_blank" rel="noreferrer">Affiliate link</a>}
+                    </div>
+                    <div className="admin-product-actions">
+                      <div className="row-segmented" aria-label={`Fit area for ${product.name}`}>
+                        <button className={(product.garmentPlacement || 'top') === 'top' ? 'active' : ''} type="button" onClick={() => updateGarmentPlacement(product.id, 'top')}>Top</button>
+                        <button className={product.garmentPlacement === 'bottom' ? 'active' : ''} type="button" onClick={() => updateGarmentPlacement(product.id, 'bottom')}>Bottom</button>
+                      </div>
+                      <button type="button" onClick={() => removeProduct(product.id)}>Remove</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </section>
+        </>
+      )}
     </main>
   );
 }
@@ -426,6 +524,17 @@ function CategoryDistribution({ items, total }) {
 
 function RecommendationStatsCard({ state, onRefresh }) {
   const stats = state.stats;
+  const totals = stats?.totals || {};
+  const eventCounts = stats?.eventCounts || [];
+  const topProducts = stats?.topProducts || [];
+  const topCategories = stats?.topCategories || [];
+  const topBrands = stats?.topBrands || [];
+  const topTags = stats?.topTags || [];
+  const topGenders = stats?.topGenders || [];
+  const recentEvents = stats?.recentEvents || [];
+  const topEvent = eventCounts[0];
+  const topProduct = topProducts[0];
+  const topCategory = topCategories[0];
 
   return (
     <section className="admin-card recommendation-card">
@@ -442,20 +551,48 @@ function RecommendationStatsCard({ state, onRefresh }) {
       {stats && (
         <>
           <div className="stats-grid">
-            <StatBox label="Events" value={stats.totals?.events || 0} />
-            <StatBox label="Active users 30d" value={stats.totals?.activeUsers30d || 0} />
-            <StatBox label="Profiles" value={stats.totals?.preferenceProfiles || 0} />
-            <StatBox label="Avg price intent" value={stats.totals?.averagePreferredPrice ? formatMoney(stats.totals.averagePreferredPrice, 'INR') : '-'} />
+            <StatBox label="Events" value={formatNumber(totals.events || 0)} meta={`${eventCounts.length || 0} signal types`} />
+            <StatBox label="Active users 30d" value={formatNumber(totals.activeUsers30d || 0)} meta="recent personalization traffic" />
+            <StatBox label="Profiles" value={formatNumber(totals.preferenceProfiles || 0)} meta="saved preference profiles" />
+            <StatBox label="Avg price intent" value={totals.averagePreferredPrice ? formatMoney(totals.averagePreferredPrice, 'INR') : '-'} meta="weighted by user behavior" />
+          </div>
+          <div className="recommendation-overview">
+            <div className="signal-spotlight">
+              <div>
+                <span>Leading signal</span>
+                <strong>{topEvent ? formatEventType(topEvent.type) : 'No activity yet'}</strong>
+                <p>{topEvent ? `${formatNumber(topEvent.count)} events with ${formatWeight(topEvent.weight)} weighted impact.` : 'Recommendation tracking will appear here once users interact with products.'}</p>
+              </div>
+              <div>
+                <span>Strongest category</span>
+                <strong>{topCategory?.label || 'No category yet'}</strong>
+                <p>{topCategory ? `${formatWeight(topCategory.weight)} weighted preference score.` : 'Category affinities need more user activity.'}</p>
+              </div>
+              <div>
+                <span>Top product</span>
+                <strong>{topProduct?.name || 'No product yet'}</strong>
+                <p>{topProduct ? `${displayBrand(topProduct)} - ${displayCategory(topProduct)} - ${formatNumber(topProduct.count)} events.` : 'Product-level winners will appear after clicks, try-ons, and shop taps.'}</p>
+              </div>
+            </div>
+            <StatsList
+              title="Event Mix"
+              items={eventCounts.map((item) => ({
+                label: formatEventType(item.type),
+                value: item.count,
+                meta: `${formatWeight(item.weight)} weighted impact`
+              }))}
+              valueLabel={(value) => formatNumber(value)}
+            />
           </div>
           <div className="stats-columns">
-            <StatsList title="Event Types" items={(stats.eventCounts || []).map((item) => ({ label: item.type.replace(/_/g, ' '), value: item.count, meta: `weight ${item.weight}` }))} />
-            <StatsList title="Top Categories" items={(stats.topCategories || []).map((item) => ({ label: item.label, value: item.weight }))} />
-            <StatsList title="Top Brands" items={(stats.topBrands || []).map((item) => ({ label: item.label, value: item.weight }))} />
-            <StatsList title="Top Tags" items={(stats.topTags || []).map((item) => ({ label: item.label, value: item.weight }))} />
+            <StatsList title="Top Categories" items={topCategories.map((item) => ({ label: item.label, value: item.weight }))} />
+            <StatsList title="Top Brands" items={topBrands.map((item) => ({ label: item.label, value: item.weight }))} />
+            <StatsList title="Top Tags" items={topTags.map((item) => ({ label: item.label, value: item.weight }))} />
+            <StatsList title="Audience" items={topGenders.map((item) => ({ label: item.label, value: item.weight }))} />
           </div>
           <div className="stats-columns two">
-            <StatsList title="Top Products" items={(stats.topProducts || []).map((item) => ({ label: item.name, value: item.weight, meta: `${displayBrand(item)} - ${displayCategory(item)} - ${item.count} events` }))} />
-            <StatsList title="Recent Signals" items={(stats.recentEvents || []).map((item) => ({ label: item.product?.name || item.query || item.type, value: item.weight, meta: item.type.replace(/_/g, ' ') }))} />
+            <TopProductsList items={topProducts} />
+            <RecentSignalsList items={recentEvents} />
           </div>
         </>
       )}
@@ -463,18 +600,68 @@ function RecommendationStatsCard({ state, onRefresh }) {
   );
 }
 
-function StatBox({ label, value }) {
-  return <div className="stat-box"><span>{label}</span><strong>{value}</strong></div>;
+function StatBox({ label, value, meta }) {
+  return <div className="stat-box"><span>{label}</span><strong>{value}</strong>{meta && <em>{meta}</em>}</div>;
 }
 
-function StatsList({ title, items }) {
+function StatsList({ title, items = [], valueLabel = formatWeight }) {
+  const visibleItems = items.slice(0, 8);
+  const maxValue = Math.max(...visibleItems.map((item) => Number(item.value) || 0), 1);
+
   return (
     <div className="stats-list">
       <h3>{title}</h3>
-      {items.length === 0 ? <p>No data yet.</p> : items.slice(0, 8).map((item) => (
+      {visibleItems.length === 0 ? <p>No data yet.</p> : visibleItems.map((item) => (
         <div className="stats-row" key={`${title}-${item.label}-${item.value}`}>
-          <div><strong>{item.label}</strong>{item.meta && <span>{item.meta}</span>}</div>
-          <b>{item.value}</b>
+          <div className="stats-row-main">
+            <div><strong>{item.label}</strong>{item.meta && <span>{item.meta}</span>}</div>
+            <b>{valueLabel(item.value)}</b>
+          </div>
+          <div className="stats-row-bar" aria-hidden="true"><span style={{ width: `${Math.max(6, Math.round(((Number(item.value) || 0) / maxValue) * 100))}%` }} /></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TopProductsList({ items = [] }) {
+  const visibleItems = items.slice(0, 6);
+  const maxValue = Math.max(...visibleItems.map((item) => Number(item.weight) || 0), 1);
+
+  return (
+    <div className="stats-list top-products-list">
+      <h3>Top Products</h3>
+      {visibleItems.length === 0 ? <p>No data yet.</p> : visibleItems.map((item, index) => {
+        const percent = Math.max(6, Math.round(((Number(item.weight) || 0) / maxValue) * 100));
+        return (
+          <div className="top-product-card" key={`${item.id || item.name}-${index}`}>
+            <span>{index + 1}</span>
+            <div>
+              <strong>{item.name}</strong>
+              <em>{displayBrand(item)} - {displayCategory(item)} - {formatNumber(item.count || 0)} events</em>
+              <div className="stats-row-bar" aria-hidden="true"><span style={{ width: `${percent}%` }} /></div>
+            </div>
+            <b>{formatWeight(item.weight)}</b>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RecentSignalsList({ items = [] }) {
+  const visibleItems = items.slice(0, 8);
+
+  return (
+    <div className="stats-list recent-signals-list">
+      <h3>Recent Signals</h3>
+      {visibleItems.length === 0 ? <p>No data yet.</p> : visibleItems.map((item) => (
+        <div className="recent-signal" key={item.id || `${item.type}-${item.createdAt}`}>
+          <div>
+            <strong>{item.product?.name || item.query || formatEventType(item.type)}</strong>
+            <span>{formatEventType(item.type)} - {formatSignalDate(item.createdAt)}</span>
+          </div>
+          <b>{formatWeight(item.weight)}</b>
         </div>
       ))}
     </div>

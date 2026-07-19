@@ -110,6 +110,26 @@ function chargedTokenCost(user) {
   return user?.devMode ? 0 : tokenCost();
 }
 
+function shouldAnalyzeClosetUploads() {
+  return !['0', 'false', 'no', 'off'].includes(String(process.env.CLOSET_VISION_ANALYSIS ?? 'true').toLowerCase());
+}
+
+function closetVisionModel() {
+  return process.env.FAL_CLOSET_VISION_MODEL || 'google/gemini-2.5-flash';
+}
+
+function closetVisionEndpoint() {
+  return process.env.FAL_CLOSET_VISION_ENDPOINT || 'openrouter/router/vision';
+}
+
+function falHeaders() {
+  if (!process.env.FAL_KEY) throw new Error('FAL_KEY is missing on the server');
+  return {
+    Authorization: `Key ${process.env.FAL_KEY}`,
+    'Content-Type': 'application/json'
+  };
+}
+
 function fitRoomHeaders() {
   if (!process.env.FITROOM_API_KEY) throw new Error('FITROOM_API_KEY is missing on the server');
   return { 'X-API-KEY': process.env.FITROOM_API_KEY };
@@ -209,6 +229,152 @@ async function normalizeUpload(file, label, timer) {
     }
     throw error;
   }
+}
+
+function closetVisionPrompt() {
+  return [
+    'Analyze this single clothing, footwear, or accessory image for a wardrobe app.',
+    'Return only valid compact JSON with no markdown and no commentary.',
+    'Use this exact schema:',
+    '{"nameSuggestion":"","category":"","subcategory":"","primaryColor":"","secondaryColors":[],"pattern":"","fabricGuess":"","texture":"","fit":"","silhouette":"","formality":"","occasions":[],"seasons":[],"styleTags":[],"pairingNotes":"","rawDescription":"","confidence":0}',
+    'Allowed category values: tops, bottoms, dresses, suits, outerwear, shoes, accessories, activewear, ethnic, other.',
+    'Allowed formality values: casual, smart-casual, formal, party, active, any.',
+    'Allowed season values: summer, winter, monsoon, spring, autumn, all-season.',
+    'Choose practical ecommerce wardrobe labels. Infer visual attributes from the image only. If uncertain, use an empty string, empty array, "other", "any", or lower confidence.',
+    'For pairingNotes, give one concise sentence about what colors or item types this would pair with.'
+  ].join(' ');
+}
+
+function extractJsonObject(text = '') {
+  const cleaned = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) return null;
+    try {
+      return JSON.parse(cleaned.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+}
+
+function cleanScalar(value, limit = 120) {
+  return cleanWord(value).slice(0, limit);
+}
+
+function normalizedDetectedCategory(value) {
+  return normalizeCategory(value);
+}
+
+function normalizedDetectedFormality(value) {
+  return inferFormality(value);
+}
+
+function normalizedDetectedSeason(value) {
+  const season = cleanWord(value, 'all-season').toLowerCase();
+  if (['summer', 'winter', 'monsoon', 'spring', 'autumn', 'all-season'].includes(season)) return season;
+  return 'all-season';
+}
+
+function normalizeVisualProfile(value = {}, meta = {}) {
+  const profile = value && typeof value === 'object' ? value : {};
+  const seasons = cleanList(profile.seasons, 6).map(normalizedDetectedSeason);
+  return {
+    source: 'fal-openrouter-vision',
+    model: meta.model || '',
+    analyzedAt: new Date(),
+    cost: Number(meta.cost || 0),
+    confidence: Math.max(0, Math.min(1, Number(profile.confidence || 0))),
+    subcategory: cleanScalar(profile.subcategory),
+    primaryColor: cleanScalar(profile.primaryColor || profile.color).toLowerCase(),
+    secondaryColors: cleanList(profile.secondaryColors, 6),
+    pattern: cleanScalar(profile.pattern).toLowerCase(),
+    fabricGuess: cleanScalar(profile.fabricGuess || profile.fabric).toLowerCase(),
+    texture: cleanScalar(profile.texture).toLowerCase(),
+    fit: cleanScalar(profile.fit).toLowerCase(),
+    silhouette: cleanScalar(profile.silhouette).toLowerCase(),
+    formality: normalizedDetectedFormality(profile.formality),
+    occasions: cleanList(profile.occasions, 10),
+    seasons: [...new Set(seasons.length ? seasons : ['all-season'])],
+    styleTags: cleanList(profile.styleTags || profile.tags, 12),
+    pairingNotes: cleanScalar(profile.pairingNotes, 500),
+    rawDescription: cleanScalar(profile.rawDescription || profile.description, 700),
+    nameSuggestion: cleanScalar(profile.nameSuggestion || profile.name),
+    category: normalizedDetectedCategory(profile.category)
+  };
+}
+
+function visualProfileFromBody(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(String(value));
+    return normalizeVisualProfile(parsed, { model: parsed?.model, cost: parsed?.cost });
+  } catch {
+    return null;
+  }
+}
+
+function detailsFromVisualProfile(profile) {
+  if (!profile) return null;
+  const detectedTags = [
+    ...(profile.styleTags || []),
+    profile.subcategory,
+    profile.fit,
+    profile.silhouette
+  ].filter(Boolean);
+  return {
+    name: profile.nameSuggestion || '',
+    category: profile.category || 'other',
+    color: profile.primaryColor || '',
+    fabric: profile.fabricGuess || '',
+    pattern: profile.pattern || '',
+    season: profile.seasons?.[0] || 'all-season',
+    formality: profile.formality || 'any',
+    occasions: profile.occasions || [],
+    tags: [...new Set(detectedTags)].slice(0, 12),
+    pairingNotes: profile.pairingNotes || ''
+  };
+}
+
+async function analyzeClosetItemImage(file, timer) {
+  if (!shouldAnalyzeClosetUploads()) {
+    timer?.mark('closet vision skipped', { reason: 'disabled' });
+    return { unavailable: true, reason: 'Closet vision analysis is disabled on the server.' };
+  }
+  if (!process.env.FAL_KEY) {
+    timer?.mark('closet vision skipped', { reason: 'missing FAL_KEY' });
+    return { unavailable: true, reason: 'FAL_KEY is missing on the server.' };
+  }
+
+  const model = closetVisionModel();
+  const imageDataUri = `data:${file.mimetype || 'image/jpeg'};base64,${file.buffer.toString('base64')}`;
+  const response = await fetch(`https://fal.run/${closetVisionEndpoint()}`, {
+    method: 'POST',
+    headers: falHeaders(),
+    body: JSON.stringify({
+      image_urls: [imageDataUri],
+      model,
+      temperature: 0,
+      max_tokens: 600,
+      system_prompt: 'You extract structured wardrobe metadata from clothing images. Output only valid JSON.',
+      prompt: closetVisionPrompt()
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(readableError(data.error || data.message || data, 'Closet image analysis failed'));
+  const parsed = extractJsonObject(data.output || data.results || '');
+  if (!parsed) throw new Error('Closet image analysis returned invalid JSON');
+  const visualProfile = normalizeVisualProfile(parsed, { model, cost: data.usage?.cost });
+  timer?.mark('closet vision analyzed', {
+    model,
+    category: visualProfile.category,
+    color: visualProfile.primaryColor,
+    cost: visualProfile.cost
+  });
+  return visualProfile;
 }
 
 async function saveUploadFile(file, prefix, user, folder = 'closet') {
@@ -437,13 +603,38 @@ async function openAiStylistReply(message, items, suggestions) {
       input: [
         {
           role: 'system',
-          content: 'You are FitLook stylist AI. Recommend outfits only from the user closet data. Be concise, practical, and mention exact item names.'
+          content: 'You are FitLook stylist AI. Recommend outfits only from the user closet data. Use visualProfile details such as color, pattern, fabric, silhouette, formality, occasions, seasons, style tags, and pairing notes when available. Be concise, practical, and mention exact item names.'
         },
         {
           role: 'user',
           content: JSON.stringify({
             question: message,
-            closet: items.map(({ name, category, color, fabric, formality, occasions, tags }) => ({ name, category, color, fabric, formality, occasions, tags })).slice(0, 80),
+            closet: items.map(({ name, category, color, fabric, pattern, season, formality, occasions, tags, visualProfile }) => ({
+              name,
+              category,
+              color,
+              fabric,
+              pattern,
+              season,
+              formality,
+              occasions,
+              tags,
+              visualProfile: visualProfile ? {
+                subcategory: visualProfile.subcategory,
+                primaryColor: visualProfile.primaryColor,
+                secondaryColors: visualProfile.secondaryColors,
+                pattern: visualProfile.pattern,
+                fabricGuess: visualProfile.fabricGuess,
+                texture: visualProfile.texture,
+                fit: visualProfile.fit,
+                silhouette: visualProfile.silhouette,
+                formality: visualProfile.formality,
+                occasions: visualProfile.occasions,
+                seasons: visualProfile.seasons,
+                styleTags: visualProfile.styleTags,
+                pairingNotes: visualProfile.pairingNotes
+              } : null
+            })).slice(0, 80),
             suggestions: suggestions.map(({ title, reason, items: suggestionItems }) => ({ title, reason, items: suggestionItems.map((item) => item.name) }))
           })
         }
@@ -468,26 +659,71 @@ router.get('/', requireUser, async (req, res) => {
   });
 });
 
+router.post('/items/analyze', requireUser, upload.single('item'), async (req, res) => {
+  const timer = createTimer('analyze-item', { userId: req.user._id.toString() });
+  try {
+    if (!req.file) return res.status(400).json({ message: 'Upload a clothing image first' });
+    const normalized = await normalizeUpload(req.file, 'closet item', timer);
+    const visualProfile = await analyzeClosetItemImage(normalized, timer);
+    if (!visualProfile || visualProfile.unavailable) {
+      return res.status(503).json({ message: visualProfile?.reason || 'Closet image analysis is not available right now.' });
+    }
+    timer.end({ category: visualProfile.category, color: visualProfile.primaryColor, cost: visualProfile.cost });
+    res.json({
+      details: detailsFromVisualProfile(visualProfile),
+      visualProfile
+    });
+  } catch (error) {
+    const message = readableError(error, 'Could not analyze closet item');
+    timer.end({ error: message });
+    res.status(400).json({ message });
+  }
+});
+
 router.post('/items', requireUser, upload.single('item'), async (req, res) => {
   const timer = createTimer('upload-item', { userId: req.user._id.toString() });
   try {
     if (!req.file) return res.status(400).json({ message: 'Upload a clothing image first' });
     const normalized = await normalizeUpload(req.file, 'closet item', timer);
     const sourceText = `${req.file.originalname || ''} ${req.body?.name || ''} ${req.body?.tags || ''}`;
+    let visualProfile = visualProfileFromBody(req.body?.visualProfile);
+    if (!visualProfile) {
+      try {
+        visualProfile = await analyzeClosetItemImage(normalized, timer);
+        if (visualProfile?.unavailable) visualProfile = null;
+      } catch (error) {
+        timer.mark('closet vision fallback', { error: readableError(error) });
+      }
+    } else {
+      timer.mark('closet vision reused', {
+        category: visualProfile.category,
+        color: visualProfile.primaryColor,
+        cost: visualProfile.cost
+      });
+    }
     const image = await saveUploadFile(normalized, 'closet-item', req.user, 'closet');
+    const detectedDetails = detailsFromVisualProfile(visualProfile) || {};
+    const detectedOccasions = detectedDetails.occasions || [];
+    const detectedTags = detectedDetails.tags || [];
+    const userOccasions = cleanList(req.body?.occasions);
+    const userTags = cleanList(req.body?.tags);
+    const season = cleanWord(req.body?.season)
+      || detectedDetails.season
+      || 'all-season';
     const item = await ClosetItem.create({
       user: req.user._id,
-      name: cleanWord(req.body?.name, path.parse(req.file.originalname || 'Closet item').name || 'Closet item'),
-      category: normalizeCategory(req.body?.category, sourceText),
-      color: inferColor(req.body?.color, sourceText),
-      fabric: cleanWord(req.body?.fabric),
-      pattern: cleanWord(req.body?.pattern),
-      season: cleanWord(req.body?.season, 'all-season').toLowerCase(),
-      formality: inferFormality(req.body?.formality, sourceText),
-      occasions: cleanList(req.body?.occasions),
-      tags: cleanList(req.body?.tags),
+      name: cleanWord(req.body?.name, detectedDetails.name || path.parse(req.file.originalname || 'Closet item').name || 'Closet item'),
+      category: cleanWord(req.body?.category) ? normalizeCategory(req.body.category, sourceText) : (detectedDetails.category || normalizeCategory('', sourceText)),
+      color: cleanWord(req.body?.color) || detectedDetails.color || inferColor('', sourceText),
+      fabric: cleanWord(req.body?.fabric) || detectedDetails.fabric || '',
+      pattern: cleanWord(req.body?.pattern) || detectedDetails.pattern || '',
+      season: season.toLowerCase(),
+      formality: cleanWord(req.body?.formality) ? inferFormality(req.body.formality, sourceText) : (detectedDetails.formality || inferFormality('', sourceText)),
+      occasions: [...new Set([...userOccasions, ...detectedOccasions])].slice(0, 12),
+      tags: [...new Set([...userTags, ...detectedTags])].slice(0, 12),
       favorite: ['1', 'true', 'yes', 'on'].includes(String(req.body?.favorite || '').toLowerCase()),
-      image
+      image,
+      visualProfile
     });
     timer.end({ itemId: item._id.toString() });
     res.status(201).json({ item: item.toClient() });
