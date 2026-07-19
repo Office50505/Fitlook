@@ -881,21 +881,24 @@ function pixverseTryOnVideoPrompt(product, user) {
       : 'calm natural expression';
   return [
     'Clean ecommerce product photo animation from the exact input image.',
-    'Keep the same person, face, hairstyle, outfit, fabric, colors, lighting, and background unchanged.',
+    'Keep the same person, face, hairstyle, outfit, fabric, colors, lighting, floor, shadows, and background unchanged.',
+    'The original background is locked for the entire video. Do not replace, redesign, blur, simplify, recolor, extend, or convert the background into a new studio scene.',
     `Keep a ${expression}.`,
-    'Full body remains visible head to toe with space above head and below feet.',
-    'Locked camera, no zoom, no close-up, no crop.',
-    'Very subtle natural idle motion with a tiny 10 to 20 degree in-place shoulder turn.',
-    'Do not walk, approach, dance, pose dramatically, or change the scene. Smooth realistic motion only.'
+    'Full body remains visible head to toe with clear space above the full hair outline and below the feet.',
+    'Locked camera with fixed wide framing for the entire 360 rotation: no zoom, no close-up, no crop, no camera push-in, no reframing while turning.',
+    'The person rotates slowly in place through a full 360 degrees like a turntable, at a smooth constant speed, arms relaxed at the sides, ending back in the front-facing pose.',
+    'Feet stay in the same spot on the floor, pivoting naturally in place. Show the full side and back views of the outfit during the rotation while keeping the complete head, hair, body, hands, legs, and feet inside frame at all times.',
+    'Do not walk, approach, step, dance, pose dramatically, or change the scene.',
+    'Do not change the face, body, outfit, or background at any point of the rotation. Smooth realistic motion only.'
   ].join(' ');
 }
 
 function pixverseTryOnVideoNegativePrompt() {
   return [
     'face change, different face, identity change, re-faced, face swap, beautified face, altered eyes, altered nose, altered mouth, altered jaw, altered hairstyle, altered facial hair, expression change, gender change',
-    'close-up, medium shot, upper body only, portrait shot, detail shot, zoom in, camera push in, camera dolly, camera orbit, camera tracking, camera shake',
-    'walking toward camera, approaching camera, full 180 turn, back to camera, cropped head, cropped feet, cropped body, cropped legs, cut off outfit, cut off hands',
-    'clothing change, outfit change, color change, body deformation, extra arms, extra legs, extra fingers, missing fingers, distorted anatomy, flickering, blur, ghosting, warping, melting, AI artifacts, background change, scene change, low quality'
+    'close-up, medium shot, upper body only, portrait shot, detail shot, zoom in, camera push in, camera dolly, camera orbit, camera tracking, camera shake, reframing',
+    'walking toward camera, approaching camera, static pose, no rotation, partial turn only, cropped hair, cropped head, cut off hair, cut off top of head, cropped feet, cropped body, cropped legs, cut off outfit, cut off hands',
+    'clothing change, outfit change, color change, body deformation, extra arms, extra legs, extra fingers, missing fingers, distorted anatomy, flickering, blur, ghosting, warping, melting, AI artifacts, background change, background replacement, studio background, changed floor, changed shadows, scene change, low quality'
   ].join(', ');
 }
 

@@ -2686,6 +2686,14 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
   display: grid;
   gap: 12px;
 }
+.profile-photo-preview {
+  position: relative;
+}
+.profile-photo-preview .fullscreen-button {
+  top: 10px;
+  right: 10px;
+  bottom: auto;
+}
 .profile-photo-upload.has-preview,
 .profile-photo-upload .upload-preview {
   min-height: 300px;

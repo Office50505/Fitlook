@@ -2334,6 +2334,7 @@ function ProfilePage({ user, setUser }) {
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
+  const [fullscreenImage, setFullscreenImage] = useState(null);
 
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -2441,17 +2442,30 @@ function ProfilePage({ user, setUser }) {
             {user.bodyPhotoStatus === 'failed' && <p className="form-message error-message">Full-body profile generation failed. Upload a clearer selfie or body photo.</p>}
           </div>
           <form className="profile-photo-form" onSubmit={submitPhoto}>
-            <label className={`upload-box profile-photo-upload ${photoSrc ? 'has-preview' : ''}`}>
-              <input ref={fileRef} name="bodyPhoto" type="file" accept={BODY_PHOTO_ACCEPT} onChange={selectPhoto} />
-              {photoSrc ? (
-                <>
-                  <img className="upload-preview" src={photoSrc} alt="Current try-on profile" />
-                  <span className="upload-overlay"><span className="upload-title">Change try-on photo</span><span className="upload-help">Use a clear selfie or front-facing photo.</span></span>
-                </>
-              ) : (
-                <span><span className="upload-icon">↑</span><span className="upload-title">Upload selfie or photo</span><span className="upload-help">FitLook will create a full-body try-on profile.</span></span>
+            <div className="profile-photo-preview">
+              <label className={`upload-box profile-photo-upload ${photoSrc ? 'has-preview' : ''}`}>
+                <input ref={fileRef} name="bodyPhoto" type="file" accept={BODY_PHOTO_ACCEPT} onChange={selectPhoto} />
+                {photoSrc ? (
+                  <>
+                    <img className="upload-preview" src={photoSrc} alt="Current try-on profile" />
+                    <span className="upload-overlay"><span className="upload-title">Change try-on photo</span><span className="upload-help">Use a clear selfie or front-facing photo.</span></span>
+                  </>
+                ) : (
+                  <span><span className="upload-icon">↑</span><span className="upload-title">Upload selfie or photo</span><span className="upload-help">FitLook will create a full-body try-on profile.</span></span>
+                )}
+              </label>
+              {photoSrc && (
+                <button
+                  className="fullscreen-button"
+                  type="button"
+                  aria-label="Open try-on photo full screen"
+                  title="Open full screen"
+                  onClick={() => setFullscreenImage({ src: photoSrc, alt: 'Current try-on profile', title: 'Try-on Photo' })}
+                >
+                  <FullscreenIcon />
+                </button>
               )}
-            </label>
+            </div>
             <input ref={cameraRef} className="camera-input" type="file" accept={BODY_PHOTO_ACCEPT} capture="user" onChange={selectPhoto} />
             <button className="secondary-button camera-button" type="button" onClick={() => cameraRef.current?.click()}>Take Photo</button>
             <div className="tryon-model-select" role="radiogroup" aria-label="Profile photo mode">
@@ -2469,6 +2483,7 @@ function ProfilePage({ user, setUser }) {
           </form>
         </article>
       </section>
+      {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
     </main>
   );
 }
