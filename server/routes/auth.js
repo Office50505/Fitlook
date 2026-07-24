@@ -6,7 +6,11 @@ import multer from 'multer';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
+import AdminAuditLog from '../models/AdminAuditLog.js';
+import TokenOrder from '../models/TokenOrder.js';
 import User from '../models/User.js';
+import { recordAdminAudit } from '../utils/adminAudit.js';
+import { isAllowedAdminEmail, normalizeEmail, requireAdmin, signAdminSession } from '../utils/adminAccess.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
 
 const router = express.Router();
@@ -443,6 +447,157 @@ router.post('/login', async (req, res) => {
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ message: 'Invalid email/username or password' });
   res.json({ token: sign(user), user: user.toClient() });
+});
+
+router.post('/admin-login', async (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  const adminKey = String(req.body?.adminKey || '');
+  if (!email || !adminKey) return res.status(400).json({ message: 'Gmail and admin key are required' });
+  if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ message: 'Invalid admin key' });
+  if (!await isAllowedAdminEmail(email)) return res.status(403).json({ message: 'This Gmail is not allowed for admin access' });
+  const token = await signAdminSession(email);
+  res.json({ token, admin: { email } });
+});
+
+router.get('/admin/users', requireAdmin, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  const limit = Math.min(Math.max(Number(req.query.limit) || 80, 1), 150);
+  const filter = q ? {
+    $or: [
+      { name: { $regex: q, $options: 'i' } },
+      { email: { $regex: q, $options: 'i' } },
+      { username: { $regex: q, $options: 'i' } }
+    ]
+  } : {};
+
+  const users = await User.find(filter).sort({ createdAt: -1 }).limit(limit).lean();
+  const userIds = users.map((user) => user._id);
+  const orders = await TokenOrder.find({ user: { $in: userIds } }).sort({ createdAt: -1 }).lean();
+  const latestOrderByUser = new Map();
+  orders.forEach((order) => {
+    const key = String(order.user);
+    if (!latestOrderByUser.has(key)) latestOrderByUser.set(key, order);
+  });
+
+  const [totalUsers, tokenTotal] = await Promise.all([
+    User.countDocuments(),
+    User.aggregate([{ $group: { _id: null, total: { $sum: '$tokens' } } }])
+  ]);
+
+  res.json({
+    users: users.map((user) => {
+      const lastOrder = latestOrderByUser.get(String(user._id));
+      return {
+        id: String(user._id),
+        name: user.name,
+        email: user.email,
+        username: user.username,
+        tokens: user.tokens || 0,
+        devMode: Boolean(user.devMode),
+        subscription: {
+          planId: user.subscription?.planId || null,
+          status: user.subscription?.status || 'none',
+          tokensPerMonth: user.subscription?.tokensPerMonth || 0,
+          currentPeriodStart: user.subscription?.currentPeriodStart || null,
+          currentPeriodEnd: user.subscription?.currentPeriodEnd || null
+        },
+        bodyPhotoStatus: user.bodyPhoto?.status || 'uploaded',
+        joinedAt: user.createdAt,
+        lastOrder: lastOrder ? {
+          id: String(lastOrder._id),
+          planName: lastOrder.planName,
+          tokens: lastOrder.tokens,
+          amount: lastOrder.amount,
+          currency: lastOrder.currency,
+          status: lastOrder.status,
+          createdAt: lastOrder.createdAt
+        } : null
+      };
+    }),
+    totals: {
+      users: totalUsers,
+      loaded: users.length,
+      tokens: tokenTotal[0]?.total || 0
+    }
+  });
+});
+
+router.get('/admin/operations', requireAdmin, async (_req, res) => {
+  const [orders, orderTotals, auditLogs] = await Promise.all([
+    TokenOrder.find({}).sort({ createdAt: -1 }).limit(12).populate('user', 'name email username').lean(),
+    TokenOrder.aggregate([{ $group: { _id: '$status', count: { $sum: 1 }, tokens: { $sum: '$tokens' }, amount: { $sum: '$amount' } } }]),
+    AdminAuditLog.find({}).sort({ createdAt: -1 }).limit(20).lean()
+  ]);
+
+  res.json({
+    orders: orders.map((order) => ({
+      id: String(order._id),
+      merchantOrderId: order.merchantOrderId,
+      planName: order.planName,
+      tokens: order.tokens,
+      amount: order.amount,
+      currency: order.currency,
+      status: order.status,
+      createdAt: order.createdAt,
+      creditedAt: order.creditedAt,
+      user: order.user ? {
+        id: String(order.user._id),
+        name: order.user.name,
+        email: order.user.email,
+        username: order.user.username
+      } : null
+    })),
+    orderTotals: orderTotals.reduce((acc, item) => {
+      acc[item._id || 'unknown'] = { count: item.count || 0, tokens: item.tokens || 0, amount: item.amount || 0 };
+      return acc;
+    }, {}),
+    auditLogs: auditLogs.map((log) => ({
+      id: String(log._id),
+      actorEmail: log.actorEmail,
+      action: log.action,
+      entityType: log.entityType,
+      entityId: log.entityId,
+      label: log.label,
+      detail: log.detail,
+      createdAt: log.createdAt
+    }))
+  });
+});
+
+router.patch('/admin/users/:id/tokens', requireAdmin, async (req, res) => {
+  const mode = String(req.body?.mode || 'set').toLowerCase();
+  const amount = Number(req.body?.amount);
+  if (!['set', 'add'].includes(mode)) return res.status(400).json({ message: 'Token mode must be set or add' });
+  if (!Number.isFinite(amount) || !Number.isInteger(amount)) return res.status(400).json({ message: 'Token amount must be a whole number' });
+  if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
+
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).json({ message: 'User not found' });
+  const nextTokens = mode === 'add' ? Number(user.tokens || 0) + amount : amount;
+  const previousTokens = Number(user.tokens || 0);
+  user.tokens = Math.max(0, nextTokens);
+  await user.save();
+  await recordAdminAudit(req, {
+    action: mode === 'add' ? 'tokens_added' : 'tokens_set',
+    entityType: 'user',
+    entityId: user._id.toString(),
+    label: user.email,
+    detail: { amount, previousTokens, nextTokens: user.tokens }
+  });
+
+  res.json({
+    user: {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      username: user.username,
+      tokens: user.tokens,
+      subscription: user.subscription,
+      devMode: Boolean(user.devMode),
+      joinedAt: user.createdAt,
+      bodyPhotoStatus: user.bodyPhoto?.status || 'uploaded'
+    }
+  });
 });
 
 router.get('/me', requireUser, (req, res) => {

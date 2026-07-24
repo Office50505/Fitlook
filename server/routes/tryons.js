@@ -170,6 +170,16 @@ function pixverseImageToVideoDuration() {
   return Number.isFinite(value) && value > 0 ? value : 5;
 }
 
+function pixverseVideoFrameWidth() {
+  const value = Number(process.env.FAL_VIDEO_FRAME_WIDTH || process.env.FAL_VIDEO_FRAME_MAX_WIDTH || 864);
+  return Number.isFinite(value) && value > 0 ? value : 864;
+}
+
+function pixverseVideoFrameHeight() {
+  const value = Number(process.env.FAL_VIDEO_FRAME_HEIGHT || process.env.FAL_VIDEO_FRAME_MAX_HEIGHT || 1536);
+  return Number.isFinite(value) && value > 0 ? value : 1536;
+}
+
 function pixverseImageToVideoCameraMovement() {
   const value = String(process.env.FAL_TRYON_VIDEO_CAMERA_MOVEMENT || 'fix_bg').trim();
   return value && !['0', 'false', 'none', 'off'].includes(value.toLowerCase()) ? value : '';
@@ -885,9 +895,11 @@ function pixverseTryOnVideoPrompt(product, user) {
       ? 'calm elegant expression'
       : 'calm natural expression';
   return [
-    'Clean ecommerce product photo animation from the exact input image.',
-    'Keep the same person, face, hairstyle, outfit, fabric, colors, lighting, floor, shadows, and background unchanged.',
-    'The original background is locked for the entire video. Do not replace, redesign, blur, simplify, recolor, extend, or convert the background into a new studio scene.',
+    'Clean ecommerce product photo animation from the exact input image. Treat the input image as the master frame for brightness, exposure, color, floor, shadows, and background.',
+    'Preserve the same person, face, hairstyle, outfit, fabric, garment colors, skin tone, lighting, floor, shadows, and background exactly as shown in the input image.',
+    'The original light ecommerce background is locked for the entire video. Keep it bright, neutral, off-white or light gray as in the input image. The video must not become darker than the input frame. Do not darken the image, lower exposure, increase contrast, add vignette, add spotlight lighting, add cinematic color grading, or create a black/dark studio backdrop.',
+    'If any area of the input background is plain or transparent-looking, fill it with the same soft off-white ecommerce background, never black.',
+    'Keep the video flat-lit like a product page, with normal daylight ecommerce exposure and no dramatic mood lighting.',
     `Keep a ${expression}.`,
     'Full body remains visible head to toe with clear space above the full hair outline and below the feet.',
     'Locked camera with fixed wide framing for the entire 360 rotation: no zoom, no close-up, no crop, no camera push-in, no reframing while turning.',
@@ -903,6 +915,7 @@ function pixverseTryOnVideoNegativePrompt() {
     'face change, different face, identity change, re-faced, face swap, beautified face, altered eyes, altered nose, altered mouth, altered jaw, altered hairstyle, altered facial hair, expression change, gender change',
     'close-up, medium shot, upper body only, portrait shot, detail shot, zoom in, camera push in, camera dolly, camera orbit, camera tracking, camera shake, reframing',
     'walking toward camera, approaching camera, static pose, no rotation, partial turn only, cropped hair, cropped head, cut off hair, cut off top of head, cropped feet, cropped body, cropped legs, cut off outfit, cut off hands',
+    'dark background, black background, black studio, dark studio, dark room, black void, black floor, black wall, dramatic lighting, cinematic lighting, moody lighting, spotlight, low key lighting, underexposed, darker exposure, dim exposure, increased contrast, vignette, shadowy scene, color grading, darkened video',
     'clothing change, outfit change, color change, body deformation, extra arms, extra legs, extra fingers, missing fingers, distorted anatomy, flickering, blur, ghosting, warping, melting, AI artifacts, background change, background replacement, studio background, changed floor, changed shadows, scene change, low quality'
   ].join(', ');
 }
@@ -952,17 +965,19 @@ async function videoFirstFrameDataUri(image, label, timer) {
     label,
     timer
   });
-  const maxWidth = Number(process.env.FAL_VIDEO_FRAME_MAX_WIDTH || 1024);
-  const maxHeight = Number(process.env.FAL_VIDEO_FRAME_MAX_HEIGHT || 1536);
+  const frameWidth = pixverseVideoFrameWidth();
+  const frameHeight = pixverseVideoFrameHeight();
+  const background = '#fffdf8';
   const output = await sharp(normalized.bytes)
     .rotate()
+    .flatten({ background })
     .resize({
-      width: maxWidth,
-      height: maxHeight,
-      fit: 'inside',
-      withoutEnlargement: true
+      width: frameWidth,
+      height: frameHeight,
+      fit: 'contain',
+      background
     })
-    .jpeg({ quality: 92 })
+    .jpeg({ quality: 94, mozjpeg: true })
     .toBuffer();
   const metadata = await sharp(output).metadata();
   timer?.mark(`${label} video first frame prepared`, {
