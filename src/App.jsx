@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AtelierPage } from './AtelierUI.jsx';
 import OptimizedImage from './components/common/OptimizedImage.jsx';
 
 const asset = (name) => `/assets/${name}`;
@@ -5665,8 +5664,6 @@ function App() {
     setPath(normalizePath());
   }, [path, routeKey, user]);
 
-  const atelierPage = useMemo(() => AtelierPage({ path, user, setUser }), [path, user]);
-
   const page = useMemo(() => {
     const productMatch = path.match(/^\/product\/([^/]+)$/);
     const categoryMatch = path.match(/^\/categories\/([^/]+)$/);
@@ -5757,8 +5754,6 @@ function App() {
   const isProductPage = /^\/product\/[^/]+$/.test(path);
   const isOpeningPage = path === '/';
   const isReferencePage = isOpeningPage || path === '/categories' || path === '/wishlist' || path === '/tokens' || path === '/profile' || isProductPage || isConciergePage;
-
-  if (atelierPage) return atelierPage;
 
   return (
     <>
