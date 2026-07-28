@@ -2,11 +2,13 @@ import bcrypt from 'bcryptjs';
 import express from 'express';
 import heicConvert from 'heic-convert';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import multer from 'multer';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import AdminAuditLog from '../models/AdminAuditLog.js';
+import Product, { productToClient } from '../models/Product.js';
 import TokenOrder from '../models/TokenOrder.js';
 import User from '../models/User.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
@@ -18,6 +20,7 @@ const avifExtensions = new Set(['.avif']);
 const avifMimeTypes = new Set(['image/avif', 'image/x-avif']);
 const heicExtensions = new Set(['.heic', '.heif']);
 const heicMimeTypes = new Set(['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence']);
+const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.env.DEBUG_GENERATION_LOGS || '').toLowerCase());
 
 function profileImageModel() {
   return process.env.FAL_PROFILE_IMAGE_MODEL || process.env.FAL_TRYON_MODEL || 'openai/gpt-image-2/edit';
@@ -188,7 +191,7 @@ function fullBodyProfilePrompt() {
   return [
 "Create one photorealistic, full-body, head-to-toe ecommerce body reference image using the uploaded person as the only identity source. This image will be used for a virtual clothing try-on app.",
 "ABSOLUTE FACE RULE: The face must be treated as fixed reference data, not something to regenerate or interpret. Do not redesign, beautify, smooth, slim, age, de-age, re-face, symmetrize, or in any way 'improve' the face. Preserve exactly: face shape, eye shape, eyelid type, eye spacing, gaze direction, eyebrow shape, nose shape, lip shape, natural (unforced) expression, jawline, chin, cheekbones, ears, hairline, hairstyle, hair color and texture, natural skin tone, and visible skin texture including pores and any marks, moles, freckles, or asymmetries. The generated face must be instantly and unmistakably recognizable as the exact same person from the uploaded image, not a smoothed or idealized version of them.",
-"IDENTITY PRIORITY OVER POSE: Do not insvent a new perfectly front-facing version of the face. If the uploaded face is tilted, angled, three-quarter, or slightly turned, preserve that exact same head angle, facial structure, eye shape, eyelids, and natural head character from the uploaded photo. The body should become a clean catalog standing pose, but the head and face must retain their original angle and character even if it creates slight asymmetry with the body. Exact identity, skin texture, and expression preservation are more important than perfect pose symmetry or a 'cleaner' looking face.",
+"IDENTITY PRIORITY OVER POSE: Do not invent a new perfectly front-facing version of the face. If the uploaded face is tilted, angled, three-quarter, or slightly turned, preserve that exact same head angle, facial structure, eye shape, eyelids, and natural head character from the uploaded photo. The body should become a clean catalog standing pose, but the head and face must retain their original angle and character even if it creates slight asymmetry with the body. Exact identity, skin texture, and expression preservation are more important than perfect pose symmetry or a 'cleaner' looking face.",
 "BODY & POSE: Exactly one person, complete full body visible from top of head to soles of feet. Straight, relaxed standing pose, body mostly squared to the camera, arms relaxed at the sides, both hands and all fingers visible and anatomically correct, feet slightly apart, weight evenly balanced. If the reference is a selfie, cropped portrait, or half-body photo, infer only the missing body below the visible region, consistent with the person's visible build, apparent age, and skin tone — the body may be inferred, but the face must never be altered or reinterpreted to accommodate this. No cropping at the head, shoulders, arms, hands, waist, hips, knees, ankles, or feet.",
 "REALISM REQUIREMENTS: The image must look like a real photograph taken in a studio, not a CGI render, 3D model, or AI-smoothed image. Retain natural skin texture (visible pores, natural texture variation) rather than plastic or waxy-looking skin. Render fabric with realistic folds, weight, and drape rather than a flat painted-on look. Maintain anatomically correct proportions and natural joint positions. Sharp focus throughout the image, no soft-focus or glamour-style blur.",
 "CLOTHING & SCENE: Simple fitted neutral clothing: plain fitted t-shirt and plain fitted pants in solid neutral colors, plain simple shoes. Clean even studio lighting, soft natural shadows, sharp focus, realistic true-to-life skin rendering. Plain seamless neutral background, light gray or off-white.",
@@ -296,7 +299,7 @@ async function generateFullBodyProfileInBackground(userId, sourceBodyPhoto, { en
 
   setImmediate(async () => {
     try {
-      console.log('[profile-fullbody] start', { userId: userId.toString(), source: sourceBodyPhoto.path });
+      if (debugGenerationLogs) console.log('[profile-fullbody] start', { userId: userId.toString(), source: sourceBodyPhoto.path });
       const generated = await generateFullBodyProfilePhoto(localFileFromBodyPhoto(sourceBodyPhoto));
       const generatedBodyPhoto = {
         filename: generated.filename,
@@ -316,10 +319,10 @@ async function generateFullBodyProfileInBackground(userId, sourceBodyPhoto, { en
 
       if (updated) {
         await fs.unlink(sourceBodyPhoto.path).catch(() => {});
-        console.log('[profile-fullbody] done', { userId: userId.toString(), path: generatedBodyPhoto.path });
+        if (debugGenerationLogs) console.log('[profile-fullbody] done', { userId: userId.toString(), path: generatedBodyPhoto.path });
       } else {
         await fs.unlink(generated.path).catch(() => {});
-        console.log('[profile-fullbody] skipped stale result', { userId: userId.toString() });
+        if (debugGenerationLogs) console.log('[profile-fullbody] skipped stale result', { userId: userId.toString() });
       }
     } catch (error) {
       const message = readableProviderError(error, 'Could not generate full-body profile image');
@@ -603,6 +606,67 @@ router.patch('/admin/users/:id/tokens', requireAdmin, async (req, res) => {
 
 router.get('/me', requireUser, (req, res) => {
   res.json({ user: req.user.toClient() });
+});
+
+function validWishlistProductIds(values = []) {
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value || '').trim())
+    .filter((value) => mongoose.Types.ObjectId.isValid(value)))];
+}
+
+async function wishlistPayload(user) {
+  const productIds = validWishlistProductIds(user.wishlistProducts || []);
+  if (!productIds.length) return { productIds: [], products: [] };
+
+  const products = await Product.find({ _id: { $in: productIds }, isActive: true }).lean();
+  const productsById = new Map(products.map((product) => [product._id.toString(), product]));
+  const activeProductIds = productIds.filter((id) => productsById.has(id));
+
+  if (activeProductIds.length !== productIds.length) {
+    user.wishlistProducts = activeProductIds;
+    await user.save();
+  }
+
+  return {
+    productIds: activeProductIds,
+    products: activeProductIds.map((id) => productToClient(productsById.get(id)))
+  };
+}
+
+router.get('/wishlist', requireUser, async (req, res) => {
+  res.json(await wishlistPayload(req.user));
+});
+
+router.post('/wishlist/sync', requireUser, async (req, res) => {
+  const localProductIds = validWishlistProductIds(req.body?.productIds);
+  const existingProductIds = validWishlistProductIds(req.user.wishlistProducts || []);
+  const requestedProductIds = [...new Set([...localProductIds, ...existingProductIds])];
+  const activeProducts = requestedProductIds.length
+    ? await Product.find({ _id: { $in: requestedProductIds }, isActive: true }).select('_id').lean()
+    : [];
+  const activeIds = new Set(activeProducts.map((product) => product._id.toString()));
+
+  req.user.wishlistProducts = requestedProductIds.filter((id) => activeIds.has(id));
+  await req.user.save();
+  res.json(await wishlistPayload(req.user));
+});
+
+router.put('/wishlist/:productId', requireUser, async (req, res) => {
+  const productId = String(req.params.productId || '').trim();
+  if (!mongoose.Types.ObjectId.isValid(productId)) return res.status(400).json({ message: 'Invalid product' });
+  const product = await Product.findOne({ _id: productId, isActive: true }).lean();
+  if (!product) return res.status(404).json({ message: 'Product not found' });
+
+  await User.updateOne({ _id: req.user._id }, { $addToSet: { wishlistProducts: product._id } });
+  res.json({ saved: true, product: productToClient(product) });
+});
+
+router.delete('/wishlist/:productId', requireUser, async (req, res) => {
+  const productId = String(req.params.productId || '').trim();
+  if (!mongoose.Types.ObjectId.isValid(productId)) return res.status(400).json({ message: 'Invalid product' });
+
+  await User.updateOne({ _id: req.user._id }, { $pull: { wishlistProducts: productId } });
+  res.json({ saved: false, productId });
 });
 
 router.patch('/dev-mode', requireUser, async (req, res) => {

@@ -25,6 +25,7 @@ const remoteImageDataUriCache = new Map();
 const inFlightImageDataUriCache = new Map();
 const avifExtensions = new Set(['.avif']);
 const avifMimeTypes = new Set(['image/avif', 'image/x-avif']);
+const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.env.DEBUG_GENERATION_LOGS || '').toLowerCase());
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 },
@@ -128,23 +129,27 @@ function readableError(value, fallback = 'Request failed') {
 function createTimer(label, meta = {}) {
   const start = performance.now();
   let last = start;
-  console.log(`[tryon:${label}] start`, meta);
+  if (debugGenerationLogs) console.log(`[tryon:${label}] start`, meta);
   return {
     mark(step, extra = {}) {
       const now = performance.now();
-      console.log(`[tryon:${label}] ${step}`, {
-        stepMs: Math.round(now - last),
-        totalMs: Math.round(now - start),
-        ...extra
-      });
+      if (debugGenerationLogs) {
+        console.log(`[tryon:${label}] ${step}`, {
+          stepMs: Math.round(now - last),
+          totalMs: Math.round(now - start),
+          ...extra
+        });
+      }
       last = now;
     },
     end(extra = {}) {
       const now = performance.now();
-      console.log(`[tryon:${label}] done`, {
-        totalMs: Math.round(now - start),
-        ...extra
-      });
+      if (debugGenerationLogs) {
+        console.log(`[tryon:${label}] done`, {
+          totalMs: Math.round(now - start),
+          ...extra
+        });
+      }
     }
   };
 }
@@ -1082,12 +1087,14 @@ async function callFalWanImageToImage({ user, product, garmentDataUri, prompt, t
   });
   timer?.mark('fal wan submitted', { requestId: submission.request_id });
   const result = await waitForFalResult(submission, wanTimer);
-  console.log('[tryon:wan] raw response array lengths', {
-    images: Array.isArray(result?.images) ? result.images.length : undefined,
-    output: Array.isArray(result?.output) ? result.output.length : undefined,
-    data: Array.isArray(result?.data) ? result.data.length : undefined
-  });
-  console.log('[tryon:wan] raw response json', JSON.stringify(result, null, 2));
+  if (debugGenerationLogs) {
+    console.log('[tryon:wan] raw response array lengths', {
+      images: Array.isArray(result?.images) ? result.images.length : undefined,
+      output: Array.isArray(result?.output) ? result.output.length : undefined,
+      data: Array.isArray(result?.data) ? result.data.length : undefined
+    });
+    console.log('[tryon:wan] raw response json', JSON.stringify(result, null, 2));
+  }
   const generatedUrl = firstGeneratedImageUrl(result);
   if (!generatedUrl) throw new Error(`FAL Wan returned no image. Response keys: ${Object.keys(result || {}).join(', ')}`);
   const { bytes, mimetype } = await generatedBytesFromUrl(generatedUrl, timer);

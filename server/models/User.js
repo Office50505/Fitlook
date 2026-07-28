@@ -28,6 +28,10 @@ const userSchema = new mongoose.Schema(
     },
     tokens: { type: Number, default: signupTokens },
     devMode: { type: Boolean, default: defaultDevMode },
+    wishlistProducts: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Product'
+    }],
     subscription: {
       planId: { type: String, trim: true },
       status: { type: String, trim: true, default: 'none' },
@@ -66,6 +70,7 @@ userSchema.methods.toClient = function toClient() {
       currentPeriodEnd: this.subscription?.currentPeriodEnd || null
     },
     devMode: Boolean(this.devMode),
+    wishlistCount: this.wishlistProducts?.length || 0,
     joinedAt: this.createdAt,
     bodyPhotoUrl: this.bodyPhoto?.path ? `/${this.bodyPhoto.path}` : null,
     bodyPhotoStatus: this.bodyPhoto?.status || 'uploaded',

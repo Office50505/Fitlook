@@ -68,6 +68,20 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, mongo: mongoose.connection.readyState === 1 });
 });
 
+app.use((error, req, res, _next) => {
+  const isFileSizeError = error?.code === 'LIMIT_FILE_SIZE';
+  const isUploadError = typeof error?.code === 'string' && error.code.startsWith('LIMIT_');
+  const status = error?.statusCode || error?.status || (isFileSizeError ? 413 : isUploadError ? 400 : 500);
+  const message = isFileSizeError
+    ? 'Profile photo must be smaller than 8 MB.'
+    : isUploadError
+      ? 'Could not process the profile photo. Please choose a different image and try again.'
+      : error?.message || 'Request failed.';
+
+  console.error(`[api] ${req.method} ${req.originalUrl} failed:`, error);
+  res.status(status).json({ message });
+});
+
 async function start() {
   if (!process.env.MONGODB_URI) {
     throw new Error('MONGODB_URI is missing. Add it to .env before starting the server.');

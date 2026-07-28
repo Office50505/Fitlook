@@ -14,6 +14,7 @@ const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '../..');
+const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.env.DEBUG_GENERATION_LOGS || '').toLowerCase());
 const imageMimeTypes = new Set(['image/avif', 'image/x-avif', 'image/heic', 'image/heif']);
 
 const upload = multer({
@@ -173,19 +174,21 @@ function isHeicUpload(file) {
 function createTimer(label, meta = {}) {
   const start = performance.now();
   let last = start;
-  console.log(`[closet:${label}] start`, meta);
+  if (debugGenerationLogs) console.log(`[closet:${label}] start`, meta);
   return {
     mark(step, extra = {}) {
       const now = performance.now();
-      console.log(`[closet:${label}] ${step}`, {
-        stepMs: Math.round(now - last),
-        totalMs: Math.round(now - start),
-        ...extra
-      });
+      if (debugGenerationLogs) {
+        console.log(`[closet:${label}] ${step}`, {
+          stepMs: Math.round(now - last),
+          totalMs: Math.round(now - start),
+          ...extra
+        });
+      }
       last = now;
     },
     end(extra = {}) {
-      console.log(`[closet:${label}] done`, { totalMs: Math.round(performance.now() - start), ...extra });
+      if (debugGenerationLogs) console.log(`[closet:${label}] done`, { totalMs: Math.round(performance.now() - start), ...extra });
     }
   };
 }
