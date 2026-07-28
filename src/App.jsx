@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { AtelierPage } from './AtelierUI.jsx';
 
 const asset = (name) => `/assets/${name}`;
 const MAX_BODY_PHOTO_BYTES = 8 * 1024 * 1024;
@@ -3063,6 +3064,8 @@ function App() {
     setPath('/search');
   }, [path, user]);
 
+  const atelierPage = useMemo(() => AtelierPage({ path, user, setUser }), [path, user]);
+
   const page = useMemo(() => {
     const productMatch = path.match(/^\/product\/([^/]+)$/);
     if (path === '/') return <Home user={user} />;
@@ -3085,6 +3088,8 @@ function App() {
     if (pageMeta[path]) return <InfoPage meta={pageMeta[path]} user={user} />;
     return <InfoPage meta={['Not Found', 'This page is not available yet.', 'Use the navigation to continue shopping with FitLook.', 'hero2.png']} user={user} ctaLabel="Back to Shop" ctaHref="/search" />;
   }, [path, user]);
+
+  if (atelierPage) return atelierPage;
 
   return (
     <>
