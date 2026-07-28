@@ -6,7 +6,11 @@ import multer from 'multer';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
+import AdminAuditLog from '../models/AdminAuditLog.js';
+import TokenOrder from '../models/TokenOrder.js';
 import User from '../models/User.js';
+import { recordAdminAudit } from '../utils/adminAudit.js';
+import { isAllowedAdminEmail, normalizeEmail, requireAdmin, signAdminSession } from '../utils/adminAccess.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
 
 const router = express.Router();
@@ -182,11 +186,13 @@ async function generatedBytesFromUrl(url) {
 
 function fullBodyProfilePrompt() {
   return [
-    'Create one photorealistic, full-body, head-to-toe image of the exact person shown in the uploaded reference photo, standing upright in a straight front-facing pose, looking directly at the camera. This is a neutral body reference image for an ecommerce virtual clothing try-on app.',
-    'FACE PRESERVATION — ABSOLUTE, NON-NEGOTIABLE RULE: The face must be a 100% exact, unaltered match to the uploaded reference. Do NOT change, redesign, beautify, smooth, slim, age, de-age, or reinterpret the face in any way — not even slightly. Preserve the identical face shape, eyes, eyebrows, nose, lips, jawline, chin, ears, hairline, hairstyle, skin tone, skin texture, and any marks or moles. If the reference face is at a side angle, three-quarter view, or tilted, render it front-facing but reconstruct the SAME face — never substitute a similar or generic face. If the reference face shows any expression, keep the exact same facial features and render a calm, natural, neutral expression — change only the expression, never the features or identity. The output face must be instantly recognizable as the same individual.',
-    'BODY & POSE: Exactly one person, complete full body visible from top of head to soles of feet. Straight, relaxed standing pose, body squared to the camera, arms relaxed at the sides, both hands and all fingers visible, feet slightly apart, weight evenly balanced. If the reference is a selfie, cropped portrait, or half-body photo, generate a plausible realistic full body consistent with the person\'s visible build, age, and skin tone. If the reference shows a seated, turned, angled, or tilted posture, convert it to the straight front-facing standing pose above — without altering the face. No cropping at the head, shoulders, arms, hands, waist, hips, knees, ankles, or feet.',
-    'CLOTHING & SCENE: Simple fitted neutral clothing: plain fitted t-shirt and plain fitted pants in solid neutral colors, plain simple shoes. Clean even studio lighting, soft shadows, sharp focus, realistic proportions, true-to-life skin. Plain seamless neutral background, light gray or off-white.',
-    'DO NOT: Do not modify the face or identity in any way, under any condition. No logos, text, watermarks, accessories, jewelry, hats, sunglasses, bags, or props. No extra people, mirrors, reflections, or duplicated limbs. No stylization, cartoon, illustration, or beauty filters — photorealistic only. Output must be non-sexualized, modest, and suitable as an ecommerce body reference.'
+"Create one photorealistic, full-body, head-to-toe ecommerce body reference image using the uploaded person as the only identity source. This image will be used for a virtual clothing try-on app.",
+"ABSOLUTE FACE RULE: The face must be treated as fixed reference data, not something to regenerate or interpret. Do not redesign, beautify, smooth, slim, age, de-age, re-face, symmetrize, or in any way 'improve' the face. Preserve exactly: face shape, eye shape, eyelid type, eye spacing, gaze direction, eyebrow shape, nose shape, lip shape, natural (unforced) expression, jawline, chin, cheekbones, ears, hairline, hairstyle, hair color and texture, natural skin tone, and visible skin texture including pores and any marks, moles, freckles, or asymmetries. The generated face must be instantly and unmistakably recognizable as the exact same person from the uploaded image, not a smoothed or idealized version of them.",
+"IDENTITY PRIORITY OVER POSE: Do not insvent a new perfectly front-facing version of the face. If the uploaded face is tilted, angled, three-quarter, or slightly turned, preserve that exact same head angle, facial structure, eye shape, eyelids, and natural head character from the uploaded photo. The body should become a clean catalog standing pose, but the head and face must retain their original angle and character even if it creates slight asymmetry with the body. Exact identity, skin texture, and expression preservation are more important than perfect pose symmetry or a 'cleaner' looking face.",
+"BODY & POSE: Exactly one person, complete full body visible from top of head to soles of feet. Straight, relaxed standing pose, body mostly squared to the camera, arms relaxed at the sides, both hands and all fingers visible and anatomically correct, feet slightly apart, weight evenly balanced. If the reference is a selfie, cropped portrait, or half-body photo, infer only the missing body below the visible region, consistent with the person's visible build, apparent age, and skin tone — the body may be inferred, but the face must never be altered or reinterpreted to accommodate this. No cropping at the head, shoulders, arms, hands, waist, hips, knees, ankles, or feet.",
+"REALISM REQUIREMENTS: The image must look like a real photograph taken in a studio, not a CGI render, 3D model, or AI-smoothed image. Retain natural skin texture (visible pores, natural texture variation) rather than plastic or waxy-looking skin. Render fabric with realistic folds, weight, and drape rather than a flat painted-on look. Maintain anatomically correct proportions and natural joint positions. Sharp focus throughout the image, no soft-focus or glamour-style blur.",
+"CLOTHING & SCENE: Simple fitted neutral clothing: plain fitted t-shirt and plain fitted pants in solid neutral colors, plain simple shoes. Clean even studio lighting, soft natural shadows, sharp focus, realistic true-to-life skin rendering. Plain seamless neutral background, light gray or off-white.",
+"DO NOT: Do not modify, beautify, smooth, or reinterpret the face, eyes, eyelids, eyebrows, expression, smile, hairstyle, skin tone, skin texture, or identity in any way. Do not add logos, text, watermarks, accessories, jewelry, hats, sunglasses, bags, or props. No extra people, mirrors, reflections, or duplicated or extra limbs. No stylization, cartoon, illustration, CGI look, or beauty filters. Output must be photorealistic, modest, non-sexualized, and suitable as an ecommerce body reference."  
   ].join(' ');
 }
 
@@ -442,6 +448,157 @@ router.post('/login', async (req, res) => {
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ message: 'Invalid email/username or password' });
   res.json({ token: sign(user), user: user.toClient() });
+});
+
+router.post('/admin-login', async (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  const adminKey = String(req.body?.adminKey || '');
+  if (!email || !adminKey) return res.status(400).json({ message: 'Gmail and admin key are required' });
+  if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ message: 'Invalid admin key' });
+  if (!await isAllowedAdminEmail(email)) return res.status(403).json({ message: 'This Gmail is not allowed for admin access' });
+  const token = await signAdminSession(email);
+  res.json({ token, admin: { email } });
+});
+
+router.get('/admin/users', requireAdmin, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  const limit = Math.min(Math.max(Number(req.query.limit) || 80, 1), 150);
+  const filter = q ? {
+    $or: [
+      { name: { $regex: q, $options: 'i' } },
+      { email: { $regex: q, $options: 'i' } },
+      { username: { $regex: q, $options: 'i' } }
+    ]
+  } : {};
+
+  const users = await User.find(filter).sort({ createdAt: -1 }).limit(limit).lean();
+  const userIds = users.map((user) => user._id);
+  const orders = await TokenOrder.find({ user: { $in: userIds } }).sort({ createdAt: -1 }).lean();
+  const latestOrderByUser = new Map();
+  orders.forEach((order) => {
+    const key = String(order.user);
+    if (!latestOrderByUser.has(key)) latestOrderByUser.set(key, order);
+  });
+
+  const [totalUsers, tokenTotal] = await Promise.all([
+    User.countDocuments(),
+    User.aggregate([{ $group: { _id: null, total: { $sum: '$tokens' } } }])
+  ]);
+
+  res.json({
+    users: users.map((user) => {
+      const lastOrder = latestOrderByUser.get(String(user._id));
+      return {
+        id: String(user._id),
+        name: user.name,
+        email: user.email,
+        username: user.username,
+        tokens: user.tokens || 0,
+        devMode: Boolean(user.devMode),
+        subscription: {
+          planId: user.subscription?.planId || null,
+          status: user.subscription?.status || 'none',
+          tokensPerMonth: user.subscription?.tokensPerMonth || 0,
+          currentPeriodStart: user.subscription?.currentPeriodStart || null,
+          currentPeriodEnd: user.subscription?.currentPeriodEnd || null
+        },
+        bodyPhotoStatus: user.bodyPhoto?.status || 'uploaded',
+        joinedAt: user.createdAt,
+        lastOrder: lastOrder ? {
+          id: String(lastOrder._id),
+          planName: lastOrder.planName,
+          tokens: lastOrder.tokens,
+          amount: lastOrder.amount,
+          currency: lastOrder.currency,
+          status: lastOrder.status,
+          createdAt: lastOrder.createdAt
+        } : null
+      };
+    }),
+    totals: {
+      users: totalUsers,
+      loaded: users.length,
+      tokens: tokenTotal[0]?.total || 0
+    }
+  });
+});
+
+router.get('/admin/operations', requireAdmin, async (_req, res) => {
+  const [orders, orderTotals, auditLogs] = await Promise.all([
+    TokenOrder.find({}).sort({ createdAt: -1 }).limit(12).populate('user', 'name email username').lean(),
+    TokenOrder.aggregate([{ $group: { _id: '$status', count: { $sum: 1 }, tokens: { $sum: '$tokens' }, amount: { $sum: '$amount' } } }]),
+    AdminAuditLog.find({}).sort({ createdAt: -1 }).limit(20).lean()
+  ]);
+
+  res.json({
+    orders: orders.map((order) => ({
+      id: String(order._id),
+      merchantOrderId: order.merchantOrderId,
+      planName: order.planName,
+      tokens: order.tokens,
+      amount: order.amount,
+      currency: order.currency,
+      status: order.status,
+      createdAt: order.createdAt,
+      creditedAt: order.creditedAt,
+      user: order.user ? {
+        id: String(order.user._id),
+        name: order.user.name,
+        email: order.user.email,
+        username: order.user.username
+      } : null
+    })),
+    orderTotals: orderTotals.reduce((acc, item) => {
+      acc[item._id || 'unknown'] = { count: item.count || 0, tokens: item.tokens || 0, amount: item.amount || 0 };
+      return acc;
+    }, {}),
+    auditLogs: auditLogs.map((log) => ({
+      id: String(log._id),
+      actorEmail: log.actorEmail,
+      action: log.action,
+      entityType: log.entityType,
+      entityId: log.entityId,
+      label: log.label,
+      detail: log.detail,
+      createdAt: log.createdAt
+    }))
+  });
+});
+
+router.patch('/admin/users/:id/tokens', requireAdmin, async (req, res) => {
+  const mode = String(req.body?.mode || 'set').toLowerCase();
+  const amount = Number(req.body?.amount);
+  if (!['set', 'add'].includes(mode)) return res.status(400).json({ message: 'Token mode must be set or add' });
+  if (!Number.isFinite(amount) || !Number.isInteger(amount)) return res.status(400).json({ message: 'Token amount must be a whole number' });
+  if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
+
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).json({ message: 'User not found' });
+  const nextTokens = mode === 'add' ? Number(user.tokens || 0) + amount : amount;
+  const previousTokens = Number(user.tokens || 0);
+  user.tokens = Math.max(0, nextTokens);
+  await user.save();
+  await recordAdminAudit(req, {
+    action: mode === 'add' ? 'tokens_added' : 'tokens_set',
+    entityType: 'user',
+    entityId: user._id.toString(),
+    label: user.email,
+    detail: { amount, previousTokens, nextTokens: user.tokens }
+  });
+
+  res.json({
+    user: {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      username: user.username,
+      tokens: user.tokens,
+      subscription: user.subscription,
+      devMode: Boolean(user.devMode),
+      joinedAt: user.createdAt,
+      bodyPhotoStatus: user.bodyPhoto?.status || 'uploaded'
+    }
+  });
 });
 
 router.get('/me', requireUser, (req, res) => {

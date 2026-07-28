@@ -5,6 +5,7 @@ import UserEvent from '../models/UserEvent.js';
 import UserPreference from '../models/UserPreference.js';
 import { requireUser } from './auth.js';
 import { createHybridCache } from '../utils/cache.js';
+import { requireAdmin } from '../utils/adminAccess.js';
 
 const router = express.Router();
 const recommendationCacheTtlMs = Number(process.env.RECOMMENDATION_READ_CACHE_TTL_MS || 30 * 1000);
@@ -53,13 +54,6 @@ function preferenceValue(map, key) {
 
 function eventWeight(type) {
   return EVENT_WEIGHTS[type] || 1;
-}
-
-function requireAdmin(req, res, next) {
-  const adminKey = process.env.ADMIN_KEY;
-  if (!adminKey) return res.status(500).json({ message: 'ADMIN_KEY is missing on the server' });
-  if (req.headers['x-admin-key'] !== adminKey) return res.status(401).json({ message: 'Invalid admin key' });
-  next();
 }
 
 function productPreferenceIncrements(product, weight) {

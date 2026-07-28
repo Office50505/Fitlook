@@ -170,6 +170,21 @@ function pixverseImageToVideoDuration() {
   return Number.isFinite(value) && value > 0 ? value : 5;
 }
 
+function pixverseVideoFrameWidth() {
+  const value = Number(process.env.FAL_VIDEO_FRAME_WIDTH || process.env.FAL_VIDEO_FRAME_MAX_WIDTH || 864);
+  return Number.isFinite(value) && value > 0 ? value : 864;
+}
+
+function pixverseVideoFrameHeight() {
+  const value = Number(process.env.FAL_VIDEO_FRAME_HEIGHT || process.env.FAL_VIDEO_FRAME_MAX_HEIGHT || 1536);
+  return Number.isFinite(value) && value > 0 ? value : 1536;
+}
+
+function pixverseImageToVideoCameraMovement() {
+  const value = String(process.env.FAL_TRYON_VIDEO_CAMERA_MOVEMENT || 'fix_bg').trim();
+  return value && !['0', 'false', 'none', 'off'].includes(value.toLowerCase()) ? value : '';
+}
+
 function tryOnModelForProduct() {
   return 'fitroom/tryon-v2';
 }
@@ -880,22 +895,28 @@ function pixverseTryOnVideoPrompt(product, user) {
       ? 'calm elegant expression'
       : 'calm natural expression';
   return [
-    'Clean ecommerce product photo animation from the exact input image.',
-    'Keep the same person, face, hairstyle, outfit, fabric, colors, lighting, and background unchanged.',
+    'Clean ecommerce product photo animation from the exact input image. Treat the input image as the master frame for brightness, exposure, color, floor, shadows, and background.',
+    'Preserve the same person, face, hairstyle, outfit, fabric, garment colors, skin tone, lighting, floor, shadows, and background exactly as shown in the input image.',
+    'The original light ecommerce background is locked for the entire video. Keep it bright, neutral, off-white or light gray as in the input image. The video must not become darker than the input frame. Do not darken the image, lower exposure, increase contrast, add vignette, add spotlight lighting, add cinematic color grading, or create a black/dark studio backdrop.',
+    'If any area of the input background is plain or transparent-looking, fill it with the same soft off-white ecommerce background, never black.',
+    'Keep the video flat-lit like a product page, with normal daylight ecommerce exposure and no dramatic mood lighting.',
     `Keep a ${expression}.`,
-    'Full body remains visible head to toe with space above head and below feet.',
-    'Locked camera, no zoom, no close-up, no crop.',
-    'Very subtle natural idle motion with a tiny 10 to 20 degree in-place shoulder turn.',
-    'Do not walk, approach, dance, pose dramatically, or change the scene. Smooth realistic motion only.'
+    'Full body remains visible head to toe with clear space above the full hair outline and below the feet.',
+    'Locked camera with fixed wide framing for the entire 360 rotation: no zoom, no close-up, no crop, no camera push-in, no reframing while turning.',
+    'The person rotates slowly in place through a full 360 degrees like a turntable, at a smooth constant speed, arms relaxed at the sides, ending back in the front-facing pose.',
+    'Feet stay in the same spot on the floor, pivoting naturally in place. Show the full side and back views of the outfit during the rotation while keeping the complete head, hair, body, hands, legs, and feet inside frame at all times.',
+    'Do not walk, approach, step, dance, pose dramatically, or change the scene.',
+    'Do not change the face, body, outfit, or background at any point of the rotation. Smooth realistic motion only.'
   ].join(' ');
 }
 
 function pixverseTryOnVideoNegativePrompt() {
   return [
     'face change, different face, identity change, re-faced, face swap, beautified face, altered eyes, altered nose, altered mouth, altered jaw, altered hairstyle, altered facial hair, expression change, gender change',
-    'close-up, medium shot, upper body only, portrait shot, detail shot, zoom in, camera push in, camera dolly, camera orbit, camera tracking, camera shake',
-    'walking toward camera, approaching camera, full 180 turn, back to camera, cropped head, cropped feet, cropped body, cropped legs, cut off outfit, cut off hands',
-    'clothing change, outfit change, color change, body deformation, extra arms, extra legs, extra fingers, missing fingers, distorted anatomy, flickering, blur, ghosting, warping, melting, AI artifacts, background change, scene change, low quality'
+    'close-up, medium shot, upper body only, portrait shot, detail shot, zoom in, camera push in, camera dolly, camera orbit, camera tracking, camera shake, reframing',
+    'walking toward camera, approaching camera, static pose, no rotation, partial turn only, cropped hair, cropped head, cut off hair, cut off top of head, cropped feet, cropped body, cropped legs, cut off outfit, cut off hands',
+    'dark background, black background, black studio, dark studio, dark room, black void, black floor, black wall, dramatic lighting, cinematic lighting, moody lighting, spotlight, low key lighting, underexposed, darker exposure, dim exposure, increased contrast, vignette, shadowy scene, color grading, darkened video',
+    'clothing change, outfit change, color change, body deformation, extra arms, extra legs, extra fingers, missing fingers, distorted anatomy, flickering, blur, ghosting, warping, melting, AI artifacts, background change, background replacement, studio background, changed floor, changed shadows, scene change, low quality'
   ].join(', ');
 }
 
@@ -944,17 +965,19 @@ async function videoFirstFrameDataUri(image, label, timer) {
     label,
     timer
   });
-  const maxWidth = Number(process.env.FAL_VIDEO_FRAME_MAX_WIDTH || 1024);
-  const maxHeight = Number(process.env.FAL_VIDEO_FRAME_MAX_HEIGHT || 1536);
+  const frameWidth = pixverseVideoFrameWidth();
+  const frameHeight = pixverseVideoFrameHeight();
+  const background = '#fffdf8';
   const output = await sharp(normalized.bytes)
     .rotate()
+    .flatten({ background })
     .resize({
-      width: maxWidth,
-      height: maxHeight,
-      fit: 'inside',
-      withoutEnlargement: true
+      width: frameWidth,
+      height: frameHeight,
+      fit: 'contain',
+      background
     })
-    .jpeg({ quality: 92 })
+    .jpeg({ quality: 94, mozjpeg: true })
     .toBuffer();
   const metadata = await sharp(output).metadata();
   timer?.mark(`${label} video first frame prepared`, {
@@ -973,7 +996,7 @@ async function runVideoAttempt({ endpoint, payload, prompt, label, providerName,
     pollMs: Number(process.env.FAL_VIDEO_POLL_MS || 2000)
   };
 
-  timer?.mark(`${label} submit attempt`, { model: endpoint, resolution: payload.resolution, duration: payload.duration });
+  timer?.mark(`${label} submit attempt`, { model: endpoint, resolution: payload.resolution, duration: payload.duration, cameraMovement: payload.camera_movement });
   const submission = await falJson(`https://queue.fal.run/${endpoint}`, {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -1009,6 +1032,8 @@ async function callPixverseTryOnVideo({ tryOn, product, user, timer }) {
     generate_multi_clip_switch: false,
     thinking_type: 'disabled'
   };
+  const cameraMovement = pixverseImageToVideoCameraMovement();
+  if (cameraMovement) payload.camera_movement = cameraMovement;
   return runVideoAttempt({
     endpoint: pixverseImageToVideoModel(),
     payload,

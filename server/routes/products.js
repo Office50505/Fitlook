@@ -8,6 +8,8 @@ import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { createHybridCache } from '../utils/cache.js';
 import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility, genderedSearchQuery, genderPreferenceForQuery } from '../utils/genderPreference.js';
+import { recordAdminAudit } from '../utils/adminAudit.js';
+import { requireAdmin } from '../utils/adminAccess.js';
 
 const router = express.Router();
 const readCacheTtlMs = Number(process.env.PRODUCT_READ_CACHE_TTL_MS || 30 * 1000);
@@ -52,6 +54,20 @@ function splitList(value) {
 
 function toBoolean(value) {
   return value === true || value === 'true' || value === 'on' || value === '1';
+}
+
+function normalizeGarmentPlacement(value, product = {}) {
+  const explicit = String(value || '').trim().toLowerCase();
+  if (explicit === 'bottom' || explicit === 'bottomwear' || explicit === 'lower') return 'bottom';
+  if (explicit === 'top' || explicit === 'topwear' || explicit === 'upper') return 'top';
+  const text = [
+    product.name,
+    product.category,
+    product.description,
+    Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (/\b(pants?|trousers?|jeans?|denim|shorts?|skirts?|leggings?|joggers?|palazzos?|bottoms?|lower)\b/.test(text)) return 'bottom';
+  return 'top';
 }
 
 function readableError(value, fallback = 'Request failed') {
@@ -919,18 +935,62 @@ function queryIntentCompatibility(product = {}, query = '') {
   return true;
 }
 
-function requireAdmin(req, res, next) {
-  const adminKey = process.env.ADMIN_KEY;
-  if (!adminKey) return res.status(500).json({ message: 'ADMIN_KEY is missing on the server' });
-  if (req.headers['x-admin-key'] !== adminKey) return res.status(401).json({ message: 'Invalid admin key' });
-  next();
-}
-
 function sortFor(value) {
   if (value === 'price-asc') return { price: 1 };
   if (value === 'price-desc') return { price: -1 };
   if (value === 'newest') return { createdAt: -1 };
   return { isFeatured: -1, createdAt: -1 };
+}
+
+function optionalNumber(value, fieldName) {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${fieldName} must be a number`);
+  return parsed;
+}
+
+function requireTextField(body, name, label) {
+  if (body[name] === undefined) return undefined;
+  const value = String(body[name] || '').trim();
+  if (!value) throw new Error(`${label} is required`);
+  return value;
+}
+
+function applyProductUpdate(product, body = {}) {
+  const name = requireTextField(body, 'name', 'Name');
+  const brand = requireTextField(body, 'brand', 'Brand');
+  const category = requireTextField(body, 'category', 'Category');
+  const price = optionalNumber(body.price, 'Price');
+  const compareAtPrice = optionalNumber(body.compareAtPrice, 'Compare price');
+  const rating = optionalNumber(body.rating, 'Rating');
+  const ratingCount = optionalNumber(body.ratingCount, 'Rating count');
+
+  if (name !== undefined) product.name = name;
+  if (brand !== undefined) product.brand = brand;
+  if (category !== undefined) product.category = category;
+  if (body.gender !== undefined) product.gender = String(body.gender || 'unisex').trim() || 'unisex';
+  if (body.garmentPlacement !== undefined) product.garmentPlacement = normalizeGarmentPlacement(body.garmentPlacement, body);
+  if (price !== undefined) {
+    if (price === null || price < 0) throw new Error('Price is required');
+    product.price = price;
+  }
+  if (compareAtPrice !== undefined) product.compareAtPrice = compareAtPrice === null ? undefined : compareAtPrice;
+  if (body.currency !== undefined) product.currency = normalizeCurrency(body.currency) || product.currency || 'USD';
+  if (rating !== undefined) product.rating = rating === null ? 4.5 : rating;
+  if (ratingCount !== undefined) product.ratingCount = ratingCount === null ? 0 : ratingCount;
+  if (body.badge !== undefined) product.badge = String(body.badge || '').trim() || undefined;
+  if (body.affiliateLink !== undefined) product.affiliateLink = cleanUrl(body.affiliateLink);
+  if (body.sourceUrl !== undefined) product.sourceUrl = cleanUrl(body.sourceUrl);
+  if (body.description !== undefined) product.description = String(body.description || '').trim();
+  if (body.tags !== undefined) product.tags = splitList(body.tags);
+  if (body.colors !== undefined) product.colors = splitList(body.colors);
+  if (body.tryOnModel !== undefined) product.tryOnModel = normalizeTryOnModel(body.tryOnModel);
+  if (body.isFeatured !== undefined) product.isFeatured = toBoolean(body.isFeatured);
+  if (body.isNewArrival !== undefined) product.isNewArrival = toBoolean(body.isNewArrival);
+  if (body.remoteImageUrl !== undefined && String(body.remoteImageUrl || '').trim()) {
+    product.image = { remoteUrl: cleanUrl(body.remoteImageUrl) };
+  }
 }
 
 router.get('/', async (req, res) => {
@@ -1034,7 +1094,7 @@ router.post('/amazon-search', requireUser, async (req, res) => {
   }
 });
 
-router.post('/recategorize', requireAdmin, async (_req, res) => {
+router.post('/recategorize', requireAdmin, async (req, res) => {
   const botAmazonRecord = { badge: 'Amazon', $or: [{ sourceUrl: /amazon\.[a-z.]+\/dp\//i }, { affiliateLink: /amazon\.[a-z.]+\/dp\//i }] };
   const products = await Product.find({ isActive: true, $nor: [botAmazonRecord] });
   let updated = 0;
@@ -1054,6 +1114,12 @@ router.post('/recategorize', requireAdmin, async (_req, res) => {
   }
 
   if (updated) await clearReadCachesAfterProductWrite();
+  await recordAdminAudit(req, {
+    action: 'categories_rebuilt',
+    entityType: 'product',
+    label: 'Product categories',
+    detail: { updated, checked: products.length }
+  });
   res.json({ updated, checked: products.length, changes });
 });
 
@@ -1105,6 +1171,7 @@ router.post('/', requireAdmin, upload.single('image'), async (req, res) => {
     brand,
     category,
     gender: gender || 'unisex',
+    garmentPlacement: normalizeGarmentPlacement(req.body.garmentPlacement, req.body),
     price: Number(price),
     compareAtPrice: req.body.compareAtPrice ? Number(req.body.compareAtPrice) : undefined,
     currency: normalizeCurrency(req.body.currency) || 'USD',
@@ -1123,7 +1190,52 @@ router.post('/', requireAdmin, upload.single('image'), async (req, res) => {
   });
 
   await clearReadCachesAfterProductWrite();
+  await recordAdminAudit(req, {
+    action: 'product_added',
+    entityType: 'product',
+    entityId: product._id.toString(),
+    label: product.name,
+    detail: { brand: product.brand, category: product.category, price: product.price }
+  });
   res.status(201).json({ product: product.toClient() });
+});
+
+router.patch('/:id', requireAdmin, async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+    applyProductUpdate(product, req.body || {});
+    await product.save();
+    await clearReadCachesAfterProductWrite();
+    await recordAdminAudit(req, {
+      action: 'product_updated',
+      entityType: 'product',
+      entityId: product._id.toString(),
+      label: product.name,
+      detail: { brand: product.brand, category: product.category, price: product.price }
+    });
+    res.json({ product: product.toClient() });
+  } catch (error) {
+    res.status(400).json({ message: readableError(error, 'Could not update product') });
+  }
+});
+
+router.patch('/:id/garment-placement', requireAdmin, async (req, res) => {
+  const product = await Product.findByIdAndUpdate(
+    req.params.id,
+    { garmentPlacement: normalizeGarmentPlacement(req.body.garmentPlacement) },
+    { new: true }
+  );
+  if (!product) return res.status(404).json({ message: 'Product not found' });
+  await clearReadCachesAfterProductWrite();
+  await recordAdminAudit(req, {
+    action: 'product_fit_area_changed',
+    entityType: 'product',
+    entityId: product._id.toString(),
+    label: product.name,
+    detail: { garmentPlacement: product.garmentPlacement }
+  });
+  res.json({ product: product.toClient() });
 });
 
 router.patch('/:id/tryon-model', requireAdmin, async (req, res) => {
@@ -1134,12 +1246,25 @@ router.patch('/:id/tryon-model', requireAdmin, async (req, res) => {
   );
   if (!product) return res.status(404).json({ message: 'Product not found' });
   await clearReadCachesAfterProductWrite();
+  await recordAdminAudit(req, {
+    action: 'product_tryon_model_changed',
+    entityType: 'product',
+    entityId: product._id.toString(),
+    label: product.name,
+    detail: { tryOnModel: product.tryOnModel }
+  });
   res.json({ product: product.toClient() });
 });
 
-router.delete('/', requireAdmin, async (_req, res) => {
+router.delete('/', requireAdmin, async (req, res) => {
   const result = await Product.updateMany({ isActive: true }, { isActive: false });
   await clearReadCachesAfterProductWrite();
+  await recordAdminAudit(req, {
+    action: 'all_products_removed',
+    entityType: 'product',
+    label: 'All active products',
+    detail: { removed: result.modifiedCount || 0 }
+  });
   res.json({ removed: result.modifiedCount || 0 });
 });
 
@@ -1147,6 +1272,13 @@ router.delete('/:id', requireAdmin, async (req, res) => {
   const product = await Product.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
   if (!product) return res.status(404).json({ message: 'Product not found' });
   await clearReadCachesAfterProductWrite();
+  await recordAdminAudit(req, {
+    action: 'product_removed',
+    entityType: 'product',
+    entityId: product._id.toString(),
+    label: product.name,
+    detail: { brand: product.brand, category: product.category }
+  });
   res.json({ product: product.toClient() });
 });
 
