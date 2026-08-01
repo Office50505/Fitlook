@@ -354,6 +354,37 @@ function categorySlug(value) {
   return String(value || 'uncategorized').trim().toLowerCase();
 }
 
+function categoryVisualKey(value) {
+  const key = categorySlug(value)
+    .replace(/['’]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+  if (/\b(inner ?wear|underwear|briefs?|boxers?|trunks?|vests?|lingerie|bras?|bralettes?|pant(?:y|ies)|camisoles?|shapewear|swimwear|swimsuits?|bikinis?|monokinis?|tankinis?)\b/.test(key)) return 'innerwear';
+  if (/\b(night ?wear|nighty|nightie|nightgown|sleep ?wear|pajamas?|pyjamas?|lounge ?wear|robes?)\b/.test(key)) return 'sleepwear';
+  if (/\b(sun ?glasses|eye ?glasses|eyewear|spectacles?|optical frames?|goggles?|aviator|wayfarer)\b/.test(key)) return 'eyewear';
+  if (/\b(shoes?|sneakers?|boots?|loafers?|sandals?|slippers?|heels?|pumps?|flats?|footwear|trainers?)\b/.test(key)) return 'shoes';
+  if (/\b(wallets?|purses?|backpacks?|handbags?|totes?|sling bags?|crossbody|duffels?|clutches?|bags?)\b/.test(key)) return 'bags';
+  if (/\b(watches?|smart ?watches?|smartwatch(?:es)?|chronograph)\b/.test(key)) return 'watches';
+  if (/\b(belts?|caps?|hats?|scarves?|ties?|jewellery|jewelry|necklaces?|bracelets?|earrings?|accessor(?:y|ies))\b/.test(key)) return 'accessories';
+  if (/\b(sarees?|saris?|lehengas?|dupattas?|kurtas?|kurtis?|salwars?|churidars?|anarkali|palazzos?|ethnic|traditional|shararas?)\b/.test(key)) return 'ethnic wear';
+  if (/\b(dresses?|gowns?|bodycon|maxi|midi|mini dress|a line dress|wrap dress|party dress|skirts?|skorts?)\b/.test(key)) return 'dresses';
+  if (/\b(jeans?|denim)\b/.test(key)) return 'jeans';
+  if (/\b(shorts?|bermudas?)\b/.test(key)) return 'shorts';
+  if (/\b(pants?|trousers?|joggers?|leggings?|chinos?|cargo pants?|track pants?|bottom ?wear)\b/.test(key)) return 'pants';
+  if (/\b(hoodies?|sweatshirts?|sweaters?|pullovers?|jumpers?)\b/.test(key)) return 'sweatshirts';
+  if (/\b(jackets?|overshirts?|blazers?|coats?|windcheaters?|parkas?|shrugs?|outer ?wear)\b/.test(key)) return 'jackets';
+  if (/\b(t ?shirts?|tshirts?|tees?|polo shirts?)\b/.test(key)) return 't-shirts';
+  if (/\b(shirts?|button down|button up|formal shirt|casual shirt)\b/.test(key)) return 'shirts';
+  if (/\b(tops?|blouses?|tunics?|crop tops?|tank tops?|camis?)\b/.test(key)) return 'tops';
+  if (/\b(women|woman|female|ladies)\b/.test(key)) return 'women';
+  if (/\b(men|man|male|gentlemen)\b/.test(key)) return 'men';
+  if (/\b(unisex)\b/.test(key)) return 'unisex';
+
+  return key.replace(/\s+/g, '-');
+}
+
 const categoryCollectionVisualPools = {
   all: [
     { image: 'category-reference-bottoms.png', position: 'center' },
@@ -398,41 +429,53 @@ const categoryCollectionVisualPools = {
 };
 
 const categoryIconVisuals = {
-  innerwear: { image: 'category-icons/innerwear-section.png', position: 'center' },
-  lingerie: { image: 'category-icons/innerwear-section.png', position: 'center' },
-  shorts: { image: 'category-icons/shorts-section.png', position: 'center' },
-  jeans: { image: 'category-icons/jeans-section.png', position: 'center' },
-  denim: { image: 'category-icons/jeans-section.png', position: 'center' },
-  shoes: { image: 'category-icons/shoes-section.png', position: 'center' },
-  footwear: { image: 'category-icons/shoes-section.png', position: 'center' },
-  dresses: { image: 'category-icons/dresses-section.png', position: 'center' },
-  dress: { image: 'category-icons/dresses-section.png', position: 'center' },
-  tops: { image: 'category-icons/tops-section.png', position: 'center' },
-  shirts: { image: 'category-icons/shirts-section.png', position: 'center' },
-  shirt: { image: 'category-icons/shirts-section.png', position: 'center' },
-  't-shirts': { image: 'category-icons/t-shirts-section.png', position: 'center' },
-  tshirts: { image: 'category-icons/t-shirts-section.png', position: 'center' },
-  tees: { image: 'category-icons/t-shirts-section.png', position: 'center' },
-  eyewear: { image: 'category-icons/eyewear-section.png', position: 'center' },
-  sunglasses: { image: 'category-icons/eyewear-section.png', position: 'center' },
-  glasses: { image: 'category-icons/eyewear-section.png', position: 'center' },
-  jackets: { image: 'category-icons/jackets-section.png', position: 'center' },
-  jacket: { image: 'category-icons/jackets-section.png', position: 'center' },
-  outerwear: { image: 'category-icons/jackets-section.png', position: 'center' },
-  sleepwear: { image: 'category-icons/sleepwear-section.png', position: 'center' },
-  nightwear: { image: 'category-icons/sleepwear-section.png', position: 'center' },
-  pants: { image: 'category-icons/shorts.png', position: 'center' },
-  trousers: { image: 'category-icons/shorts.png', position: 'center' },
-  accessories: { image: 'category-icons/eyewear.png', position: 'center' },
-  'ethnic wear': { image: 'category-icons/dresses.png', position: 'center' },
-  ethnic: { image: 'category-icons/dresses.png', position: 'center' }
+  innerwear: { image: 'category-heroes/innerwear-hero.png', position: 'center' },
+  lingerie: { image: 'category-heroes/innerwear-hero.png', position: 'center' },
+  underwear: { image: 'category-heroes/innerwear-hero.png', position: 'center' },
+  shorts: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
+  jeans: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
+  denim: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
+  pants: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
+  trousers: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
+  bottoms: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
+  shoes: { image: 'category-heroes/shoes-hero.png', position: 'center' },
+  footwear: { image: 'category-heroes/shoes-hero.png', position: 'center' },
+  dresses: { image: 'category-heroes/dresses-hero.png', position: 'center' },
+  dress: { image: 'category-heroes/dresses-hero.png', position: 'center' },
+  skirts: { image: 'category-heroes/dresses-hero.png', position: 'center' },
+  tops: { image: 'category-heroes/tops-hero.png', position: 'center' },
+  shirts: { image: 'category-heroes/shirts-hero.png', position: 'center' },
+  shirt: { image: 'category-heroes/shirts-hero.png', position: 'center' },
+  't-shirts': { image: 'category-heroes/tops-hero.png', position: 'center' },
+  tshirts: { image: 'category-heroes/tops-hero.png', position: 'center' },
+  tees: { image: 'category-heroes/tops-hero.png', position: 'center' },
+  eyewear: { image: 'category-heroes/accessories-hero.png', position: 'center' },
+  sunglasses: { image: 'category-heroes/accessories-hero.png', position: 'center' },
+  glasses: { image: 'category-heroes/accessories-hero.png', position: 'center' },
+  jackets: { image: 'category-heroes/outerwear-hero.png', position: 'center' },
+  jacket: { image: 'category-heroes/outerwear-hero.png', position: 'center' },
+  outerwear: { image: 'category-heroes/outerwear-hero.png', position: 'center' },
+  sweatshirts: { image: 'category-heroes/outerwear-hero.png', position: 'center' },
+  hoodies: { image: 'category-heroes/outerwear-hero.png', position: 'center' },
+  sleepwear: { image: 'category-heroes/sleepwear-hero.png', position: 'center' },
+  nightwear: { image: 'category-heroes/sleepwear-hero.png', position: 'center' },
+  loungewear: { image: 'category-heroes/sleepwear-hero.png', position: 'center' },
+  bags: { image: 'category-heroes/accessories-hero.png', position: 'center' },
+  accessories: { image: 'category-heroes/accessories-hero.png', position: 'center' },
+  watches: { image: 'category-heroes/accessories-hero.png', position: 'center' },
+  watch: { image: 'category-heroes/accessories-hero.png', position: 'center' },
+  'ethnic wear': { image: 'category-heroes/dresses-hero.png', position: 'center' },
+  ethnic: { image: 'category-heroes/dresses-hero.png', position: 'center' },
+  women: { image: 'category-women-hero.png', position: '64% 18%' },
+  men: { image: 'category-men-hero.png', position: '65% 18%' },
+  unisex: { image: 'category-unisex-hero.png', position: 'center' }
 };
 
 function collectionVisualForCategory(category, audience = 'all') {
-  const directMatch = categoryIconVisuals[categorySlug(category)];
+  const directMatch = categoryIconVisuals[categoryVisualKey(category)];
   if (directMatch) return directMatch;
   const pool = categoryCollectionVisualPools[audience] || categoryCollectionVisualPools.all;
-  const key = categorySlug(category);
+  const key = categoryVisualKey(category);
   const index = [...key].reduce((total, character) => total + character.charCodeAt(0), 0) % pool.length;
   return pool[index];
 }
@@ -1170,7 +1213,7 @@ const atelierHeroSlides = [
   {
     id: 'women-edit',
     image: 'category-women-hero.png',
-    position: '64% center',
+    position: '64% 18%',
     kicker: 'Women’s Edit',
     title: <>Light Layers<br />Sharp Intent</>,
     copy: 'Discover clean tailoring, elevated essentials, and pieces selected for everyday confidence.',
@@ -1182,7 +1225,7 @@ const atelierHeroSlides = [
   {
     id: 'men-edit',
     image: 'category-men-hero.png',
-    position: '65% center',
+    position: '65% 18%',
     kicker: 'Men’s Edit',
     title: <>Modern Ease<br />Daily Style</>,
     copy: 'Build refined outfits from shirts, shoes, sunglasses, caps, and essentials already in the live catalog.',
@@ -2022,6 +2065,18 @@ function departmentTitle(category) {
   return categorySlug(category) === 'eyewear' ? 'Sunglasses & Eyewear' : categoryLabel(category);
 }
 
+function departmentHeroVisual(category, audience = 'all') {
+  const curated = collectionVisualForCategory(category, audience);
+  if (!curated?.image) return null;
+  return {
+    imageUrl: asset(curated.image),
+    position: curated.position || 'center',
+    alt: `${departmentTitle(category)} department`,
+    href: categoryPageHref(category, audience === 'all' ? '' : audience),
+    curated: true
+  };
+}
+
 const departmentPriceFilters = [
   { value: 'all', label: 'All prices', test: () => true },
   { value: 'under-500', label: 'Under 500', test: (price) => price > 0 && price < 500 },
@@ -2037,10 +2092,10 @@ function CategoryDepartmentPage({ category, user }) {
   const [priceFilter, setPriceFilter] = useState('all');
   const [sort, setSort] = useState('newest');
   const state = useProducts({ category, gender, sort, limit: 96 });
-  const heroProduct = state.products.find((product) => product?.imageUrl) || null;
   const title = departmentTitle(category);
   const categoryPath = categoryPageHref(category, gender);
   const departmentProducts = state.products || [];
+  const heroVisual = departmentHeroVisual(category, gender || 'all');
   const departmentBrands = useMemo(() => {
     const brandCounts = departmentProducts.reduce((map, product) => {
       const brand = displayBrand(product);
@@ -2092,7 +2147,12 @@ function CategoryDepartmentPage({ category, user }) {
 
   return (
     <main className="department-page">
-      <section className="department-hero">
+      <section className={`department-hero${heroVisual ? ' has-image' : ''}`}>
+        {heroVisual && (
+          <div className={`department-hero-image${heroVisual.curated ? ' curated' : ''}`} aria-hidden="true">
+            <OptimizedImage src={heroVisual.imageUrl} alt="" eager style={{ objectPosition: heroVisual.position }} />
+          </div>
+        )}
         <div className="wrap department-hero-inner">
           <div className="department-hero-copy">
             <a className="department-back-link" href="/categories">All Departments</a>
@@ -2100,7 +2160,6 @@ function CategoryDepartmentPage({ category, user }) {
             <h1>{title}</h1>
             <span>{state.loading ? 'Loading products' : `${state.total} products selected for this department`}</span>
           </div>
-          {heroProduct && <a className="department-hero-image" href={`/product/${encodeURIComponent(heroProduct.id)}`}><OptimizedImage src={heroProduct.imageUrl} alt={heroProduct.name} eager /></a>}
         </div>
       </section>
 
@@ -5894,7 +5953,6 @@ function AuthPage({ mode, setUser }) {
         </section>
 
         <section className="auth-login-panel auth-login-reference-panel">
-          <p className="auth-login-switch-top">New to FitLook? <a href="/signup">Sign up</a></p>
           <div className="auth-login-card">
             <h1 id="login-title">Welcome Back</h1>
             <p className="auth-login-copy">Login to continue your fashion journey.</p>
@@ -5909,6 +5967,7 @@ function AuthPage({ mode, setUser }) {
                 </label>
                 <a href="/support">Forgot password?</a>
               </div>
+              <p className="auth-login-switch-inline">New to FitLook? <a href="/signup">Sign up</a></p>
               {capsLock && <p className="auth-caps-lock" role="status">Caps Lock is on</p>}
               <AuthSubmitButton loading={isSubmitting}>{isSubmitting ? 'Logging in...' : 'Login'}</AuthSubmitButton>
             </form>

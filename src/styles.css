@@ -9465,6 +9465,21 @@ h2 {
   font-size: 14px;
 }
 
+.auth-login-switch-inline {
+  justify-self: start;
+  margin: -2px 0 -4px;
+  color: #6d635e;
+  font-size: 13px;
+  text-align: left;
+}
+
+.auth-login-switch-inline a {
+  color: #171614;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .auth-login-options label {
   display: inline-flex;
   min-height: 28px;
@@ -17084,17 +17099,43 @@ main > section.wrap {
 }
 
 .department-hero {
+  position: relative;
   overflow: hidden;
   border-bottom: 1px solid rgba(29, 26, 24, .1);
   background: #e1d2c4;
 }
 
+.department-hero.has-image {
+  background: #1d1a18;
+}
+
+.department-hero.has-image::before,
+.department-hero.has-image::after {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  content: '';
+  pointer-events: none;
+}
+
+.department-hero.has-image::before {
+  background:
+    linear-gradient(90deg, rgba(251, 247, 245, .96) 0%, rgba(236, 224, 213, .88) 32%, rgba(226, 212, 199, .52) 58%, rgba(226, 212, 199, .16) 100%);
+}
+
+.department-hero.has-image::after {
+  background:
+    radial-gradient(circle at 78% 48%, rgba(255, 255, 255, .2), transparent 34%),
+    linear-gradient(180deg, rgba(251, 247, 245, .12), rgba(29, 26, 24, .08));
+}
+
 .department-hero-inner {
+  position: relative;
+  z-index: 2;
   display: grid;
   min-height: 410px;
-  grid-template-columns: minmax(0, 1.15fr) minmax(260px, .85fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: clamp(32px, 7vw, 116px);
   padding-top: clamp(46px, 7vw, 92px);
   padding-bottom: clamp(46px, 7vw, 92px);
 }
@@ -17104,9 +17145,9 @@ main > section.wrap {
 .department-hero-copy > p { margin: 0 0 14px; color: #8b4c4c; font-family: var(--font-interface); font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
 .department-hero-copy h1 { max-width: 700px; margin: 0 0 20px; color: #1d1a18; font-family: var(--font-display); font-size: clamp(52px, 6vw, 82px); font-weight: 400; line-height: .92; }
 .department-hero-copy > span { display: block; max-width: 360px; color: #635c56; font-family: var(--font-interface); font-size: 15px; line-height: 1.5; }
-.department-hero-image { justify-self: end; width: min(100%, 330px); aspect-ratio: 4 / 5; overflow: hidden; border-radius: 8px; background: #eee7e1; box-shadow: 0 20px 45px rgba(29, 26, 24, .16); }
-.department-hero-image img { width: 100%; height: 100%; object-fit: cover; transition: transform .6s ease; }
-.department-hero-image:hover img { transform: scale(1.04); }
+.department-hero-image { position: absolute; inset: 0; z-index: 0; overflow: hidden; background: #e1d2c4; }
+.department-hero-image img { width: 100%; height: 100%; object-fit: cover; opacity: .84; transform: scale(1.02); }
+.department-hero-image.curated img { filter: saturate(.92) contrast(.98); opacity: .8; object-fit: cover; transform: scale(1.02); }
 
 .department-catalog { padding-top: clamp(44px, 6vw, 82px); padding-bottom: clamp(82px, 10vw, 144px); }
 .department-controls { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: clamp(52px, 6vw, 84px); border-top: 1px solid rgba(29, 26, 24, .12); border-bottom: 1px solid rgba(29, 26, 24, .12); padding: 16px 0; }
@@ -17130,7 +17171,7 @@ main > section.wrap {
 .department-page .product-card:hover { border-color: rgba(29, 26, 24, .3); box-shadow: 0 16px 30px rgba(29, 26, 24, .08); }
 
 @media (max-width: 900px) {
-  .department-hero-inner { grid-template-columns: minmax(0, 1fr) minmax(220px, .7fr); gap: 34px; }
+  .department-hero-inner { grid-template-columns: 1fr; }
   .department-controls { align-items: flex-start; flex-direction: column; }
   .department-filter-selects { width: 100%; justify-content: flex-start; }
   .department-product-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -17138,9 +17179,9 @@ main > section.wrap {
 
 @media (max-width: 620px) {
   .department-hero-inner { min-height: 0; grid-template-columns: 1fr; gap: 28px; padding-top: 46px; padding-bottom: 48px; }
+  .department-hero.has-image::before { background: linear-gradient(90deg, rgba(251, 247, 245, .97) 0%, rgba(236, 224, 213, .86) 58%, rgba(226, 212, 199, .38) 100%); }
   .department-back-link { margin-bottom: 28px; }
   .department-hero-copy h1 { font-size: 52px; }
-  .department-hero-image { justify-self: start; width: min(78vw, 300px); }
   .department-controls { align-items: flex-start; flex-direction: column; gap: 14px; margin-bottom: 48px; }
   .department-filter-selects { display: grid; width: 100%; grid-template-columns: 1fr; gap: 12px; }
   .department-sort { width: 100%; justify-content: space-between; }
@@ -20372,6 +20413,23 @@ textarea:focus-visible,
   gap: 18px !important;
   margin: 4px 0 2px !important;
   font-size: 11px !important;
+}
+
+.auth-login-reference-page .auth-login-switch-inline {
+  justify-self: start !important;
+  margin: -2px 0 -4px !important;
+  color: #8d837d !important;
+  font-family: var(--font-interface) !important;
+  font-size: 11px !important;
+  line-height: 1.2 !important;
+  text-align: left !important;
+}
+
+.auth-login-reference-page .auth-login-switch-inline a {
+  color: #302925 !important;
+  font-weight: 700 !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px !important;
 }
 
 .auth-login-reference-page .auth-login-options label {
