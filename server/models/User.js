@@ -49,7 +49,8 @@ const userSchema = new mongoose.Schema(
       source: { type: String, trim: true },
       generatedAt: Date,
       error: String
-    }
+    },
+    onboardingSeenAt: Date
   },
   { timestamps: true }
 );
@@ -70,6 +71,8 @@ userSchema.methods.toClient = function toClient() {
       currentPeriodEnd: this.subscription?.currentPeriodEnd || null
     },
     devMode: Boolean(this.devMode),
+    hasCompletedOnboarding: Boolean(this.onboardingSeenAt),
+    onboardingSeenAt: this.onboardingSeenAt || null,
     wishlistCount: this.wishlistProducts?.length || 0,
     joinedAt: this.createdAt,
     bodyPhotoUrl: this.bodyPhoto?.path ? `/${this.bodyPhoto.path}` : null,

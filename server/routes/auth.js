@@ -608,6 +608,14 @@ router.get('/me', requireUser, (req, res) => {
   res.json({ user: req.user.toClient() });
 });
 
+router.patch('/onboarding', requireUser, async (req, res) => {
+  if (!req.user.onboardingSeenAt) {
+    req.user.onboardingSeenAt = new Date();
+    await req.user.save();
+  }
+  res.json({ user: req.user.toClient() });
+});
+
 function validWishlistProductIds(values = []) {
   return [...new Set((Array.isArray(values) ? values : [])
     .map((value) => String(value || '').trim())

@@ -4986,6 +4986,7 @@ function ProfilePage({ user, setUser }) {
             <div><span>Username</span><strong>@{user.username}</strong></div>
             <div><span>Email address</span><strong>{user.email}</strong></div>
             <div className="profile-reference-mode"><span>Try-on photo mode</span><div role="radiogroup" aria-label="Try-on photo mode"><label><input type="radio" name="profilePhotoModeSettings" value="ai-full-body" checked={profilePhotoMode === 'ai-full-body'} onChange={(event) => setProfilePhotoMode(event.target.value)} /> AI full-body</label><label><input type="radio" name="profilePhotoModeSettings" value="exact" checked={profilePhotoMode === 'exact'} onChange={(event) => setProfilePhotoMode(event.target.value)} /> Exact photo</label></div></div>
+            <button className="profile-reference-neutral-action" type="button" onClick={() => window.dispatchEvent(new CustomEvent('fitlook:replay-onboarding'))}><span>Replay platform tour</span><b>›</b></button>
             <a href="/terms"><span>Terms and conditions</span><b>›</b></a>
             <a href="/privacy"><span>Privacy policy</span><b>›</b></a>
             <button type="button" onClick={logout}><span>Log out</span><b>›</b></button>
@@ -5590,6 +5591,203 @@ function AuthSubmitButton({ children, loading = false }) {
   );
 }
 
+function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
+  const [stepIndex, setStepIndex] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const dialogRef = useRef(null);
+  const nextButtonRef = useRef(null);
+
+  const steps = useMemo(() => [
+    {
+      eyebrow: 'Welcome',
+      title: `Welcome to FitLook${user?.name ? `, ${user.name.split(/\s+/)[0]}` : ''}`,
+      body: 'FitLook exists to make online fashion feel personal before you buy. Build a try-on profile, explore curated pieces, and see how styles work with your wardrobe.',
+      gain: 'You get a faster way to choose pieces with more confidence.',
+      icon: <SparkleLineIcon />,
+      visual: 'Profile - Browse - Try on'
+    },
+    {
+      eyebrow: 'Explore',
+      title: 'Shop the catalog',
+      body: 'Use Home, Categories, and Search to browse new arrivals, sale edits, and product collections. Filters help you narrow by category, brand, gender, and price.',
+      gain: 'Find relevant pieces without digging through the whole store.',
+      icon: <SearchIcon />,
+      visual: 'Search + filters'
+    },
+    {
+      eyebrow: 'Preview',
+      title: 'AI Try-On',
+      body: 'Open supported products and generate a preview using your saved try-on portrait. You can switch between the product photo and your AI preview on the product page.',
+      gain: 'See the fit and vibe on your profile before spending time or credits on more looks.',
+      icon: <TryOnIcon />,
+      visual: 'Product - AI preview'
+    },
+    {
+      eyebrow: 'Wardrobe',
+      title: 'Build your Smart Closet',
+      body: 'Upload clothing you already own, save closet items, and combine them into outfits. The wardrobe workspace helps you plan looks around your own pieces.',
+      gain: 'Turn browsing into outfit planning instead of one-item decisions.',
+      icon: <ClosetIcon />,
+      visual: 'Upload - Combine - Save'
+    },
+    {
+      eyebrow: 'Personalize',
+      title: 'Use Wishlist, Credits, and Concierge',
+      body: 'Save products to Wishlist, manage try-on credits from the Credits page, and ask FitLook Concierge for style ideas when you want help choosing.',
+      gain: 'Keep favorites, budget previews, and get guidance without losing your place.',
+      icon: <HeartIcon />,
+      visual: 'Save - Credit - Ask'
+    },
+    {
+      eyebrow: 'Workflow',
+      title: 'A simple way to use FitLook',
+      body: 'Start with search or a category, open a product, generate a try-on when it matters, then save favorites or build outfits in your closet.',
+      gain: 'Use credits only where they help you decide.',
+      icon: <BagIcon />,
+      visual: 'Browse - Try - Decide'
+    },
+    {
+      eyebrow: 'Ready',
+      title: 'You are all set',
+      body: 'Your profile is ready for a more visual shopping flow. Jump in, explore styles, and come back to your Profile page anytime to replay this tour.',
+      gain: 'Let us get your first look moving.',
+      icon: <GlobeIcon />,
+      visual: 'Enter FitLook'
+    }
+  ], [user?.name]);
+
+  const step = steps[stepIndex];
+  const isLastStep = stepIndex === steps.length - 1;
+
+  const markComplete = async (reason) => {
+    if (saving) return;
+    setError('');
+    if (!persist) {
+      onClose?.();
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const data = await api('/auth/onboarding', {
+        method: 'PATCH',
+        body: JSON.stringify({ reason })
+      });
+      if (data.user) onComplete?.(data.user);
+      onClose?.();
+    } catch (err) {
+      setError(err.message || 'Could not save onboarding status. Try again.');
+      setSaving(false);
+    }
+  };
+
+  const focusableElements = () => Array.from(dialogRef.current?.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  ) || []).filter((element) => element.offsetParent !== null || element === document.activeElement);
+
+  const onDialogKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      markComplete('escape');
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const items = focusableElements();
+    if (!items.length) {
+      event.preventDefault();
+      return;
+    }
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.requestAnimationFrame(() => nextButtonRef.current?.focus());
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    nextButtonRef.current?.focus();
+  }, [stepIndex]);
+
+  return (
+    <div
+      className="onboarding-overview"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) markComplete('outside-click');
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="onboarding-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
+        aria-describedby="onboarding-copy"
+        onKeyDown={onDialogKeyDown}
+      >
+        <header className="onboarding-topbar">
+          <div>
+            <p>{step.eyebrow}</p>
+            <span>{stepIndex + 1} of {steps.length}</span>
+          </div>
+          <button type="button" onClick={() => markComplete('skip')} disabled={saving}>
+            {saving ? 'Saving...' : 'Skip'}
+          </button>
+        </header>
+
+        <div className="onboarding-progress" aria-label={`Step ${stepIndex + 1} of ${steps.length}`}>
+          {steps.map((item, index) => (
+            <span className={index === stepIndex ? 'active' : ''} key={item.title} />
+          ))}
+        </div>
+
+        <div className="onboarding-content">
+          <div className="onboarding-visual" aria-hidden="true">
+            <span>{step.icon}</span>
+            <strong>{step.visual}</strong>
+          </div>
+          <div className="onboarding-copy">
+            <h2 id="onboarding-title">{step.title}</h2>
+            <p id="onboarding-copy">{step.body}</p>
+            <small>{step.gain}</small>
+          </div>
+        </div>
+
+        {error && <p className="onboarding-error" role="alert">{error}</p>}
+
+        <footer className="onboarding-actions">
+          <button type="button" onClick={() => setStepIndex((current) => Math.max(0, current - 1))} disabled={stepIndex === 0 || saving}>
+            Back
+          </button>
+          <button
+            ref={nextButtonRef}
+            type="button"
+            onClick={() => isLastStep ? markComplete('finish') : setStepIndex((current) => Math.min(steps.length - 1, current + 1))}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : isLastStep ? 'Get Started' : 'Next'}
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 function AuthPage({ mode, setUser }) {
   const bodyPhotoCameraRef = useRef(null);
   const [message, setMessage] = useState('');
@@ -5839,6 +6037,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [toast, setToast] = useState(null);
+  const [replayTourOpen, setReplayTourOpen] = useState(false);
   const scrollPositions = useRef(new Map());
   const toastTimer = useRef(null);
 
@@ -5891,6 +6090,14 @@ function App() {
       window.clearTimeout(toastTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    const replayOnboarding = () => {
+      if (user) setReplayTourOpen(true);
+    };
+    window.addEventListener('fitlook:replay-onboarding', replayOnboarding);
+    return () => window.removeEventListener('fitlook:replay-onboarding', replayOnboarding);
+  }, [user]);
 
   const dismissToast = () => {
     window.clearTimeout(toastTimer.current);
@@ -6062,6 +6269,7 @@ function App() {
   const isOpeningPage = path === '/';
   const isReferencePage = isOpeningPage || path === '/categories' || path === '/wishlist' || path === '/tokens' || path === '/profile' || isProductPage || isConciergePage;
   const isWardrobeWorkspace = path === '/closet' || path === '/closet/add';
+  const shouldShowOnboarding = Boolean(user && !user.hasCompletedOnboarding && !isStandaloneAuth);
 
   return (
     <>
@@ -6078,6 +6286,8 @@ function App() {
       )}
       {!isStandaloneAuth && !isOpeningPage && !isConciergePage && !isWardrobeWorkspace && <FloatingStylistLauncher user={user} />}
       {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Footer compact={path === '/wishlist' || path === '/profile' || isProductPage} />}
+      {shouldShowOnboarding && <OnboardingOverview user={user} onComplete={setUser} />}
+      {replayTourOpen && user && <OnboardingOverview user={user} persist={false} onClose={() => setReplayTourOpen(false)} />}
     </>
   );
 }
