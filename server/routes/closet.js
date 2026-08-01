@@ -9,6 +9,7 @@ import ClosetItem from '../models/ClosetItem.js';
 import ClosetOutfit from '../models/ClosetOutfit.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
+import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -805,6 +806,9 @@ router.post('/outfits/generate', requireUser, async (req, res) => {
     const generated = await callFitRoomTryOn({ user: req.user, garment, timer });
     const garmentFile = await saveUploadFile({ buffer: garment.bytes, mimetype: garment.mimetype, size: garment.bytes.length }, 'closet-combo', req.user, 'closet-outfits');
     const imageFile = await saveUploadFile({ buffer: generated.bytes, mimetype: generated.mimetype, size: generated.bytes.length }, 'closet-outfit', req.user, 'closet-outfits');
+    const isolation = await isolateSubjectAsset({ rootDir, user: req.user, storedImage: imageFile });
+    if (isolation.metadata.processingStatus === 'completed') timer.mark('subject isolation completed', { cached: isolation.cached, path: isolation.image?.path });
+    else timer.mark('subject isolation failed', { error: isolation.metadata.processingError });
     const outfit = await ClosetOutfit.create({
       user: req.user._id,
       title: cleanWord(req.body?.title, `Closet look for ${cleanWord(req.body?.occasion, 'today')}`),
@@ -822,7 +826,9 @@ router.post('/outfits/generate', requireUser, async (req, res) => {
       quality: fitRoomHdMode() ? 'hd' : 'standard',
       tokenCost: chargedTokenCost(req.user),
       garment: garmentFile,
-      image: imageFile
+      image: imageFile,
+      transparentImage: isolation.image || undefined,
+      imageProcessing: isolation.metadata
     });
     await ClosetItem.updateMany({ _id: { $in: items.map((item) => item._id) }, user: req.user._id }, { $inc: { wearCount: 1 }, $set: { lastWornAt: new Date() } });
     timer.end({ outfitId: outfit._id.toString(), tokensRemaining: req.user.tokens });

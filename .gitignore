@@ -45,6 +45,10 @@ pnpm-debug.log*
 *.bak
 *.backup
 .cache/
+.model-cache/
+.venv/
+.venv-rembg/
+.tmp-cutout-*/
 .tmp/
 tmp/
 temp/

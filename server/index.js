@@ -10,6 +10,7 @@ import paymentRoutes from './routes/payments.js';
 import productRoutes from './routes/products.js';
 import recommendationRoutes from './routes/recommendations.js';
 import tryOnRoutes from './routes/tryons.js';
+import imageRoutes from './routes/images.js';
 
 dotenv.config();
 
@@ -63,6 +64,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/tryons', tryOnRoutes);
+app.use('/api/images', imageRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, mongo: mongoose.connection.readyState === 1 });

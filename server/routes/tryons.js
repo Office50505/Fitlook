@@ -13,6 +13,7 @@ import { requireUser } from './auth.js';
 import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility } from '../utils/genderPreference.js';
+import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -1162,6 +1163,16 @@ async function saveUserCacheFile({ user, bytes, filename, mimetype }) {
   };
 }
 
+async function isolateGeneratedImage(user, image, timer) {
+  const isolation = await isolateSubjectAsset({ rootDir, user, storedImage: image });
+  if (isolation.metadata.processingStatus === 'completed') {
+    timer?.mark('subject isolation completed', { cached: isolation.cached, path: isolation.image?.path });
+  } else {
+    timer?.mark('subject isolation failed', { error: isolation.metadata.processingError });
+  }
+  return isolation;
+}
+
 async function generateProductTryOnImage({ user, product, tryOnModel, timer }) {
   const selectedModel = tryOnModel || tryOnModelForProduct(product);
   timer?.mark('image generator selected', { tryOnModel: selectedModel });
@@ -1187,6 +1198,7 @@ async function saveGeneratedTryOn({ user, product, tryOnModel, timer }) {
   const filename = `tryon-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   timer?.mark('generated image saved', { path: image.path });
+  const isolation = await isolateGeneratedImage(user, image, timer);
 
   return TryOn.create({
     user: user._id,
@@ -1196,7 +1208,9 @@ async function saveGeneratedTryOn({ user, product, tryOnModel, timer }) {
     quality: generated.quality,
     prompt: generated.prompt,
     tokenCost: chargedTokenCost(user),
-    image
+    image,
+    transparentImage: isolation.image || undefined,
+    imageProcessing: isolation.metadata
   });
 }
 
@@ -1205,6 +1219,7 @@ async function replaceGeneratedTryOn({ user, product, tryOnModel, timer }) {
   const filename = `tryon-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   timer?.mark('generated image replaced', { path: image.path });
+  const isolation = await isolateGeneratedImage(user, image, timer);
 
   return TryOn.findOneAndUpdate(
     { user: user._id, product: product._id },
@@ -1215,7 +1230,9 @@ async function replaceGeneratedTryOn({ user, product, tryOnModel, timer }) {
         quality: generated.quality,
         prompt: generated.prompt,
         tokenCost: chargedTokenCost(user),
-        image
+        image,
+        transparentImage: isolation.image || undefined,
+        imageProcessing: isolation.metadata
       },
       $unset: {
         video: ''
@@ -1263,6 +1280,7 @@ async function saveGeneratedExternalTryOn({ user, product, timer }) {
   const filename = `tryon-external-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   timer?.mark('external try-on saved', { path: image.path });
+  const isolation = await isolateGeneratedImage(user, image, timer);
 
   return ExternalTryOn.create({
     user: user._id,
@@ -1277,7 +1295,9 @@ async function saveGeneratedExternalTryOn({ user, product, timer }) {
     quality: generated.quality,
     prompt: generated.prompt,
     tokenCost: chargedTokenCost(user),
-    image
+    image,
+    transparentImage: isolation.image || undefined,
+    imageProcessing: isolation.metadata
   });
 }
 
@@ -1323,6 +1343,7 @@ async function saveGeneratedCustomTryOn({ user, garmentFile, timer }) {
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   const garment = await saveUploadFile(garmentFile, 'garment', user);
   timer?.mark('custom try-on saved', { path: image.path });
+  const isolation = await isolateGeneratedImage(user, image, timer);
 
   return CustomTryOn.create({
     user: user._id,
@@ -1332,7 +1353,9 @@ async function saveGeneratedCustomTryOn({ user, garmentFile, timer }) {
     prompt: generated.prompt,
     tokenCost: chargedTokenCost(user),
     garment,
-    image
+    image,
+    transparentImage: isolation.image || undefined,
+    imageProcessing: isolation.metadata
   });
 }
 

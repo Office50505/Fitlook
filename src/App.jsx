@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import OptimizedImage from './components/common/OptimizedImage.jsx';
+import { DEFAULT_MODEL_PLACEMENT, calculateModelPlacement, normalizedPlacement } from './utils/modelPlacement.js';
 
 const asset = (name) => `/assets/${name}`;
 const MAX_BODY_PHOTO_BYTES = 8 * 1024 * 1024;
@@ -397,28 +398,29 @@ const categoryCollectionVisualPools = {
 };
 
 const categoryIconVisuals = {
-  innerwear: { image: 'category-icons/innerwear.png', position: 'center' },
-  lingerie: { image: 'category-icons/innerwear.png', position: 'center' },
-  shorts: { image: 'category-icons/shorts.png', position: 'center' },
-  jeans: { image: 'category-icons/jeans.png', position: 'center' },
-  denim: { image: 'category-icons/jeans.png', position: 'center' },
-  shoes: { image: 'category-reference-footwear.png', position: 'center' },
-  footwear: { image: 'category-reference-footwear.png', position: 'center' },
-  dresses: { image: 'category-icons/dresses.png', position: 'center' },
-  dress: { image: 'category-icons/dresses.png', position: 'center' },
-  tops: { image: 'category-icons/tops-hangers.png', position: 'center' },
-  shirts: { image: 'category-icons/tops-hangers.png', position: 'center' },
-  't-shirts': { image: 'category-icons/t-shirts.png', position: 'center' },
-  tshirts: { image: 'category-icons/t-shirts.png', position: 'center' },
-  tees: { image: 'category-icons/t-shirts.png', position: 'center' },
-  eyewear: { image: 'category-icons/eyewear.png', position: 'center' },
-  sunglasses: { image: 'category-icons/eyewear.png', position: 'center' },
-  glasses: { image: 'category-icons/eyewear.png', position: 'center' },
-  jackets: { image: 'category-icons/jackets-dark.png', position: 'center' },
-  jacket: { image: 'category-icons/jackets-dark.png', position: 'center' },
-  outerwear: { image: 'category-icons/jackets-dark.png', position: 'center' },
-  sleepwear: { image: 'category-icons/sleepwear.png', position: 'center' },
-  nightwear: { image: 'category-icons/sleepwear.png', position: 'center' },
+  innerwear: { image: 'category-icons/innerwear-section.png', position: 'center' },
+  lingerie: { image: 'category-icons/innerwear-section.png', position: 'center' },
+  shorts: { image: 'category-icons/shorts-section.png', position: 'center' },
+  jeans: { image: 'category-icons/jeans-section.png', position: 'center' },
+  denim: { image: 'category-icons/jeans-section.png', position: 'center' },
+  shoes: { image: 'category-icons/shoes-section.png', position: 'center' },
+  footwear: { image: 'category-icons/shoes-section.png', position: 'center' },
+  dresses: { image: 'category-icons/dresses-section.png', position: 'center' },
+  dress: { image: 'category-icons/dresses-section.png', position: 'center' },
+  tops: { image: 'category-icons/tops-section.png', position: 'center' },
+  shirts: { image: 'category-icons/shirts-section.png', position: 'center' },
+  shirt: { image: 'category-icons/shirts-section.png', position: 'center' },
+  't-shirts': { image: 'category-icons/t-shirts-section.png', position: 'center' },
+  tshirts: { image: 'category-icons/t-shirts-section.png', position: 'center' },
+  tees: { image: 'category-icons/t-shirts-section.png', position: 'center' },
+  eyewear: { image: 'category-icons/eyewear-section.png', position: 'center' },
+  sunglasses: { image: 'category-icons/eyewear-section.png', position: 'center' },
+  glasses: { image: 'category-icons/eyewear-section.png', position: 'center' },
+  jackets: { image: 'category-icons/jackets-section.png', position: 'center' },
+  jacket: { image: 'category-icons/jackets-section.png', position: 'center' },
+  outerwear: { image: 'category-icons/jackets-section.png', position: 'center' },
+  sleepwear: { image: 'category-icons/sleepwear-section.png', position: 'center' },
+  nightwear: { image: 'category-icons/sleepwear-section.png', position: 'center' },
   pants: { image: 'category-icons/shorts.png', position: 'center' },
   trousers: { image: 'category-icons/shorts.png', position: 'center' },
   accessories: { image: 'category-icons/eyewear.png', position: 'center' },
@@ -1072,159 +1074,27 @@ function FooterCol({ title, links }) {
   );
 }
 
-function defaultStylistLauncherPosition() {
-  if (typeof window === 'undefined') return { x: 0, y: 0 };
-  const size = window.innerWidth <= 700 ? 76 : 86;
-  const margin = window.innerWidth <= 700 ? 18 : 28;
-  return {
-    x: window.innerWidth - size - margin,
-    y: window.innerHeight - size - margin
-  };
-}
-
-function clampStylistLauncherPosition(position) {
-  if (typeof window === 'undefined') return position;
-  const size = 86;
-  const margin = 12;
-  return {
-    x: Math.min(Math.max(Number(position?.x) || margin, margin), Math.max(margin, window.innerWidth - size - margin)),
-    y: Math.min(Math.max(Number(position?.y) || margin, margin), Math.max(margin, window.innerHeight - size - margin))
-  };
-}
-
-function readStylistLauncherPosition() {
-  try {
-    const stored = JSON.parse(localStorage.getItem('fitlook_ai_stylist_launcher_position') || 'null');
-    if (stored?.dockVersion === 2 && Number.isFinite(Number(stored.x)) && Number.isFinite(Number(stored.y))) return stored;
-  } catch {
-    // Position memory is optional; ignore private-storage failures.
-  }
-  return defaultStylistLauncherPosition();
-}
-
-function saveStylistLauncherPosition(position) {
-  try {
-    localStorage.setItem('fitlook_ai_stylist_launcher_position', JSON.stringify({ ...position, dockVersion: 2 }));
-  } catch {
-    // Keep the launcher usable even when storage is unavailable.
-  }
-}
-
 function FloatingStylistLauncher({ user }) {
-  const [position, setPosition] = useState({ x: null, y: null });
-  const [dragging, setDragging] = useState(false);
-  const dragRef = useRef({ active: false, moved: false, suppressClick: false, startX: 0, startY: 0, originX: 0, originY: 0 });
-
-  useEffect(() => {
-    setPosition(clampStylistLauncherPosition(readStylistLauncherPosition()));
-  }, []);
-
-  useEffect(() => {
-    const keepInViewport = () => {
-      setPosition((current) => {
-        if (!Number.isFinite(current.x) || !Number.isFinite(current.y)) return current;
-        const next = clampStylistLauncherPosition(current);
-        saveStylistLauncherPosition(next);
-        return next;
-      });
-    };
-    window.addEventListener('resize', keepInViewport);
-    return () => window.removeEventListener('resize', keepInViewport);
-  }, []);
-
   const openStylist = () => {
     const href = user ? '/style-bot' : '/signup?returnTo=/style-bot';
     window.history.pushState({}, '', href);
     window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
-  const handlePointerDown = (event) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    const nextPosition = Number.isFinite(position.x) ? position : clampStylistLauncherPosition(readStylistLauncherPosition());
-    dragRef.current = {
-      active: true,
-      moved: false,
-      suppressClick: false,
-      startX: event.clientX,
-      startY: event.clientY,
-      originX: nextPosition.x,
-      originY: nextPosition.y
-    };
-    setPosition(nextPosition);
-    setDragging(true);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-
-  const handlePointerMove = (event) => {
-    const drag = dragRef.current;
-    if (!drag.active) return;
-    const dx = event.clientX - drag.startX;
-    const dy = event.clientY - drag.startY;
-    if (Math.abs(dx) + Math.abs(dy) > 5) drag.moved = true;
-    setPosition(clampStylistLauncherPosition({ x: drag.originX + dx, y: drag.originY + dy }));
-  };
-
-  const finishDrag = (event) => {
-    const drag = dragRef.current;
-    if (!drag.active) return;
-    drag.active = false;
-    drag.suppressClick = drag.moved;
-    setDragging(false);
-    setPosition((current) => {
-      const next = clampStylistLauncherPosition(current);
-      saveStylistLauncherPosition(next);
-      return next;
-    });
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
-  };
-
-  const handleClick = () => {
-    if (dragRef.current.suppressClick) {
-      dragRef.current.suppressClick = false;
-      return;
-    }
-    openStylist();
-  };
-
   const handleKeyDown = (event) => {
-    const moves = {
-      ArrowUp: { x: 0, y: -14 },
-      ArrowDown: { x: 0, y: 14 },
-      ArrowLeft: { x: -14, y: 0 },
-      ArrowRight: { x: 14, y: 0 }
-    };
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       openStylist();
-      return;
     }
-    if (!moves[event.key]) return;
-    event.preventDefault();
-    setPosition((current) => {
-      const base = Number.isFinite(current.x) ? current : clampStylistLauncherPosition(readStylistLauncherPosition());
-      const next = clampStylistLauncherPosition({ x: base.x + moves[event.key].x, y: base.y + moves[event.key].y });
-      saveStylistLauncherPosition(next);
-      return next;
-    });
   };
-
-  const ready = Number.isFinite(position.x) && Number.isFinite(position.y);
 
   return (
     <button
-      className={`ai-stylist-launcher${dragging ? ' dragging' : ''}${ready ? ' ready' : ''}`}
+      className="ai-stylist-launcher"
       type="button"
-      aria-label="Open AI Stylist. Drag to move."
+      aria-label="Open AI Stylist"
       title="Open AI Stylist"
-      style={{
-        '--stylist-launcher-x': `${ready ? position.x : 0}px`,
-        '--stylist-launcher-y': `${ready ? position.y : 0}px`
-      }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={finishDrag}
-      onPointerCancel={finishDrag}
-      onClick={handleClick}
+      onClick={openStylist}
       onKeyDown={handleKeyDown}
     >
       <span><SparkleLineIcon /></span>
@@ -1334,7 +1204,44 @@ function AtelierHome() {
   const newArrivalProducts = catalogProducts.filter((product) => product.isNewArrival);
   const arrivalProducts = [...newArrivalProducts, ...catalogProducts.filter((product) => !product.isNewArrival)].slice(0, 12);
   const promoProducts = catalogProducts.slice(4, 6);
-  const lookProducts = catalogProducts.slice(6, 9);
+  const lookProducts = useMemo(() => {
+    const outfitCategories = ['tops', 'dresses', 'jeans', 'shirts', 't-shirts', 'jackets', 'shorts', 'pants', 'sleepwear'];
+    const excludedCategories = new Set(['eyewear', 'accessories', 'shoes', 'innerwear']);
+    const usedIds = new Set();
+    const usedCategories = new Set();
+    const selected = [];
+    const genderRank = (product) => {
+      const gender = String(product.gender || '').toLowerCase();
+      if (gender === 'women') return 0;
+      if (gender === 'unisex') return 1;
+      if (gender === 'men') return 2;
+      return 3;
+    };
+    const outfitPool = catalogProducts
+      .filter((product) => !excludedCategories.has(categorySlug(product.category)))
+      .sort((a, b) => genderRank(a) - genderRank(b));
+
+    outfitCategories.forEach((slug) => {
+      if (selected.length >= 3) return;
+      const product = outfitPool.find((item) => (
+        categorySlug(item.category) === slug
+        && !usedIds.has(item.id)
+        && !usedCategories.has(slug)
+      ));
+      if (!product) return;
+      selected.push(product);
+      usedIds.add(product.id);
+      usedCategories.add(slug);
+    });
+
+    outfitPool.forEach((product) => {
+      if (selected.length >= 3 || usedIds.has(product.id)) return;
+      selected.push(product);
+      usedIds.add(product.id);
+    });
+
+    return selected;
+  }, [catalogProducts]);
   const categoryCards = useMemo(() => {
     const counts = state.facets?.categoryCounts || [];
     return counts
@@ -1454,7 +1361,7 @@ function AtelierHome() {
           <div className="atelier-lookbook-heading"><span className="atelier-eyebrow">Editorial</span><h2>Shop the Look</h2></div>
           <div className="atelier-lookbook-grid">
             {lookProducts[0] && <article className="atelier-look atelier-look-large"><a className="atelier-look-link" href={`/product/${encodeURIComponent(lookProducts[0].id)}`}><OptimizedImage src={lookProducts[0].imageUrl} alt={lookProducts[0].name} /><div><h3>{lookProducts[0].name}</h3><p>{displayCategory(lookProducts[0])} · {displayBrand(lookProducts[0])}</p><span>View Product</span></div></a><WishlistHeartButton product={lookProducts[0]} className="card-wishlist-heart" /></article>}
-            {lookProducts.length > 1 && <div className="atelier-lookbook-side">{lookProducts.slice(1, 3).map((product) => <article className="atelier-look" key={product.id}><a className="atelier-look-link" href={`/product/${encodeURIComponent(product.id)}`}><OptimizedImage src={product.imageUrl} alt={product.name} /><div><h3>{product.name}</h3><span>View Product</span></div></a><WishlistHeartButton product={product} className="card-wishlist-heart" /></article>)}</div>}
+            {lookProducts.length > 1 && <div className="atelier-lookbook-side">{lookProducts.slice(1, 3).map((product) => <article className="atelier-look" key={product.id}><a className="atelier-look-link" href={`/product/${encodeURIComponent(product.id)}`}><OptimizedImage src={product.imageUrl} alt={product.name} /><div><h3>{product.name}</h3><p>{displayCategory(product)} · {displayBrand(product)}</p><span>View Product</span></div></a><WishlistHeartButton product={product} className="card-wishlist-heart" /></article>)}</div>}
           </div>
         </section>}
 
@@ -1814,13 +1721,13 @@ function CategoryCollections({ categories: categoryGroups = [], user }) {
 }
 
 const categoryAudienceOptions = [
-  { label: 'Women', value: 'women', aliases: ['women', 'woman', 'female', 'ladies'] },
-  { label: 'Men', value: 'men', aliases: ['men', 'man', 'male', 'gentlemen'] },
+  { label: 'Women', value: 'women', aliases: ['women', 'woman', 'female', 'ladies'], image: 'category-icons/women-section.png' },
+  { label: 'Men', value: 'men', aliases: ['men', 'man', 'male', 'gentlemen'], image: 'category-icons/men-section.png' },
   { label: 'Girls', value: 'girls', aliases: ['girls', 'girl'] },
   { label: 'Boys', value: 'boys', aliases: ['boys', 'boy'] },
   { label: 'Teens', value: 'teens', aliases: ['teens', 'teen'] },
   { label: 'Kids', value: 'kids', aliases: ['kids', 'kid', 'children', 'child'] },
-  { label: 'Unisex', value: 'unisex', aliases: ['unisex'] }
+  { label: 'Unisex', value: 'unisex', aliases: ['unisex'], image: 'category-icons/unisex-section.png' }
 ];
 
 function categoryAudienceForProduct(product) {
@@ -2047,7 +1954,7 @@ function AtelierCategoriesPage() {
             </button>
             {catalog.audienceCards.map((audience) => (
               <button className={activeAudience === audience.value ? 'active' : ''} type="button" role="tab" aria-selected={activeAudience === audience.value} key={audience.value} onClick={() => setActiveAudience(audience.value)}>
-                <span className="atelier-category-audience-image"><OptimizedImage src={audience.product.imageUrl} alt="" /></span><strong>{audience.label}</strong><small>{audience.count} items</small>
+                <span className="atelier-category-audience-image"><OptimizedImage src={audience.image ? asset(audience.image) : audience.product.imageUrl} alt="" /></span><strong>{audience.label}</strong><small>{audience.count} items</small>
               </button>
             ))}
           </div>
@@ -2342,6 +2249,406 @@ const closetComboSlots = [
   { key: 'accessory', label: 'Accessory', helper: 'Cap, goggles, watch', categories: ['accessories'] }
 ];
 
+function placementStorageKey(modelSrc = '') {
+  return `fitlook:model-placement:${String(modelSrc || '').slice(0, 180)}`;
+}
+
+function readSavedPlacement(modelSrc) {
+  if (typeof window === 'undefined' || !modelSrc) return DEFAULT_MODEL_PLACEMENT;
+  try {
+    return normalizedPlacement(JSON.parse(localStorage.getItem(placementStorageKey(modelSrc)) || 'null') || DEFAULT_MODEL_PLACEMENT);
+  } catch {
+    return DEFAULT_MODEL_PLACEMENT;
+  }
+}
+
+function savePlacement(modelSrc, placement) {
+  if (typeof window === 'undefined' || !modelSrc) return;
+  localStorage.setItem(placementStorageKey(modelSrc), JSON.stringify(normalizedPlacement(placement)));
+}
+
+function useElementSize(ref) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return undefined;
+    let frame = 0;
+    const update = () => {
+      const rect = element.getBoundingClientRect();
+      setSize((current) => {
+        const width = Math.round(rect.width);
+        const height = Math.round(rect.height);
+        return current.width === width && current.height === height ? current : { width, height };
+      });
+    };
+    update();
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(update);
+    });
+    observer.observe(element);
+    window.addEventListener('orientationchange', update);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener('orientationchange', update);
+    };
+  }, [ref]);
+
+  return size;
+}
+
+function useImageNaturalSize(src) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (!src) {
+      setSize({ width: 0, height: 0 });
+      return undefined;
+    }
+    let active = true;
+    const image = new Image();
+    image.onload = () => {
+      if (active) setSize({ width: image.naturalWidth || image.width || 0, height: image.naturalHeight || image.height || 0 });
+    };
+    image.onerror = () => {
+      if (active) setSize({ width: 0, height: 0 });
+    };
+    image.src = src;
+    return () => {
+      active = false;
+    };
+  }, [src]);
+
+  return size;
+}
+
+function inspectPreviewImage(src) {
+  return new Promise((resolve, reject) => {
+    if (!src) {
+      reject(new Error('Transparent image URL is missing'));
+      return;
+    }
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      const width = image.naturalWidth || image.width || 0;
+      const height = image.naturalHeight || image.height || 0;
+      if (!width || !height) {
+        reject(new Error('Transparent image loaded without dimensions'));
+        return;
+      }
+      let alphaDetected = null;
+      try {
+        const canvas = document.createElement('canvas');
+        const sampleWidth = Math.min(220, width);
+        const sampleHeight = Math.max(1, Math.round((height / width) * sampleWidth));
+        canvas.width = sampleWidth;
+        canvas.height = sampleHeight;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        context.drawImage(image, 0, 0, sampleWidth, sampleHeight);
+        const data = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+        alphaDetected = false;
+        for (let index = 3; index < data.length; index += 4) {
+          if (data[index] < 255) {
+            alphaDetected = true;
+            break;
+          }
+        }
+      } catch {
+        alphaDetected = null;
+      }
+      resolve({ width, height, alphaDetected });
+    };
+    image.onerror = () => reject(new Error('Transparent image could not be loaded by the browser'));
+    image.src = src;
+  });
+}
+
+function useSubjectIsolation(modelSource, user) {
+  const sourceUrl = modelSource?.imageUrl || '';
+  const providedTransparent = modelSource?.transparentImageUrl || '';
+  const [retryKey, setRetryKey] = useState(0);
+  const [state, setState] = useState({
+    status: providedTransparent ? 'completed' : sourceUrl ? 'idle' : 'idle',
+    transparentUrl: providedTransparent,
+    error: '',
+    errorCode: '',
+    processing: modelSource?.imageProcessing || null,
+    outputLoaded: false,
+    alphaDetected: null,
+    cacheHit: Boolean(modelSource?.imageProcessing?.cached)
+  });
+
+  useEffect(() => {
+    if (!sourceUrl) {
+      setState({ status: 'idle', transparentUrl: '', error: '', errorCode: '', processing: null, outputLoaded: false, alphaDetected: null, cacheHit: false });
+      return undefined;
+    }
+    let active = true;
+    const completeWithPreview = async (transparentUrl, processing = null) => {
+      try {
+        const loaded = await inspectPreviewImage(transparentUrl);
+        if (!active) return;
+        setState({
+          status: loaded.alphaDetected === false ? 'failed' : 'completed',
+          transparentUrl: loaded.alphaDetected === false ? '' : transparentUrl,
+          error: loaded.alphaDetected === false ? 'Transparent image loaded, but no alpha pixels were detected.' : '',
+          errorCode: loaded.alphaDetected === false ? 'NO_ALPHA_DETECTED' : '',
+          processing,
+          outputLoaded: true,
+          alphaDetected: loaded.alphaDetected,
+          cacheHit: Boolean(processing?.cached)
+        });
+      } catch (error) {
+        if (!active) return;
+        setState({
+          status: 'failed',
+          transparentUrl: '',
+          error: error.message,
+          errorCode: 'TRANSPARENT_IMAGE_LOAD_FAILED',
+          processing,
+          outputLoaded: false,
+          alphaDetected: false,
+          cacheHit: Boolean(processing?.cached)
+        });
+      }
+    };
+
+    if (providedTransparent) {
+      setState((current) => ({ ...current, status: 'requesting', transparentUrl: '', error: '', errorCode: '', processing: modelSource?.imageProcessing || null }));
+      completeWithPreview(providedTransparent, modelSource?.imageProcessing || null);
+      return () => {
+        active = false;
+      };
+    }
+    if (!user || !sourceUrl.startsWith('/uploads/')) {
+      setState({ status: 'failed', transparentUrl: '', error: 'No saved source image is available for cutout processing.', errorCode: 'SOURCE_UNAVAILABLE', processing: modelSource?.imageProcessing || null, outputLoaded: false, alphaDetected: null, cacheHit: false });
+      return () => {
+        active = false;
+      };
+    }
+
+    const controller = new AbortController();
+    setState((current) => ({ ...current, status: 'requesting', transparentUrl: current.transparentUrl || '', error: '', errorCode: '' }));
+    api('/images/subject-isolation', {
+      method: 'POST',
+      body: JSON.stringify({ imageUrl: sourceUrl }),
+      timeout: 120000,
+      signal: controller.signal
+    })
+      .then((data) => {
+        if (!active) return;
+        const status = data.status || data.processing?.processingStatus || 'failed';
+        const transparentUrl = data.transparentImageUrl || data.processing?.transparentImageUrl || '';
+        if (status === 'completed' && transparentUrl) {
+          completeWithPreview(transparentUrl, data.processing || null);
+          return;
+        }
+        setState({
+          status: status === 'processing' || status === 'queued' ? 'processing' : 'failed',
+          transparentUrl: '',
+          error: data.message || data.processing?.processingError || 'Could not prepare transparent preview.',
+          errorCode: data.errorCode || 'BACKGROUND_REMOVAL_FAILED',
+          processing: data.processing || null,
+          outputLoaded: false,
+          alphaDetected: null,
+          cacheHit: Boolean(data.processing?.cached)
+        });
+      })
+      .catch((error) => {
+        if (active && error.name !== 'AbortError') {
+          setState({ status: 'failed', transparentUrl: '', error: error.message, errorCode: 'BACKGROUND_REMOVAL_REQUEST_FAILED', processing: null, outputLoaded: false, alphaDetected: null, cacheHit: false });
+        }
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [sourceUrl, providedTransparent, user?.id, retryKey]);
+
+  return { ...state, retry: () => setRetryKey((current) => current + 1), sourceUrl };
+}
+
+function FloorContactShadow({ placement }) {
+  if (!placement.modelWidth || !placement.modelHeight) return null;
+  return (
+    <span
+      className="floor-contact-shadow"
+      aria-hidden="true"
+      style={{
+        left: `${placement.leftPercent}%`,
+        bottom: `${placement.bottom}px`,
+        width: `${placement.shadowWidth}px`,
+        height: `${placement.shadowHeight}px`
+      }}
+    />
+  );
+}
+
+function ModelAdjustmentControls({ placement, onChange, onReset, onSave }) {
+  const current = normalizedPlacement(placement);
+  const setScale = (event) => onChange({ ...current, scale: Number(event.target.value) });
+  const move = (dx, dy) => onChange({ ...current, x: current.x + dx, floorY: current.floorY + dy });
+  return (
+    <div className="model-adjustment-controls" role="group" aria-label="Adjust model placement">
+      <div className="model-adjustment-nudge" aria-label="Move model">
+        <button type="button" onClick={() => move(0, -0.012)} aria-label="Move model up">↑</button>
+        <button type="button" onClick={() => move(-0.012, 0)} aria-label="Move model left">←</button>
+        <button type="button" onClick={() => move(0.012, 0)} aria-label="Move model right">→</button>
+        <button type="button" onClick={() => move(0, 0.012)} aria-label="Move model down">↓</button>
+      </div>
+      <label>
+        <span>Scale</span>
+        <input type="range" min="0.72" max="1.25" step="0.01" value={current.scale} onChange={setScale} aria-label="Model scale" />
+      </label>
+      <button type="button" onClick={onReset}>Reset</button>
+      <button type="button" onClick={onSave}>Save</button>
+    </div>
+  );
+}
+
+function TransparentModel({ src, fallback, alt, placement, adjusting, onOpen, onPlacementChange }) {
+  const dragRef = useRef(null);
+  const activeSrc = src || fallback;
+  const isFallback = !src && Boolean(fallback);
+  if (!activeSrc) return null;
+
+  const pointerDown = (event) => {
+    if (!adjusting) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragRef.current = {
+      id: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      placement
+    };
+  };
+  const pointerMove = (event) => {
+    const drag = dragRef.current;
+    if (!adjusting || !drag || drag.id !== event.pointerId) return;
+    const stage = event.currentTarget.closest('.wardrobe-model-frame');
+    const rect = stage?.getBoundingClientRect();
+    if (!rect?.width || !rect?.height) return;
+    onPlacementChange({
+      ...drag.placement,
+      x: drag.placement.x + (event.clientX - drag.startX) / rect.width,
+      floorY: drag.placement.floorY + (event.clientY - drag.startY) / rect.height
+    });
+  };
+  const pointerUp = (event) => {
+    if (dragRef.current?.id === event.pointerId) dragRef.current = null;
+  };
+
+  return (
+    <button
+      className={`transparent-model ${isFallback ? 'fallback-model' : ''} ${adjusting ? 'is-adjusting' : ''}`}
+      type="button"
+      onClick={adjusting ? undefined : onOpen}
+      onPointerDown={pointerDown}
+      onPointerMove={pointerMove}
+      onPointerUp={pointerUp}
+      onPointerCancel={pointerUp}
+      aria-label={adjusting ? 'Drag model to adjust placement' : 'Open model preview full screen'}
+      style={{
+        left: `${placement.leftPercent}%`,
+        bottom: `${placement.bottom}px`,
+        height: `${placement.modelHeight}px`
+      }}
+    >
+      <OptimizedImage src={activeSrc} alt={alt} />
+    </button>
+  );
+}
+
+function CutoutFallbackNotice({ isolation, originalSrc, onRetry }) {
+  return (
+    <div className="cutout-fallback-notice" role="status" aria-live="polite">
+      <div>
+        <strong>Room cutout needs retry</strong>
+        <span>{isolation.error || 'The transparent model preview could not be prepared.'}</span>
+      </div>
+      {originalSrc && <img src={originalSrc} alt="" />}
+      <button type="button" onClick={onRetry}>Retry cutout</button>
+    </div>
+  );
+}
+
+function RoomScene({ modelSource, alt, generating, user, onOpen, onEmpty }) {
+  const frameRef = useRef(null);
+  const stageSize = useElementSize(frameRef);
+  const isolation = useSubjectIsolation(modelSource, user);
+  const modelSrc = isolation.transparentUrl || '';
+  const fallbackSrc = modelSource?.imageUrl || '';
+  const visibleSrc = modelSrc;
+  const naturalSize = useImageNaturalSize(visibleSrc);
+  const [adjusting, setAdjusting] = useState(false);
+  const [placement, setPlacement] = useState(() => readSavedPlacement(visibleSrc));
+
+  useEffect(() => {
+    setPlacement(readSavedPlacement(visibleSrc));
+  }, [visibleSrc]);
+
+  const safePlacement = normalizedPlacement(placement);
+  const calculated = calculateModelPlacement({
+    stageWidth: stageSize.width,
+    stageHeight: stageSize.height,
+    imageWidth: naturalSize.width,
+    imageHeight: naturalSize.height,
+    placement: safePlacement,
+    controlsInset: adjusting ? 42 : 0
+  });
+  const statusText = isolation.status === 'requesting' || isolation.status === 'processing'
+      ? 'Preparing your room preview...'
+      : isolation.status === 'failed' && fallbackSrc
+        ? 'Transparent preview unavailable.'
+        : '';
+
+  const updatePlacement = (next) => setPlacement(normalizedPlacement(next));
+  const resetPlacement = () => setPlacement(DEFAULT_MODEL_PLACEMENT);
+  const saveCurrentPlacement = () => {
+    savePlacement(visibleSrc, placement);
+    announce('Model placement saved.');
+  };
+
+  return (
+    <div className={`room-scene ${adjusting ? 'adjusting' : ''}`} ref={frameRef}>
+      {visibleSrc ? (
+        <>
+          <FloorContactShadow placement={calculated} />
+          <TransparentModel
+            src={modelSrc}
+            fallback={fallbackSrc}
+            alt={alt}
+            placement={calculated}
+            adjusting={adjusting}
+            onOpen={onOpen}
+            onPlacementChange={updatePlacement}
+          />
+          <button className="model-adjust-toggle" type="button" onClick={() => setAdjusting((current) => !current)} aria-pressed={adjusting}>
+            Adjust Model
+          </button>
+          {adjusting && <ModelAdjustmentControls placement={safePlacement} onChange={updatePlacement} onReset={resetPlacement} onSave={saveCurrentPlacement} />}
+        </>
+      ) : isolation.status === 'failed' && fallbackSrc ? (
+        <CutoutFallbackNotice isolation={isolation} originalSrc={fallbackSrc} onRetry={isolation.retry} />
+      ) : fallbackSrc ? (
+        <div className="cutout-preparing" aria-hidden="true" />
+      ) : (
+        <button className="wardrobe-model-empty" type="button" onClick={onEmpty}>
+          <UserIcon />
+          <strong>Upload model photo</strong>
+          <span>Use your profile image for wardrobe try-ons.</span>
+        </button>
+      )}
+      {statusText && <p className={`room-scene-status ${isolation.status === 'failed' ? 'warning' : ''}`} aria-live="polite">{statusText}</p>}
+    </div>
+  );
+}
+
 function ClosetPage({ user, setUser }) {
   const [state, setState] = useState({ items: [], outfits: [], stats: {}, suggestions: [], loading: true, error: '' });
   const [selectedIds, setSelectedIds] = useState([]);
@@ -2358,6 +2665,9 @@ function ClosetPage({ user, setUser }) {
   const [pose, setPose] = useState('front facing');
   const [lighting, setLighting] = useState('natural light');
   const [autoApply, setAutoApply] = useState(true);
+  const [stagePreviewMode, setStagePreviewMode] = useState(() => (
+    new URLSearchParams(window.location.search).get('preview') === 'latest' ? 'outfit' : 'model'
+  ));
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
   const [chat, setChat] = useState([
@@ -2569,7 +2879,7 @@ function ClosetPage({ user, setUser }) {
       return;
     }
     setGenerating(true);
-    setMessage('Generating your closet look with FitRoom...');
+    setMessage('');
     try {
       const data = await api('/closet/outfits/generate', {
         method: 'POST',
@@ -2589,8 +2899,8 @@ function ClosetPage({ user, setUser }) {
       setState((current) => ({ ...current, outfits: [data.outfit, ...current.outfits] }));
       setSelectedIds(ids);
       if (data.user) setUser(data.user);
+      setStagePreviewMode('outfit');
       setMessage('Closet look is ready.');
-      if (data.outfit?.imageUrl) setFullscreenImage({ src: data.outfit.imageUrl, alt: data.outfit.title, title: data.outfit.title });
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -2710,8 +3020,15 @@ function ClosetPage({ user, setUser }) {
     generateOutfit(card.items.map((item) => item.id).filter(Boolean), { title: card.title, occasion: card.title });
   };
 
-  const modelPreview = latestOutfit?.imageUrl || user.bodyPhotoUrl || '';
-  const modelPreviewClass = latestOutfit?.imageUrl ? 'generated-model' : user.bodyPhotoUrl ? 'uploaded-model' : '';
+  const showingGeneratedOutfit = stagePreviewMode === 'outfit' && Boolean(latestOutfit?.imageUrl);
+  const modelPreview = showingGeneratedOutfit ? latestOutfit.imageUrl : user.bodyPhotoUrl || latestOutfit?.imageUrl || '';
+  const previewTitle = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Model';
+  const previewAlt = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
+  const modelSource = {
+    imageUrl: modelPreview,
+    transparentImageUrl: showingGeneratedOutfit ? latestOutfit?.transparentImageUrl || '' : '',
+    imageProcessing: showingGeneratedOutfit ? latestOutfit?.imageProcessing || null : null
+  };
   return (
     <main className="closet-page wardrobe-studio-page">
       <div className="wardrobe-studio-shell">
@@ -2747,7 +3064,7 @@ function ClosetPage({ user, setUser }) {
 
         <section className="wardrobe-model-stage" aria-label="Wardrobe model preview">
           <div className="wardrobe-model-tools left">
-            <button type="button" onClick={() => user.bodyPhotoUrl ? setFullscreenImage({ src: user.bodyPhotoUrl, alt: 'Current model', title: 'Model' }) : openRoute('/profile')}>
+            <button type="button" onClick={() => user.bodyPhotoUrl ? setStagePreviewMode('model') : openRoute('/profile')}>
               <span>{user.bodyPhotoUrl ? <img src={user.bodyPhotoUrl} alt="" /> : <UserIcon />}</span>
               <small>Model</small>
             </button>
@@ -2768,27 +3085,18 @@ function ClosetPage({ user, setUser }) {
 
           <div className="wardrobe-model-backdrop" aria-hidden="true" />
           <div className="wardrobe-model-frame">
-            {modelPreview ? (
-              <button
-                key={modelPreview}
-                className={`wardrobe-model-figure ${modelPreviewClass}`}
-                type="button"
-                onClick={() => setFullscreenImage({ src: modelPreview, alt: latestOutfit?.title || 'Uploaded wardrobe model', title: latestOutfit?.title || 'Model' })}
-                aria-label="Open model preview full screen"
-              >
-                <OptimizedImage className={`wardrobe-model-image ${modelPreviewClass}`} src={modelPreview} alt={latestOutfit?.title || 'Uploaded wardrobe model'} />
-              </button>
-            ) : (
-              <button className="wardrobe-model-empty" type="button" onClick={() => openRoute('/profile')}>
-                <UserIcon />
-                <strong>Upload model photo</strong>
-                <span>Use your profile image for wardrobe try-ons.</span>
-              </button>
-            )}
-            {generating && <TryOnGenerating text="Generating look" />}
+            <RoomScene
+              key={`${stagePreviewMode}:${modelPreview}`}
+              modelSource={modelSource}
+              alt={previewAlt}
+              generating={generating}
+              user={user}
+              onOpen={() => setFullscreenImage({ src: modelPreview, alt: previewAlt, title: previewTitle })}
+              onEmpty={() => openRoute('/profile')}
+            />
           </div>
 
-          {message && <p className={`wardrobe-stage-message ${/error|missing|not enough|failed|could not/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
+          {!generating && message && <p className={`wardrobe-stage-message ${/error|missing|not enough|failed|could not/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
 
           <div className="wardrobe-stage-actions">
             <label className="wardrobe-auto-apply-toggle">
@@ -2862,7 +3170,6 @@ function ClosetComboPage({ user, setUser }) {
   const [lighting, setLighting] = useState('natural light');
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState('');
-  const [fullscreenImage, setFullscreenImage] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -2991,8 +3298,9 @@ function ClosetComboPage({ user, setUser }) {
         })
       });
       if (data.user) setUser(data.user);
-      setMessage('Combo preview is ready.');
-      if (data.outfit?.imageUrl) setFullscreenImage({ src: data.outfit.imageUrl, alt: data.outfit.title, title: data.outfit.title });
+      setMessage('Combo preview is ready in wardrobe.');
+      window.history.pushState({}, '', '/closet?preview=latest');
+      window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -3087,7 +3395,6 @@ function ClosetComboPage({ user, setUser }) {
           </div>
         </section>
       </section>
-      {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
     </main>
   );
 }
@@ -5754,6 +6061,7 @@ function App() {
   const isProductPage = /^\/product\/[^/]+$/.test(path);
   const isOpeningPage = path === '/';
   const isReferencePage = isOpeningPage || path === '/categories' || path === '/wishlist' || path === '/tokens' || path === '/profile' || isProductPage || isConciergePage;
+  const isWardrobeWorkspace = path === '/closet' || path === '/closet/add';
 
   return (
     <>
@@ -5768,7 +6076,7 @@ function App() {
           <a className="floating-action custom" href="/custom-try-on"><span>AI</span><div><small>Upload clothing</small><strong>Custom Try-On</strong></div></a>
         </div>
       )}
-      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <FloatingStylistLauncher user={user} />}
+      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && !isWardrobeWorkspace && <FloatingStylistLauncher user={user} />}
       {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Footer compact={path === '/wishlist' || path === '/profile' || isProductPage} />}
     </>
   );
