@@ -26031,3 +26031,82 @@ a.atelier-hero-orbit-wardrobe:hover {
     max-width: 100% !important;
   }
 }
+
+/* Auth screens: iPhone Safari changes 100dvh while navigating/keyboard chrome settles.
+   Keep login/signup on stable svh sizing so switching pages does not zoom or breathe. */
+@media (max-width: 700px) {
+  .auth-login-reference-page,
+  .auth-signup-reference-page {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: var(--fitlook-auth-height, 100svh) !important;
+    height: auto !important;
+    margin: 0 !important;
+    overflow-x: clip !important;
+    overflow-y: auto !important;
+    contain: inline-size;
+  }
+
+  .auth-login-reference-page {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .auth-login-reference-page .auth-login-reference-story,
+  .auth-login-reference-page .auth-login-reference-panel {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: auto !important;
+    height: auto !important;
+  }
+
+  .auth-login-reference-page .auth-login-reference-story {
+    flex: 0 0 clamp(320px, calc(var(--fitlook-auth-height, 100svh) * .48), 430px) !important;
+    min-height: clamp(320px, calc(var(--fitlook-auth-height, 100svh) * .48), 430px) !important;
+    padding: 26px 22px !important;
+  }
+
+  .auth-login-reference-page .auth-login-reference-panel {
+    flex: 1 0 auto !important;
+    padding: 48px 22px max(42px, env(safe-area-inset-bottom)) !important;
+  }
+
+  .auth-signup-reference-shell {
+    display: flex !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: var(--fitlook-auth-height, 100svh) !important;
+    height: auto !important;
+    flex-direction: column !important;
+    overflow: visible !important;
+  }
+
+  .auth-signup-reference-form {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: auto !important;
+    height: auto !important;
+    flex: 0 0 auto !important;
+    overflow: visible !important;
+    padding: 30px 18px 34px !important;
+  }
+
+  .auth-signup-reference-scene {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: clamp(300px, calc(var(--fitlook-auth-height, 100svh) * .42), 380px) !important;
+    height: auto !important;
+    flex: 1 0 clamp(300px, calc(var(--fitlook-auth-height, 100svh) * .42), 380px) !important;
+  }
+
+  .auth-signup-reference-scene > img,
+  .auth-login-reference-page .auth-login-background {
+    width: 100% !important;
+    max-width: none !important;
+    height: 100% !important;
+    transform: none !important;
+  }
+}

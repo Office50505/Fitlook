@@ -6155,6 +6155,11 @@ function App() {
   const navigateTo = (next) => {
     const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (next === current) return;
+    const currentPath = normalizePath();
+    const nextPath = new URL(next, window.location.href).pathname.replace(/\.html$/, '').replace(/\/$/, '') || '/';
+    if ((currentPath === '/login' || currentPath === '/signup' || nextPath === '/login' || nextPath === '/signup') && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     scrollPositions.current.set(current, window.scrollY);
     window.history.pushState({}, '', next);
     syncRoute();
@@ -6283,6 +6288,33 @@ function App() {
     window.history.replaceState({}, '', destination);
     setPath(normalizePath());
   }, [path, routeKey, user]);
+
+  useEffect(() => {
+    if (path !== '/signup' && path !== '/login') return;
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
+  }, [path, routeKey]);
+
+  useEffect(() => {
+    const isAuthRoute = path === '/signup' || path === '/login';
+    if (!isAuthRoute) {
+      document.documentElement.style.removeProperty('--fitlook-auth-height');
+      document.documentElement.style.removeProperty('--fitlook-auth-width');
+      return undefined;
+    }
+
+    const lockAuthViewport = () => {
+      const currentWidth = window.innerWidth;
+      const lockedWidth = Number.parseFloat(document.documentElement.style.getPropertyValue('--fitlook-auth-width')) || 0;
+      if (document.documentElement.style.getPropertyValue('--fitlook-auth-height') && Math.abs(currentWidth - lockedWidth) < 8) return;
+      document.documentElement.style.setProperty('--fitlook-auth-height', `${window.innerHeight}px`);
+      document.documentElement.style.setProperty('--fitlook-auth-width', `${currentWidth}px`);
+    };
+
+    lockAuthViewport();
+    window.addEventListener('orientationchange', lockAuthViewport);
+    return () => window.removeEventListener('orientationchange', lockAuthViewport);
+  }, [path]);
 
   const page = useMemo(() => {
     const productMatch = path.match(/^\/product\/([^/]+)$/);
