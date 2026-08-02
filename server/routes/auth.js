@@ -23,6 +23,7 @@ const heicExtensions = new Set(['.heic', '.heif']);
 const heicMimeTypes = new Set(['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence']);
 const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.env.DEBUG_GENERATION_LOGS || '').toLowerCase());
 const signupOtpSessions = new Map();
+const loginOtpSessions = new Map();
 const signupOtpTtlMs = 5 * 60 * 1000;
 
 function profileImageModel() {
@@ -52,6 +53,13 @@ function cleanupSignupOtpSessions() {
   const now = Date.now();
   for (const [id, session] of signupOtpSessions.entries()) {
     if (!session || session.expiresAt <= now) signupOtpSessions.delete(id);
+  }
+}
+
+function cleanupLoginOtpSessions() {
+  const now = Date.now();
+  for (const [id, session] of loginOtpSessions.entries()) {
+    if (!session || session.expiresAt <= now) loginOtpSessions.delete(id);
   }
 }
 
@@ -520,6 +528,49 @@ router.post('/login', async (req, res) => {
   if (!user) return res.status(401).json({ message: 'Invalid email/username or password' });
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ message: 'Invalid email/username or password' });
+  res.json({ token: sign(user), user: user.toClient() });
+});
+
+router.post('/login/request-otp', async (req, res) => {
+  cleanupLoginOtpSessions();
+  const phone = normalizePhone(req.body?.phone);
+  if (!phone) return res.status(400).json({ message: 'Enter a valid phone number' });
+  const user = await User.findOne({ phone });
+  if (!user) return res.status(404).json({ message: 'No FitLook account found for this phone number' });
+
+  const otp = String(randomInt(100000, 999999));
+  const otpSession = randomUUID();
+  loginOtpSessions.set(otpSession, {
+    phone,
+    userId: user._id.toString(),
+    otp,
+    expiresAt: Date.now() + signupOtpTtlMs
+  });
+
+  res.json({
+    otpSession,
+    phone,
+    message: 'OTP sent',
+    devOtp: otp
+  });
+});
+
+router.post('/login/verify-otp', async (req, res) => {
+  cleanupLoginOtpSessions();
+  const phone = normalizePhone(req.body?.phone);
+  const otp = String(req.body?.otp || '').replace(/\D/g, '');
+  const otpSession = String(req.body?.otpSession || '');
+  const session = loginOtpSessions.get(otpSession);
+  if (!phone || !otpSession || !session || session.phone !== phone) return res.status(400).json({ message: 'Request a new OTP' });
+  if (session.expiresAt <= Date.now()) {
+    loginOtpSessions.delete(otpSession);
+    return res.status(400).json({ message: 'OTP expired. Request a new code' });
+  }
+  if (session.otp !== otp) return res.status(400).json({ message: 'Incorrect OTP' });
+
+  const user = await User.findById(session.userId);
+  loginOtpSessions.delete(otpSession);
+  if (!user) return res.status(401).json({ message: 'Account not found. Please sign up again.' });
   res.json({ token: sign(user), user: user.toClient() });
 });
 

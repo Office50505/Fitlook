@@ -5866,11 +5866,12 @@ function AuthPage({ mode, setUser }) {
     setCapsLock(false);
     setIsSubmitting(false);
     setOtpLoading(false);
+    setPhoneValue('');
     setOtpValue('');
+    setOtpSession('');
     setDevOtp('');
     if (mode === 'signup') {
       setSignupStep('phone');
-      setOtpSession('');
     }
   }, [mode]);
 
@@ -5919,6 +5920,48 @@ function AuthPage({ mode, setUser }) {
       setPhoneValue(data.phone || phoneValue);
       setSignupStep('details');
       setMessage('');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const requestLoginOtp = async () => {
+    if (otpLoading) return;
+    setOtpLoading(true);
+    setMessage('');
+    try {
+      const data = await api('/auth/login/request-otp', {
+        method: 'POST',
+        body: JSON.stringify({ phone: phoneValue })
+      });
+      setOtpSession(data.otpSession || '');
+      setPhoneValue(data.phone || phoneValue);
+      setDevOtp(data.devOtp || '');
+      setOtpValue('');
+      setMessage(data.devOtp ? `OTP sent. Test code: ${data.devOtp}` : 'OTP sent.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const verifyLoginOtp = async () => {
+    if (otpLoading) return;
+    setOtpLoading(true);
+    setMessage('');
+    try {
+      const data = await api('/auth/login/verify-otp', {
+        method: 'POST',
+        body: JSON.stringify({ phone: phoneValue, otp: otpValue, otpSession })
+      });
+      const destination = authReturnPath();
+      localStorage.setItem('fitlook_token', data.token);
+      setUser(data.user);
+      window.history.pushState({}, '', destination);
+      window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -5995,23 +6038,27 @@ function AuthPage({ mode, setUser }) {
         <section className="auth-login-panel auth-login-reference-panel">
           <div className="auth-login-card">
             <h1 id="login-title">Welcome Back</h1>
-            <p className="auth-login-copy">Login to continue your fashion journey.</p>
-            <div className="auth-login-tabs" aria-hidden="true"><span>Email</span></div>
-            <form className="auth-login-form" onSubmit={submit} aria-busy={isSubmitting}>
-              <AuthInputField label="Email or username" icon={<MailIcon />} name="email" type="text" required autoFocus={shouldAutoFocusAuthField} autoComplete="username" placeholder="Enter your email or User name" />
-              <AuthInputField label="Password" icon={<LockIcon />} name="password" type="password" required minLength="6" autoComplete="current-password" placeholder="Enter your password" onKeyUp={(event) => setCapsLock(event.getModifierState?.('CapsLock'))} onBlur={() => setCapsLock(false)} />
-              <div className="auth-login-options">
-                <label>
-                  <input type="checkbox" />
-                  <span>Remember me</span>
-                </label>
-                <a href="/support">Forgot password?</a>
-              </div>
+            <p className="auth-login-copy">Login with your mobile number and OTP.</p>
+            <div className="auth-login-tabs" aria-hidden="true"><span>Mobile OTP</span></div>
+            <form className="auth-login-form" onSubmit={(event) => event.preventDefault()} aria-busy={otpLoading}>
+              <label className="signup-field">
+                <span>Mobile number</span>
+                <input name="loginPhone" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Enter mobile number" value={phoneValue} onChange={(event) => { setPhoneValue(event.target.value); setOtpSession(''); setOtpValue(''); setDevOtp(''); }} />
+              </label>
+              <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestLoginOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
+              {otpSession && (
+                <div className="auth-signup-reference-fields">
+                  <label className="signup-field">
+                    <span>OTP</span>
+                    <input name="loginOtp" inputMode="numeric" pattern="[0-9]*" maxLength="6" placeholder="Enter 6-digit OTP" value={otpValue} onChange={(event) => setOtpValue(event.target.value.replace(/\D/g, '').slice(0, 6))} />
+                  </label>
+                  {devOtp && <p className="signup-otp-hint">Test OTP: {devOtp}</p>}
+                  <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifyLoginOtp}>{otpLoading ? 'Verifying...' : 'Verify & login'}</button>
+                </div>
+              )}
               <p className="auth-login-switch-inline">New to FitLook? <a href="/signup">Sign up</a></p>
-              {capsLock && <p className="auth-caps-lock" role="status">Caps Lock is on</p>}
-              <AuthSubmitButton loading={isSubmitting}>{isSubmitting ? 'Logging in...' : 'Login'}</AuthSubmitButton>
             </form>
-            {message && <p className={`auth-login-message form-message ${message === 'Working...' ? '' : 'error-message'}`}>{message}</p>}
+            {message && <p className={`auth-login-message form-message ${/OTP sent|Logging in|Working/.test(message) ? '' : 'error-message'}`}>{message}</p>}
           </div>
         </section>
       </main>
