@@ -203,8 +203,10 @@ export default function ShaderBackground({ className = '', complete = false, onC
     let drawSize = 1;
     let disposed = false;
     let completed = false;
+    let holdStartedAt = 0;
     let finishStartedAt = 0;
     let finishStartProgress = 0;
+    let finishHoldMotion = 0;
     const startedAt = performance.now();
 
     const renderer = {
@@ -304,21 +306,28 @@ export default function ShaderBackground({ className = '', complete = false, onC
       if (disposed) return;
       const pendingElapsed = now - startedAt;
       const pendingProgress = Math.min(HOLD_PROGRESS, HOLD_PROGRESS * (pendingElapsed / PENDING_SETTLE_MS));
+      const pendingTimeline = constrain(pendingProgress, 0, HOLD_PROGRESS);
+      const reachedHold = pendingTimeline >= HOLD_PROGRESS;
       const shouldFinish = reduceMotion || completeRef.current;
+
+      if (reachedHold && !holdStartedAt) holdStartedAt = now;
+      const currentHoldMotion = reachedHold && holdStartedAt ? ((now - holdStartedAt) % HOLD_MOTION_MS) / HOLD_MOTION_MS : 0;
 
       if (shouldFinish && !finishStartedAt) {
         finishStartedAt = now;
-        finishStartProgress = reduceMotion ? 1 : constrain(pendingProgress, 0.08, HOLD_PROGRESS);
+        finishStartProgress = reduceMotion ? 1 : constrain(pendingTimeline, 0.08, HOLD_PROGRESS);
+        finishHoldMotion = currentHoldMotion;
       }
 
       if (finishStartedAt) {
         const finishProgress = reduceMotion ? 1 : constrain((now - finishStartedAt) / FINISH_DURATION_MS, 0, 1);
         renderer.time = lerp(finishStartProgress, 1, finishProgress);
       } else {
-        renderer.time = constrain(pendingProgress, 0, HOLD_PROGRESS);
+        renderer.time = pendingTimeline;
       }
-      renderer.motionTime = reduceMotion ? renderer.time : ((now - startedAt) % HOLD_MOTION_MS) / HOLD_MOTION_MS;
-      const holdMotion = !finishStartedAt && renderer.time >= HOLD_PROGRESS ? renderer.motionTime : 0;
+
+      const holdMotion = finishStartedAt ? finishHoldMotion : currentHoldMotion;
+      renderer.motionTime = reduceMotion ? renderer.time : holdMotion;
 
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
