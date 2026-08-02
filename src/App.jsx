@@ -1034,7 +1034,7 @@ function Header({ user, setUser }) {
           </div>
           <div className="header-actions">
             <a className="header-credit-button" href="/tokens" aria-label={user ? `Buy credits. ${tokenLabel} available` : 'Buy credits'}><SparkleLineIcon /><span>Credits</span>{user && <strong>{user.tokens}</strong>}</a>
-            {user ? <a className="icon-button" href="/profile" aria-label="Profile"><UserIcon /></a> : <a className="icon-button" href="/login" aria-label="Account"><UserIcon /></a>}
+            {user ? <a className="icon-button" href="/profile" aria-label="Profile"><UserIcon /></a> : <a className="icon-button" href="/signup" aria-label="Account"><UserIcon /></a>}
             {user && <button className="text-button" onClick={logout}>Log out</button>}
             <button className="icon-button menu-toggle" type="button" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-controls="mobile-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
               {menuOpen ? <CloseIcon /> : <MenuIcon />}
@@ -1054,7 +1054,7 @@ function Header({ user, setUser }) {
               return <a className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} href={href} key={label} onClick={() => setMenuOpen(false)}>{label}</a>;
             })}
             <a href="/tokens" onClick={() => setMenuOpen(false)}>Credits{user ? ` (${user.tokens})` : ''}</a>
-            <a href={user ? '/profile' : '/login'} onClick={() => setMenuOpen(false)}>{user ? 'Profile' : 'Account'}</a>
+            <a href={user ? '/profile' : '/signup'} onClick={() => setMenuOpen(false)}>{user ? 'Profile' : 'Account'}</a>
             {user && <button type="button" onClick={logout}>Log out</button>}
           </div>
         </div>
@@ -6328,6 +6328,12 @@ function App() {
     if (!localStorage.getItem('fitlook_token')) return;
     api('/auth/me').then((data) => setUser(data.user)).catch(() => localStorage.removeItem('fitlook_token'));
   }, []);
+
+  useEffect(() => {
+    if (path !== '/' || localStorage.getItem('fitlook_token')) return;
+    window.history.replaceState({}, '', '/signup');
+    syncRoute();
+  }, [path]);
 
   useEffect(() => {
     if (!user || (path !== '/signup' && path !== '/login')) return;
