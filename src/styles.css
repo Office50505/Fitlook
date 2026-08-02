@@ -25929,3 +25929,105 @@ a.atelier-hero-orbit-wardrobe:hover {
   color: #211c18 !important;
   box-shadow: none !important;
 }
+
+/* Final iPhone viewport guard.
+   Keep the layout tied to the layout viewport, not Safari's changing 100vw box. */
+@media (max-width: 700px) {
+  html,
+  body,
+  #root,
+  .app-page-transition {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: clip !important;
+  }
+
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    position: relative !important;
+    overscroll-behavior-x: none !important;
+    touch-action: pan-y !important;
+  }
+
+  #root,
+  main,
+  .site-header,
+  .site-header .header-inner,
+  .atelier-home,
+  .fitlook-home,
+  .atelier-home .atelier-hero.atelier-hero-editorial,
+  .atelier-hero-editorial-slides,
+  .atelier-hero-editorial-content,
+  .atelier-arrivals,
+  .atelier-wide,
+  .wrap,
+  .footer,
+  .auth-login-reference-page,
+  .auth-signup-reference-page,
+  .category-reference-page,
+  .wishlist-reference-page,
+  .product-editorial-page,
+  .wardrobe-studio-page,
+  .wardrobe-studio-shell,
+  .wardrobe-model-stage {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: clip !important;
+  }
+
+  .site-header .header-inner {
+    padding-left: max(14px, env(safe-area-inset-left)) !important;
+    padding-right: max(14px, env(safe-area-inset-right)) !important;
+  }
+
+  .site-header .mobile-menu {
+    width: min(360px, calc(100% - 16px)) !important;
+    max-width: calc(100% - 16px) !important;
+    height: 100svh !important;
+    right: 0 !important;
+    transform: translate3d(102%, 0, 0) !important;
+  }
+
+  .site-header .mobile-menu.open {
+    transform: translate3d(0, 0, 0) !important;
+  }
+
+  .atelier-hero-editorial-orbits,
+  .atelier-hero-editorial-dots,
+  .ai-stylist-launcher,
+  .wardrobe-studio-page .wardrobe-stage-actions {
+    max-width: calc(100% - 24px) !important;
+  }
+
+  .atelier-hero-editorial-orbits {
+    right: max(14px, env(safe-area-inset-right)) !important;
+  }
+
+  .atelier-hero-editorial-dots {
+    max-width: calc(100% - 36px) !important;
+  }
+
+  .atelier-arrivals-rail,
+  .atelier-category-audience-rail,
+  .atelier-category-quick-rail,
+  .wardrobe-recommendation-tabs,
+  .product-editorial-thumb-strip {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  img,
+  video,
+  canvas,
+  svg {
+    max-width: 100% !important;
+  }
+}
