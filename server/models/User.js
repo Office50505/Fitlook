@@ -9,6 +9,14 @@ function defaultDevMode() {
   return ['1', 'true', 'yes', 'on'].includes(String(process.env.SIGNUP_DEV_MODE_DEFAULT || '').toLowerCase());
 }
 
+function bodyPhotoUrl(user) {
+  const path = user.bodyPhoto?.path;
+  if (!path) return null;
+  const updatedAt = user.bodyPhoto?.generatedAt || user.updatedAt || user.createdAt;
+  const version = updatedAt ? new Date(updatedAt).getTime() : 0;
+  return `/${path}${version ? `?v=${version}` : ''}`;
+}
+
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true, required: true },
@@ -77,7 +85,7 @@ userSchema.methods.toClient = function toClient() {
     onboardingSeenAt: this.onboardingSeenAt || null,
     wishlistCount: this.wishlistProducts?.length || 0,
     joinedAt: this.createdAt,
-    bodyPhotoUrl: this.bodyPhoto?.path ? `/${this.bodyPhoto.path}` : null,
+    bodyPhotoUrl: bodyPhotoUrl(this),
     bodyPhotoStatus: this.bodyPhoto?.status || 'uploaded',
     bodyPhotoSource: this.bodyPhoto?.source || 'upload',
     bodyPhotoGeneratedAt: this.bodyPhoto?.generatedAt || null
