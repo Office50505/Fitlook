@@ -5857,6 +5857,22 @@ function AuthPage({ mode, setUser }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const isSignup = mode === 'signup';
+  const shouldAutoFocusAuthField = typeof window !== 'undefined'
+    && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches
+    && window.innerWidth > 700;
+
+  useEffect(() => {
+    setMessage('');
+    setCapsLock(false);
+    setIsSubmitting(false);
+    setOtpLoading(false);
+    setOtpValue('');
+    setDevOtp('');
+    if (mode === 'signup') {
+      setSignupStep('phone');
+      setOtpSession('');
+    }
+  }, [mode]);
 
   useEffect(() => () => {
     if (bodyPhotoPreview) URL.revokeObjectURL(bodyPhotoPreview);
@@ -5982,7 +5998,7 @@ function AuthPage({ mode, setUser }) {
             <p className="auth-login-copy">Login to continue your fashion journey.</p>
             <div className="auth-login-tabs" aria-hidden="true"><span>Email</span></div>
             <form className="auth-login-form" onSubmit={submit} aria-busy={isSubmitting}>
-              <AuthInputField label="Email or username" icon={<MailIcon />} name="email" type="text" required autoFocus autoComplete="username" placeholder="Enter your email or User name" />
+              <AuthInputField label="Email or username" icon={<MailIcon />} name="email" type="text" required autoFocus={shouldAutoFocusAuthField} autoComplete="username" placeholder="Enter your email or User name" />
               <AuthInputField label="Password" icon={<LockIcon />} name="password" type="password" required minLength="6" autoComplete="current-password" placeholder="Enter your password" onKeyUp={(event) => setCapsLock(event.getModifierState?.('CapsLock'))} onBlur={() => setCapsLock(false)} />
               <div className="auth-login-options">
                 <label>
@@ -6017,7 +6033,7 @@ function AuthPage({ mode, setUser }) {
               <div className="auth-signup-reference-fields">
                 <label className="signup-field">
                   <span>Mobile number</span>
-                  <input name="phoneDisplay" type="tel" required autoFocus autoComplete="tel" placeholder="Enter mobile number" value={phoneValue} onChange={(event) => { setPhoneValue(event.target.value); setOtpSession(''); setOtpValue(''); setDevOtp(''); }} />
+                  <input name="phoneDisplay" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Enter mobile number" value={phoneValue} onChange={(event) => { setPhoneValue(event.target.value); setOtpSession(''); setOtpValue(''); setDevOtp(''); }} />
                 </label>
               </div>
               <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestSignupOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
@@ -6038,7 +6054,7 @@ function AuthPage({ mode, setUser }) {
               <div className="auth-signup-reference-fields">
                 <label className="signup-field">
                   <span>Full name</span>
-                  <input name="name" required autoFocus value={nameValue} autoComplete="name" placeholder="Enter your name" onChange={(event) => setNameValue(event.target.value)} />
+                  <input name="name" required autoFocus={shouldAutoFocusAuthField} value={nameValue} autoComplete="name" placeholder="Enter your name" onChange={(event) => setNameValue(event.target.value)} />
                 </label>
               </div>
 
