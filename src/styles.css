@@ -25902,3 +25902,30 @@ a.atelier-hero-orbit-wardrobe:hover {
     min-height: 50px !important;
   }
 }
+
+/* Hard stop for the old wardrobe room compositor. Keep the studio flat grey. */
+.wardrobe-studio-page .wardrobe-model-stage,
+.wardrobe-studio-page .wardrobe-model-frame,
+.wardrobe-studio-page .room-scene,
+.wardrobe-studio-page .wardrobe-flat-scene {
+  background: #d7d7d5 !important;
+  background-color: #d7d7d5 !important;
+  background-image: none !important;
+}
+
+.wardrobe-studio-page .wardrobe-model-stage::before,
+.wardrobe-studio-page .wardrobe-model-stage::after,
+.wardrobe-studio-page .wardrobe-model-frame::before,
+.wardrobe-studio-page .wardrobe-model-backdrop {
+  display: none !important;
+  opacity: 0 !important;
+  background: none !important;
+  background-image: none !important;
+}
+
+.wardrobe-studio-page .wardrobe-model-empty {
+  border-color: rgba(20, 18, 16, .1) !important;
+  background: rgba(255, 255, 255, .64) !important;
+  color: #211c18 !important;
+  box-shadow: none !important;
+}
