@@ -1435,7 +1435,8 @@ function AtelierHome() {
 function Home() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      window.history.pushState({}, '', '/home');
+      const destination = localStorage.getItem('fitlook_token') ? '/home' : '/signup';
+      window.history.pushState({}, '', destination);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }, 2000);
     return () => window.clearTimeout(timer);
@@ -6328,12 +6329,6 @@ function App() {
     if (!localStorage.getItem('fitlook_token')) return;
     api('/auth/me').then((data) => setUser(data.user)).catch(() => localStorage.removeItem('fitlook_token'));
   }, []);
-
-  useEffect(() => {
-    if (path !== '/' || localStorage.getItem('fitlook_token')) return;
-    window.history.replaceState({}, '', '/signup');
-    syncRoute();
-  }, [path]);
 
   useEffect(() => {
     if (!user || (path !== '/signup' && path !== '/login')) return;
