@@ -267,15 +267,37 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .atelier-product-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 250px)); justify-content: space-between; gap: 24px; }
 .atelier-arrivals-rail { display: flex; overflow-x: auto; align-items: flex-start; gap: 20px; padding: 2px 2px 18px; scroll-behavior: smooth; scroll-snap-type: x mandatory; scroll-padding-inline: 2px; scrollbar-color: rgba(28, 27, 27, .28) transparent; scrollbar-width: thin; overscroll-behavior-inline: contain; }
 .atelier-arrivals-rail:focus-visible { outline: 2px solid var(--atelier-primary); outline-offset: 4px; }
-.atelier-arrivals-rail .atelier-product { width: clamp(196px, 16vw, 232px); flex: 0 0 clamp(196px, 16vw, 232px); scroll-snap-align: start; transition: transform .25s ease; }
-.atelier-arrivals-rail .atelier-product:hover { transform: translateY(-4px); }
-.atelier-arrivals-rail .atelier-product-image { margin-bottom: 13px; box-shadow: 0 8px 20px rgba(28, 27, 27, .05); }
+.atelier-arrivals-rail .atelier-product {
+  position: relative;
+  box-sizing: border-box;
+  width: clamp(196px, 16vw, 232px);
+  flex: 0 0 clamp(196px, 16vw, 232px);
+  overflow: hidden;
+  border: 1px solid rgba(28, 27, 27, .11);
+  border-radius: 10px;
+  padding: 12px 12px 16px;
+  background: transparent;
+  box-shadow: 0 16px 40px rgba(28, 27, 27, .05);
+  scroll-snap-align: start;
+  backdrop-filter: blur(14px) saturate(1.06);
+  -webkit-backdrop-filter: blur(14px) saturate(1.06);
+  transition: transform .25s ease, border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+}
+.atelier-arrivals-rail .atelier-product:hover { border-color: rgba(28, 27, 27, .22); background: transparent; box-shadow: 0 22px 48px rgba(28, 27, 27, .09); transform: translateY(-4px); }
+.atelier-arrivals-rail .atelier-product .card-wishlist-heart { top: 24px; right: 24px; }
+.atelier-arrivals-rail .atelier-product-image {
+  margin-bottom: 14px;
+  border: 1px solid rgba(28, 27, 27, .12);
+  box-shadow: inset 0 0 0 3px rgba(255, 253, 252, .74), 0 8px 20px rgba(28, 27, 27, .05);
+}
 .atelier-arrivals-rail .atelier-product h3 { font-size: 17px; line-height: 1.25; }
-.atelier-arrivals-more { display: flex; min-height: 410px; flex: 0 0 clamp(196px, 16vw, 232px); flex-direction: column; align-items: flex-start; justify-content: flex-end; border: 1px solid var(--atelier-dim); border-radius: 8px; padding: 22px; background: rgba(255, 255, 255, .52); color: var(--atelier-primary); scroll-snap-align: start; transition: border-color .2s ease, background-color .2s ease, transform .2s ease; }
-.atelier-arrivals-more:hover { border-color: var(--atelier-primary); background: #fff; transform: translateY(-4px); }
-.atelier-arrivals-more > span { margin-bottom: 9px; font-family: var(--font-interface); font-size: 9px; font-weight: 700; letter-spacing: .16em; opacity: .55; text-transform: uppercase; }
-.atelier-arrivals-more strong { margin-bottom: 10px; font-size: 28px; font-weight: 400; line-height: 1; }
-.atelier-arrivals-more small { font-family: var(--font-interface); font-size: 10px; line-height: 1.4; }
+.atelier-arrivals-more { display: block; box-sizing: border-box; flex: 0 0 clamp(196px, 16vw, 232px); overflow: hidden; border: 1px solid rgba(28, 27, 27, .11); border-radius: 10px; padding: 12px 12px 16px; background: transparent; color: var(--atelier-primary); text-decoration: none; box-shadow: 0 16px 40px rgba(28, 27, 27, .05); scroll-snap-align: start; backdrop-filter: blur(14px) saturate(1.06); -webkit-backdrop-filter: blur(14px) saturate(1.06); transition: transform .25s ease, border-color .2s ease, box-shadow .2s ease, background-color .2s ease; }
+.atelier-arrivals-more::before { display: block; width: 100%; aspect-ratio: 3 / 4; margin-bottom: 14px; border: 1px solid rgba(28, 27, 27, .12); border-radius: 8px; background: linear-gradient(145deg, rgba(255, 255, 255, .68), rgba(255, 255, 255, .28)), radial-gradient(circle at 72% 18%, rgba(255, 255, 255, .82), transparent 30%), radial-gradient(circle at 18% 82%, rgba(28, 27, 27, .06), transparent 34%); box-shadow: inset 0 0 0 3px rgba(255, 253, 252, .74), 0 8px 20px rgba(28, 27, 27, .05); backdrop-filter: blur(16px) saturate(1.08); -webkit-backdrop-filter: blur(16px) saturate(1.08); content: ''; transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease; }
+.atelier-arrivals-more:hover { border-color: rgba(28, 27, 27, .22); background: transparent; box-shadow: 0 22px 48px rgba(28, 27, 27, .09); transform: translateY(-4px); }
+.atelier-arrivals-more:hover::before { border-color: rgba(28, 27, 27, .26); background-color: rgba(255, 255, 255, .64); box-shadow: inset 0 0 0 3px rgba(255, 253, 252, .84), 0 12px 24px rgba(28, 27, 27, .09); }
+.atelier-arrivals-more > span { display: block; overflow: hidden; margin-bottom: 6px; color: #9b918c; font-family: var(--font-interface); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.atelier-arrivals-more strong { display: block; margin-bottom: 7px; color: var(--atelier-primary); font-family: var(--font-interface); font-size: 17px; font-weight: 600; line-height: 1.25; }
+.atelier-arrivals-more small { color: #5c5652; font-family: var(--font-interface); font-size: 12px; line-height: 1.4; }
 .atelier-arrivals-more b { margin-left: 4px; font-size: 14px; font-weight: 500; }
 .atelier-product-image { position: relative; display: block; width: 100%; aspect-ratio: 3 / 4; overflow: hidden; margin-bottom: 16px; border-radius: 8px; background: #fff; }
 .atelier-product-image img { height: 100%; object-fit: cover; transition: transform .5s ease; }
@@ -388,7 +410,7 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   .atelier-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 12px; }
   .atelier-arrivals-rail { gap: 14px; padding-bottom: 14px; }
   .atelier-arrivals-rail .atelier-product { width: min(74vw, 250px); flex-basis: min(74vw, 250px); }
-  .atelier-arrivals-more { min-height: 420px; flex-basis: min(74vw, 250px); }
+  .atelier-arrivals-more { flex-basis: min(74vw, 250px); }
   .atelier-product-image { margin-bottom: 10px; }
   .atelier-product h3 { font-size: 16px; }
   .atelier-lookbook { padding-top: 64px; padding-bottom: 64px; }
@@ -830,21 +852,30 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
   position: absolute;
   inset: 0;
   z-index: 2;
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 9px;
-  padding: 18px;
-  background: rgba(23, 23, 19, .58);
-  color: #fff;
-  text-align: center;
+  overflow: hidden;
+  background: #000;
+}
+.tryon-shader-background {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .tryon-progress-copy {
+  position: relative;
+  z-index: 2;
   display: flex;
   width: min(170px, 82%);
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 999px;
+  padding: 8px 10px 8px 12px;
+  background: rgba(0, 0, 0, .46);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, .32);
+  backdrop-filter: blur(14px) saturate(1.2);
 }
 .tryon-progress-copy strong {
   max-width: 124px;
@@ -859,6 +890,7 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
 }
 .tryon-progress-track {
   position: relative;
+  z-index: 2;
   display: block;
   width: min(170px, 82%);
   height: 8px;
@@ -9494,7 +9526,7 @@ h2 {
   height: 20px;
   flex: 0 0 20px;
   border: 1px solid #c8cdcc;
-  border-radius: 4px;
+  border-radius: 8px;
   background: #fff;
   box-shadow: none;
 }
@@ -13594,7 +13626,7 @@ main > section.wrap {
 .fitlook-home .hero-bg {
   width: 100% !important;
   height: 100% !important;
-  object-fit: cover !important;
+  object-fit: contain !important;
   object-position: center center !important;
   transform: none !important;
   filter: saturate(.95) contrast(.98) !important;
@@ -15941,11 +15973,11 @@ main > section.wrap {
 .wardrobe-stage-actions {
   position: absolute !important;
   right: clamp(28px, 4vw, 54px) !important;
-  bottom: clamp(18px, 3.4vh, 34px) !important;
+  bottom: clamp(12px, 2.4vh, 24px) !important;
   left: clamp(28px, 4vw, 54px) !important;
   z-index: 2 !important;
   display: grid !important;
-  grid-template-columns: 110px minmax(188px, 240px) 50px !important;
+  grid-template-columns: minmax(188px, 280px) 50px !important;
   align-items: center !important;
   justify-content: center !important;
   gap: clamp(18px, 4vw, 52px) !important;
@@ -16177,7 +16209,7 @@ main > section.wrap {
   .wardrobe-stage-actions {
     left: 28px !important;
     right: 28px !important;
-    grid-template-columns: 96px minmax(180px, 240px) 54px !important;
+    grid-template-columns: minmax(180px, 260px) 54px !important;
     gap: 18px !important;
   }
 }
@@ -16272,7 +16304,7 @@ main > section.wrap {
   }
 
   .wardrobe-stage-actions {
-    grid-template-columns: 1fr 1.6fr 54px !important;
+    grid-template-columns: minmax(0, 1fr) 54px !important;
     right: 14px !important;
     bottom: 22px !important;
     left: 14px !important;
@@ -17718,7 +17750,7 @@ main > section.wrap {
   height: 30px;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 8px;
   padding: 0;
   background: transparent;
   color: #7c746f;
@@ -19223,15 +19255,15 @@ main > section.wrap {
 }
 
 .product-editorial-detail {
-  padding-top: clamp(28px, 4vw, 58px);
-  padding-bottom: clamp(54px, 7vw, 106px);
+  padding-top: clamp(18px, 2.8vw, 38px);
+  padding-bottom: clamp(34px, 5vw, 72px);
 }
 
 .product-editorial-breadcrumb {
   display: flex;
   align-items: center;
   gap: 7px;
-  margin-bottom: clamp(20px, 3vw, 38px);
+  margin-bottom: clamp(14px, 2vw, 24px);
   color: #8a807b;
   font-family: var(--font-interface);
   font-size: 9px;
@@ -19245,10 +19277,10 @@ main > section.wrap {
 
 .product-editorial-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.02fr) minmax(330px, .76fr);
+  grid-template-columns: minmax(420px, .96fr) minmax(390px, .9fr);
   align-items: start;
-  gap: clamp(38px, 7vw, 124px);
-  max-width: 1080px;
+  gap: clamp(26px, 4.4vw, 74px);
+  max-width: 1220px;
   margin: 0 auto;
 }
 
@@ -19258,7 +19290,7 @@ main > section.wrap {
   width: 100%;
   min-height: 0;
   height: auto;
-  aspect-ratio: 4 / 5.35;
+  aspect-ratio: 4 / 4.7;
   border: 1px solid #eee6e2;
   border-radius: 4px;
   background: #f2eeeb;
@@ -19274,8 +19306,15 @@ main > section.wrap {
 }
 
 .product-editorial-page .product-editorial-media > .zoomable-image,
-.product-editorial-page .product-editorial-media > .tryon-video-player { border-radius: 3px; }
+.product-editorial-page .product-editorial-media > .tryon-video-player { border-radius: 7px; }
 .product-editorial-page .product-editorial-media .zoomable-image img { padding: 0; background: transparent; }
+.product-editorial-page .product-editorial-media.showing-product .zoomable-image img {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: cover;
+}
 .product-editorial-page .product-editorial-media .badge {
   top: 10px;
   left: 10px;
@@ -19329,110 +19368,127 @@ main > section.wrap {
 .product-editorial-thumbnails button.active { border-color: #24201e; }
 .product-editorial-thumbnails img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
-.product-editorial-summary { min-width: 0; padding-top: clamp(2px, 2vw, 18px); }
-.product-editorial-summary-head { padding-bottom: 21px; border-bottom: 1px solid #eae2df; }
+.product-editorial-summary { min-width: 0; padding-top: clamp(0px, 1vw, 8px); }
+.product-editorial-summary-head { padding-bottom: 16px; border-bottom: 1px solid #eae2df; }
 .product-editorial-kicker,
 .product-editorial-story-kicker {
   margin: 0 0 10px;
   color: #ae5047;
   font-family: var(--font-interface);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: .16em;
   text-transform: uppercase;
 }
 .product-editorial-summary h1 {
-  max-width: 480px;
+  display: -webkit-box;
+  max-width: 560px;
+  overflow: hidden;
   margin: 0;
   color: #28221f;
   font-family: var(--font-display);
-  font-size: clamp(37px, 4.5vw, 58px);
+  font-size: clamp(26px, 2.15vw, 36px);
   font-weight: 400;
   letter-spacing: 0;
-  line-height: .91;
+  line-height: 1.1;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
 }
-.product-editorial-price-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px; margin-top: 17px; }
-.product-editorial-price-row strong { color: #292421; font-family: var(--font-interface); font-size: 15px; font-weight: 700; }
-.product-editorial-price-row del { color: #958b85; font-family: var(--font-interface); font-size: 11px; }
-.product-editorial-price-row span { color: #ae5047; font-family: var(--font-interface); font-size: 9px; font-weight: 700; text-transform: uppercase; }
-.product-editorial-rating { margin: 10px 0 0; color: #6f6661; font-family: var(--font-interface); font-size: 9px; }
-.product-editorial-rating span { margin-right: 6px; color: #928780; font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.product-editorial-price-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px; margin-top: 12px; }
+.product-editorial-price-row strong { color: #292421; font-family: var(--font-interface); font-size: 18px; font-weight: 700; }
+.product-editorial-price-row del { color: #958b85; font-family: var(--font-interface); font-size: 13px; }
+.product-editorial-price-row span { color: #ae5047; font-family: var(--font-interface); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.product-editorial-rating { margin: 9px 0 0; color: #6f6661; font-family: var(--font-interface); font-size: 12px; }
+.product-editorial-rating span { margin-right: 8px; color: #928780; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 
-.product-editorial-options { display: grid; gap: 17px; padding: 20px 0; border-bottom: 1px solid #eae2df; }
-.product-editorial-option-row { display: grid; gap: 10px; }
-.product-editorial-option-row > span { color: #5f5752; font-family: var(--font-interface); font-size: 9px; }
-.product-editorial-option-row > span b { margin-left: 5px; color: #28221f; font-weight: 700; }
-.product-editorial-swatches,
-.product-editorial-size-options { display: flex; flex-wrap: wrap; gap: 7px; }
-.product-editorial-swatches button { width: 18px; height: 18px; border: 2px solid transparent; border-radius: 50%; padding: 0; background: #383533; cursor: pointer; }
-.product-editorial-swatches button.stone { background: #c9c0b8; }
-.product-editorial-swatches button.ink { background: #202a38; }
-.product-editorial-swatches button.active { outline: 1px solid #292421; outline-offset: 2px; }
-.product-editorial-size-options button {
-  width: 37px;
-  min-height: 28px;
-  border: 1px solid #e2d8d4;
-  border-radius: 2px;
-  background: #fffdfc;
-  color: #4d4540;
-  font-family: var(--font-interface);
-  font-size: 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.product-editorial-size-options button.active { border-color: #24201e; background: #24201e; color: #fff; }
+.product-editorial-ship { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; padding: 12px 0; border-bottom: 1px solid #eae2df; font-family: var(--font-interface); }
+.product-editorial-ship span { color: #8d837d; font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.product-editorial-ship strong { color: #38312d; font-size: 13px; font-weight: 700; }
+.product-editorial-ship small { grid-column: 2; color: #8b817b; font-size: 11px; }
 
-.product-editorial-ship { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; padding: 17px 0; border-bottom: 1px solid #eae2df; font-family: var(--font-interface); }
-.product-editorial-ship span { color: #8d837d; font-size: 8px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
-.product-editorial-ship strong { color: #38312d; font-size: 10px; font-weight: 700; }
-.product-editorial-ship small { grid-column: 2; color: #8b817b; font-size: 9px; }
-
-.product-editorial-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 20px 0; }
+.product-editorial-actions { display: grid; grid-template-columns: 1fr 1.12fr .78fr; gap: 9px; padding: 16px 0 12px; }
 .product-editorial-actions > a,
 .product-editorial-actions > button {
   display: inline-flex;
-  min-height: 35px;
+  min-height: 46px;
   align-items: center;
   justify-content: center;
   border-radius: 3px;
-  padding: 0 13px;
+  padding: 0 18px;
   font-family: var(--font-interface);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: .04em;
   text-decoration: none;
   text-transform: uppercase;
   cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, background-color .18s ease, box-shadow .18s ease, color .18s ease;
 }
-.product-editorial-shop { border: 1px solid #24201e; background: #24201e; color: #fff; }
-.product-editorial-tryon { border: 1px solid #24201e; background: transparent; color: #24201e; }
+.product-editorial-shop {
+  order: 3;
+  border: 1px solid #ded4d0;
+  background: #fffdfc;
+  color: #3f3733;
+}
+.product-editorial-tryon {
+  order: 1;
+  border: 1px solid #24201e;
+  background: #24201e;
+  color: #fff;
+  box-shadow: 0 12px 26px rgba(36, 32, 30, .18);
+}
 .product-editorial-save,
-.product-editorial-video { border: 1px solid #ded4d0; background: #fffdfc; color: #4c433f; }
+.product-editorial-video {
+  order: 2;
+  border: 1px solid #ae5047;
+  background: #ae5047;
+  color: #fff;
+  box-shadow: 0 12px 26px rgba(174, 80, 71, .18);
+}
+.product-editorial-shop:hover,
+.product-editorial-shop:focus-visible {
+  border-color: #24201e;
+  background: #fff;
+  color: #24201e;
+}
+.product-editorial-tryon:hover,
+.product-editorial-tryon:focus-visible {
+  background: #171311;
+  box-shadow: 0 16px 34px rgba(36, 32, 30, .24);
+  transform: translateY(-1px);
+}
+.product-editorial-video:hover,
+.product-editorial-video:focus-visible {
+  border-color: #963e37;
+  background: #963e37;
+  box-shadow: 0 16px 34px rgba(174, 80, 71, .24);
+  transform: translateY(-1px);
+}
 .product-editorial-video:disabled,
 .product-editorial-tryon:disabled { cursor: wait; opacity: .62; }
 
 .product-editorial-benefits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid #eae2df; border-bottom: 1px solid #eae2df; }
-.product-editorial-benefits > div { padding: 14px 12px 14px 0; }
+.product-editorial-benefits > div { padding: 11px 12px 11px 0; }
 .product-editorial-benefits > div + div { border-left: 1px solid #eae2df; padding-left: 13px; }
 .product-editorial-benefits strong,
 .product-editorial-benefits span { display: block; font-family: var(--font-interface); }
-.product-editorial-benefits strong { color: #3a332f; font-size: 8px; font-weight: 700; text-transform: uppercase; }
-.product-editorial-benefits span { margin-top: 4px; color: #8b817b; font-size: 8px; line-height: 1.35; }
-.product-editorial-summary .form-message { margin: 13px 0 0; font-size: 9px; }
+.product-editorial-benefits strong { color: #3a332f; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.product-editorial-benefits span { margin-top: 5px; color: #8b817b; font-size: 11px; line-height: 1.45; }
+.product-editorial-summary .form-message { margin: 13px 0 0; font-size: 11px; }
 
-.product-editorial-accordions { margin-top: 14px; border-top: 1px solid #eae2df; }
+.product-editorial-accordions { margin-top: 12px; border-top: 1px solid #eae2df; }
 .product-editorial-accordions details { border-bottom: 1px solid #eae2df; }
-.product-editorial-accordions summary { display: flex; min-height: 39px; align-items: center; justify-content: space-between; color: #3e3733; font-family: var(--font-interface); font-size: 9px; font-weight: 700; cursor: pointer; list-style: none; }
+.product-editorial-accordions summary { display: flex; min-height: 38px; align-items: center; justify-content: space-between; color: #3e3733; font-family: var(--font-interface); font-size: 12px; font-weight: 700; cursor: pointer; list-style: none; }
 .product-editorial-accordions summary::-webkit-details-marker { display: none; }
 .product-editorial-accordions summary::after { content: '+'; color: #756b65; font-family: var(--font-display); font-size: 17px; font-weight: 400; }
 .product-editorial-accordions details[open] summary::after { content: '-'; }
-.product-editorial-accordions details > p { margin: 0 0 13px; color: #766d68; font-family: var(--font-interface); font-size: 9px; line-height: 1.55; }
-.product-editorial-accordions dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; margin: 0 0 14px; }
+.product-editorial-accordions details > p { margin: 0 0 10px; color: #766d68; font-family: var(--font-interface); font-size: 12px; line-height: 1.55; }
+.product-editorial-accordions dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 16px; margin: 0 0 12px; }
 .product-editorial-accordions dl > div { display: grid; gap: 2px; }
-.product-editorial-accordions dt { color: #978d87; font-family: var(--font-interface); font-size: 7px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.product-editorial-accordions dd { margin: 0; color: #4d4540; font-family: var(--font-interface); font-size: 8px; line-height: 1.35; }
+.product-editorial-accordions dt { color: #978d87; font-family: var(--font-interface); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.product-editorial-accordions dd { margin: 0; color: #4d4540; font-family: var(--font-interface); font-size: 11px; line-height: 1.45; }
 .product-editorial-tags { display: flex; flex-wrap: wrap; gap: 5px; }
-.product-editorial-tags a { border: 1px solid #e3d9d5; border-radius: 999px; padding: 3px 7px; color: #665d58; font-size: 8px; text-decoration: none; }
+.product-editorial-tags a { border: 1px solid #e3d9d5; border-radius: 999px; padding: 4px 8px; color: #665d58; font-size: 10px; text-decoration: none; }
 
 .product-editorial-story {
   display: grid;
@@ -19476,10 +19532,9 @@ main > section.wrap {
   .product-editorial-detail { padding-top: 22px; }
   .product-editorial-breadcrumb { font-size: 8px; }
   .product-editorial-page .product-editorial-media { aspect-ratio: 4 / 5; }
-  .product-editorial-summary h1 { font-size: 39px; }
-  .product-editorial-actions > a,
-  .product-editorial-actions > button { flex: 1 1 calc(50% - 4px); }
-  .product-editorial-shop { flex-basis: 100% !important; }
+  .product-editorial-summary h1 { font-size: 28px; line-height: 1.1; }
+  .product-editorial-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .product-editorial-shop { grid-column: 1 / -1; }
   .product-editorial-benefits { grid-template-columns: 1fr; }
   .product-editorial-benefits > div + div { border-top: 1px solid #eae2df; border-left: 0; padding-left: 0; }
   .product-editorial-accordions dl { grid-template-columns: 1fr; }
@@ -19744,6 +19799,41 @@ main > section.wrap {
 
 .auth-signup-reference-form .auth-signup-reference-fields {
   gap: 11px !important;
+}
+
+.signup-phone-step {
+  display: grid;
+  gap: 14px;
+}
+
+.signup-otp-button {
+  width: 100%;
+}
+
+.signup-otp-hint {
+  margin: -4px 0 0;
+  color: #8b4c4c;
+  font-family: var(--font-interface);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.signup-back-step {
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #6f625b;
+  font-family: var(--font-interface);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.signup-back-step:hover {
+  color: #292421;
 }
 
 .auth-signup-reference-form .signup-field {
@@ -23042,7 +23132,7 @@ a.atelier-hero-orbit-wardrobe:hover {
 .wardrobe-stage-actions {
   left: clamp(18px, 2.4vw, 44px) !important;
   right: clamp(18px, 2.4vw, 44px) !important;
-  grid-template-columns: minmax(82px, 110px) minmax(180px, 240px) 50px !important;
+  grid-template-columns: minmax(180px, 280px) 50px !important;
   gap: clamp(12px, 2.8vw, 34px) !important;
 }
 
@@ -23296,7 +23386,7 @@ a.atelier-hero-orbit-wardrobe:hover {
 
 /* Wardrobe interaction polish: stable auto toggle and image-led recommendations. */
 .wardrobe-stage-actions {
-  grid-template-columns: max-content minmax(184px, 250px) 50px !important;
+  grid-template-columns: minmax(184px, 280px) 50px !important;
 }
 
 .wardrobe-auto-apply-toggle {
@@ -23541,11 +23631,10 @@ a.atelier-hero-orbit-wardrobe:hover {
 
 @media (max-width: 700px) {
   .wardrobe-stage-actions {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: minmax(0, 1fr) 46px !important;
     justify-items: stretch !important;
   }
 
-  .wardrobe-auto-apply-toggle,
   .wardrobe-generate-button,
   .wardrobe-heart-button {
     justify-self: center !important;
@@ -24827,7 +24916,6 @@ a.atelier-hero-orbit-wardrobe:hover {
   .custom-confidence-card-loading > span,
   .custom-confidence-card-loading strong,
   .tryon-progress-track,
-  .tryon-generating,
   .wardrobe-empty-thumb
 ) {
   background-image: linear-gradient(90deg, #ede5df 0%, #faf6f2 46%, #ede5df 100%) !important;
@@ -25215,5 +25303,602 @@ a.atelier-hero-orbit-wardrobe:hover {
   .wardrobe-combo-hero {
     width: 76px !important;
     height: 84px !important;
+  }
+}
+
+/* Mobile viewport lock: prevent sideways page drift and keep the home hero usable. */
+@media (max-width: 700px) {
+  html,
+  body,
+  #root {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  body {
+    position: relative;
+    overscroll-behavior-x: none !important;
+    touch-action: pan-y;
+  }
+
+  #root,
+  main,
+  .atelier-home,
+  .fitlook-home,
+  .site-header,
+  .atelier-home .atelier-hero.atelier-hero-editorial,
+  .atelier-hero-editorial-slides,
+  .atelier-arrivals,
+  .footer {
+    max-width: 100vw !important;
+    overflow-x: clip !important;
+  }
+
+  .site-header {
+    width: 100% !important;
+  }
+
+  .site-header .header-inner {
+    width: 100% !important;
+    max-width: 100% !important;
+    grid-template-columns: minmax(0, 1fr) auto auto auto !important;
+    gap: 10px !important;
+    padding-inline: 14px !important;
+  }
+
+  .site-header .header-left {
+    min-width: 0 !important;
+  }
+
+  .site-header .brand {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    font-size: clamp(32px, 12vw, 43px) !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .site-header .header-actions {
+    gap: 8px !important;
+  }
+
+  .site-header .icon-button,
+  .header-credit-button {
+    width: 38px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    flex: 0 0 38px !important;
+  }
+
+  .atelier-home .atelier-hero.atelier-hero-editorial {
+    width: 100% !important;
+    min-height: min(760px, calc(100svh - 64px)) !important;
+    height: auto !important;
+  }
+
+  .atelier-hero-editorial-slides .atelier-hero-editorial-image,
+  .atelier-hero-editorial-slides .atelier-hero-editorial-image.active {
+    transform: none !important;
+    transition: opacity 280ms ease !important;
+    will-change: opacity;
+  }
+
+  .atelier-hero-editorial-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 18px 148px !important;
+  }
+
+  .atelier-hero-editorial-copy {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .atelier-hero-editorial-copy h1 {
+    max-width: 100% !important;
+    font-size: clamp(42px, 13vw, 58px) !important;
+    line-height: .96 !important;
+  }
+
+  .atelier-hero-editorial-copy p {
+    max-width: min(100%, 330px) !important;
+    font-size: 14px !important;
+    line-height: 1.55 !important;
+  }
+
+  .atelier-hero-editorial-copy > div {
+    display: grid !important;
+    width: min(100%, 260px) !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .atelier-hero-editorial-primary,
+  .atelier-hero-editorial-secondary {
+    width: 100% !important;
+    min-height: 44px !important;
+    padding-inline: 14px !important;
+    white-space: nowrap !important;
+  }
+
+  .atelier-hero-editorial-orbits {
+    right: 16px !important;
+    bottom: 20px !important;
+    left: auto !important;
+    max-width: calc(100vw - 32px) !important;
+    gap: 8px !important;
+  }
+
+  a.atelier-hero-orbit {
+    width: 70px !important;
+    height: 70px !important;
+    min-width: 0 !important;
+  }
+
+  .atelier-hero-orbit strong {
+    max-width: 52px !important;
+    font-size: 7px !important;
+    line-height: 1.12 !important;
+  }
+
+  .atelier-hero-editorial-dots {
+    bottom: 128px !important;
+    left: 18px !important;
+    max-width: calc(100vw - 36px) !important;
+  }
+
+  .ai-stylist-launcher {
+    right: max(14px, env(safe-area-inset-right)) !important;
+    bottom: max(18px, env(safe-area-inset-bottom)) !important;
+    width: 74px !important;
+    height: 74px !important;
+  }
+
+  .atelier-arrivals-rail,
+  .atelier-category-audience-rail,
+  .atelier-category-quick-rail {
+    max-width: 100% !important;
+  }
+}
+
+.wardrobe-mobile-category-rail {
+  display: none;
+}
+
+/* Wardrobe preview: no room compositing, no cutout presentation. */
+.wardrobe-studio-page .wardrobe-model-stage {
+  background: #d7d7d5 !important;
+}
+
+.wardrobe-studio-page .wardrobe-model-stage::after,
+.wardrobe-studio-page .wardrobe-model-backdrop,
+.wardrobe-studio-page .floor-contact-shadow,
+.wardrobe-studio-page .model-adjust-toggle,
+.wardrobe-studio-page .model-adjustment-controls,
+.wardrobe-studio-page .room-scene-status {
+  display: none !important;
+}
+
+.wardrobe-flat-scene {
+  display: grid !important;
+  width: 100% !important;
+  height: 100% !important;
+  place-items: center !important;
+  overflow: hidden !important;
+  background: #d7d7d5 !important;
+}
+
+.wardrobe-flat-scene::after {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 3 !important;
+  display: block !important;
+  pointer-events: none !important;
+  background:
+    linear-gradient(90deg, #d7d7d5 0%, rgba(215, 215, 213, .84) 14%, rgba(215, 215, 213, 0) 30%, rgba(215, 215, 213, 0) 70%, rgba(215, 215, 213, .84) 86%, #d7d7d5 100%) !important;
+}
+
+.wardrobe-flat-model {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 2 !important;
+  display: flex !important;
+  width: 100% !important;
+  height: 100% !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 0 !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: zoom-in !important;
+  transform: none !important;
+}
+
+.wardrobe-flat-model img,
+.wardrobe-flat-model picture,
+.wardrobe-flat-model .optimized-image {
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  object-position: center center !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 20px 34px rgba(22, 20, 18, .16)) !important;
+}
+
+.wardrobe-flat-model .wardrobe-flat-image {
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  object-position: center center !important;
+}
+
+.wardrobe-flat-scene.is-generating .wardrobe-flat-model {
+  opacity: .45 !important;
+  filter: grayscale(.18) blur(.5px) !important;
+}
+
+.wardrobe-studio-page .wardrobe-model-tools button,
+.wardrobe-studio-page .wardrobe-model-tools small {
+  color: #211c18 !important;
+  text-shadow: 0 1px 10px rgba(255, 255, 255, .45) !important;
+}
+
+/* Mobile wardrobe studio: keep selection and generation controls in one screen. */
+@media (max-width: 700px) {
+  .wardrobe-studio-page {
+    height: calc(100svh - 96px) !important;
+    min-height: calc(100svh - 96px) !important;
+    overflow: hidden !important;
+    background: #d7d7d5 !important;
+  }
+
+  .wardrobe-studio-shell {
+    position: relative !important;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .wardrobe-sidebar,
+  .wardrobe-recommendations {
+    display: none !important;
+  }
+
+  .wardrobe-model-stage {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    background: #d9d9d9 !important;
+  }
+
+  .wardrobe-flat-model {
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    transform: none !important;
+  }
+
+  .wardrobe-mobile-category-rail {
+    position: absolute !important;
+    top: 48px !important;
+    right: 8px !important;
+    left: 8px !important;
+    z-index: 8 !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 5px !important;
+    pointer-events: auto !important;
+  }
+
+  .wardrobe-mobile-category-rail button {
+    display: grid !important;
+    min-width: 0 !important;
+    justify-items: center !important;
+    gap: 4px !important;
+    border: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    color: #211c18 !important;
+    text-shadow: 0 1px 10px rgba(255, 255, 255, .52) !important;
+  }
+
+  .wardrobe-mobile-category-rail span {
+    display: grid !important;
+    width: 42px !important;
+    height: 42px !important;
+    place-items: center !important;
+    overflow: hidden !important;
+    border: 2px solid rgba(255, 255, 255, .72) !important;
+    border-radius: 999px !important;
+    background: rgba(255, 255, 255, .9) !important;
+    color: #201b18 !important;
+    box-shadow: 0 12px 26px rgba(17, 16, 14, .16) !important;
+  }
+
+  .wardrobe-mobile-category-rail button.active span {
+    border-color: #080806 !important;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, .85), 0 14px 30px rgba(17, 16, 14, .24) !important;
+  }
+
+  .wardrobe-mobile-category-rail img {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    object-position: center top !important;
+  }
+
+  .wardrobe-mobile-category-rail svg {
+    width: 17px !important;
+    height: 17px !important;
+  }
+
+  .wardrobe-mobile-category-rail small {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    color: #211c18 !important;
+    font-size: 9px !important;
+    font-weight: 800 !important;
+    line-height: 1.1 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .wardrobe-model-tools.left {
+    display: none !important;
+  }
+
+  .wardrobe-model-tools.right {
+    top: 44% !important;
+    right: 8px !important;
+    gap: 10px !important;
+  }
+
+  .wardrobe-model-tools.right button {
+    min-width: 46px !important;
+    gap: 4px !important;
+  }
+
+  .wardrobe-model-tools.right button > span {
+    width: 42px !important;
+    height: 42px !important;
+  }
+
+  .wardrobe-model-tools.right small {
+    font-size: 9px !important;
+  }
+
+  .model-adjust-toggle {
+    top: 8px !important;
+    min-height: 30px !important;
+    padding-inline: 12px !important;
+    font-size: 9px !important;
+  }
+
+  .transparent-model {
+    max-width: min(62%, 285px) !important;
+    transform: translate(-50%, -18px) !important;
+  }
+
+  .cutout-preparing {
+    bottom: 98px !important;
+    height: min(58%, 420px) !important;
+  }
+
+  .floor-contact-shadow {
+    max-width: 190px !important;
+  }
+
+  .wardrobe-stage-actions {
+    position: absolute !important;
+    right: 8px !important;
+    bottom: max(8px, env(safe-area-inset-bottom)) !important;
+    left: 8px !important;
+    z-index: 8 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 46px !important;
+    gap: 7px !important;
+    align-items: center !important;
+    justify-items: stretch !important;
+    border: 1px solid rgba(255, 255, 255, .26) !important;
+    border-radius: 999px !important;
+    padding: 7px !important;
+    background: rgba(42, 35, 29, .58) !important;
+    box-shadow: 0 18px 42px rgba(17, 16, 14, .22) !important;
+    backdrop-filter: blur(16px) saturate(1.1) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(1.1) !important;
+  }
+
+  .wardrobe-auto-apply-toggle,
+  .wardrobe-generate-button,
+  .wardrobe-heart-button {
+    justify-self: stretch !important;
+  }
+
+  .wardrobe-auto-apply-toggle {
+    min-width: 0 !important;
+    min-height: 44px !important;
+    justify-content: center !important;
+    gap: 5px !important;
+    padding: 5px 8px !important;
+  }
+
+  .wardrobe-auto-apply-toggle input {
+    flex-basis: 34px !important;
+    width: 34px !important;
+    height: 22px !important;
+  }
+
+  .wardrobe-auto-apply-toggle input::before {
+    top: 3px !important;
+    left: 3px !important;
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  .wardrobe-auto-apply-toggle input:checked::before {
+    transform: translateX(12px) !important;
+  }
+
+  .wardrobe-auto-apply-toggle span {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    font-size: 10px !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .wardrobe-generate-button {
+    min-width: 0 !important;
+    min-height: 46px !important;
+    gap: 6px !important;
+    padding-inline: 10px !important;
+    font-size: 9px !important;
+    white-space: nowrap !important;
+  }
+
+  .wardrobe-generate-button svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  .wardrobe-heart-button {
+    width: 46px !important;
+    height: 46px !important;
+    min-height: 46px !important;
+  }
+
+  .wardrobe-stage-message,
+  .room-scene-status {
+    right: 12px !important;
+    bottom: 70px !important;
+    left: 12px !important;
+    max-width: calc(100% - 24px) !important;
+    font-size: 10px !important;
+    text-align: center !important;
+    transform: none !important;
+  }
+
+  .model-adjustment-controls {
+    right: 8px !important;
+    bottom: 72px !important;
+    left: 8px !important;
+    width: auto !important;
+    max-height: 190px !important;
+    overflow-y: auto !important;
+  }
+}
+
+/* Final wardrobe CTA dock: compact two-button layout after removing Auto-apply. */
+.wardrobe-studio-page .wardrobe-stage-actions {
+  left: 50% !important;
+  right: auto !important;
+  bottom: clamp(18px, 3vh, 34px) !important;
+  z-index: 9 !important;
+  display: grid !important;
+  width: min(380px, calc(100% - 56px)) !important;
+  grid-template-columns: minmax(0, 1fr) 58px !important;
+  gap: 18px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transform: translateX(-50%) !important;
+}
+
+.wardrobe-studio-page .wardrobe-generate-button {
+  position: relative !important;
+  display: grid !important;
+  place-items: center !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 52px !important;
+  border-radius: 999px !important;
+  padding: 0 24px !important;
+  background: rgba(30, 29, 27, .64) !important;
+  color: #fff !important;
+  font-size: 12px !important;
+  letter-spacing: .08em !important;
+  box-shadow: 0 16px 34px rgba(16, 15, 14, .18) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+}
+
+.wardrobe-studio-page .wardrobe-generate-button span {
+  display: block !important;
+  width: 100% !important;
+  padding: 0 34px !important;
+  text-align: center !important;
+}
+
+.wardrobe-studio-page .wardrobe-generate-button svg {
+  position: absolute !important;
+  top: 50% !important;
+  left: 22px !important;
+  width: 15px !important;
+  height: 15px !important;
+  transform: translateY(-50%) !important;
+  pointer-events: none !important;
+}
+
+.wardrobe-studio-page .wardrobe-heart-button {
+  width: 58px !important;
+  height: 58px !important;
+  min-height: 58px !important;
+  justify-self: center !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, .95) !important;
+  box-shadow: 0 16px 30px rgba(16, 15, 14, .14) !important;
+}
+
+@media (max-width: 700px) {
+  .wardrobe-studio-page .wardrobe-stage-actions {
+    bottom: max(10px, env(safe-area-inset-bottom)) !important;
+    width: min(330px, calc(100% - 28px)) !important;
+    grid-template-columns: minmax(0, 1fr) 50px !important;
+    gap: 10px !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-generate-button {
+    min-height: 48px !important;
+    padding: 0 16px !important;
+    font-size: 10px !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-generate-button span {
+    padding: 0 24px !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-generate-button svg {
+    left: 16px !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-heart-button {
+    width: 50px !important;
+    height: 50px !important;
+    min-height: 50px !important;
   }
 }

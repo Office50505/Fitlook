@@ -1,12 +1,17 @@
 import { useEffect, useRef } from 'react';
 
-function highResolutionImageSource(src) {
+export function highResolutionImageSource(src) {
   const value = String(src || '').trim();
-  if (!/m\.media-amazon\.(?:com|in)\/images\//i.test(value)) return value;
+  if (!/(?:m\.media-amazon\.(?:com|in)|images-(?:na|eu|fe)\.ssl-images-amazon\.com)\/images\//i.test(value)) return value;
 
-  // Imported Amazon products often use 342–445px thumbnails. Requesting the
-  // same CDN asset at 1200px keeps catalog imagery crisp on retina displays.
-  return value.replace(/\._(?:AC_)?(?:SX|SY|SL)\d+_\.(?=(?:avif|jpe?g|png|webp)(?:[?#]|$))/i, '._AC_SL1200_.');
+  // Imported Amazon products often use small thumbnails such as SX342, UY445,
+  // UL320, or multi-part FM/QL variants. Request the same CDN asset larger so
+  // product detail imagery stays crisp on retina displays.
+  if (/\._[^.]*_\.(?=(?:avif|jpe?g|png|webp)(?:[?#]|$))/i.test(value)) {
+    return value.replace(/\._[^.]*_\.(?=(?:avif|jpe?g|png|webp)(?:[?#]|$))/i, '._AC_SL1500_.');
+  }
+
+  return value.replace(/\.((?:avif|jpe?g|png|webp)(?:[?#].*)?)$/i, '._AC_SL1500_.$1');
 }
 
 /**

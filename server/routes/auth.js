@@ -4,6 +4,7 @@ import heicConvert from 'heic-convert';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import multer from 'multer';
+import { randomInt, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -21,6 +22,8 @@ const avifMimeTypes = new Set(['image/avif', 'image/x-avif']);
 const heicExtensions = new Set(['.heic', '.heif']);
 const heicMimeTypes = new Set(['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence']);
 const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.env.DEBUG_GENERATION_LOGS || '').toLowerCase());
+const signupOtpSessions = new Map();
+const signupOtpTtlMs = 5 * 60 * 1000;
 
 function profileImageModel() {
   return process.env.FAL_PROFILE_IMAGE_MODEL || process.env.FAL_TRYON_MODEL || 'openai/gpt-image-2/edit';
@@ -33,6 +36,23 @@ function shouldGenerateFullBodyProfile() {
 function shouldGenerateFullBodyProfileForRequest(req) {
   const mode = String(req.body?.profilePhotoMode || 'ai-full-body').toLowerCase();
   return shouldGenerateFullBodyProfile() && mode !== 'exact';
+}
+
+function normalizePhone(value = '') {
+  const raw = String(value || '').trim();
+  const digits = raw.replace(/[^\d]/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `+91${digits}`;
+  if (raw.startsWith('+') && digits.length >= 10 && digits.length <= 15) return `+${digits}`;
+  if (digits.length >= 11 && digits.length <= 15) return `+${digits}`;
+  return '';
+}
+
+function cleanupSignupOtpSessions() {
+  const now = Date.now();
+  for (const [id, session] of signupOtpSessions.entries()) {
+    if (!session || session.expiresAt <= now) signupOtpSessions.delete(id);
+  }
 }
 
 function extensionForFile(file) {
@@ -385,10 +405,55 @@ async function requireUser(req, res, next) {
   }
 }
 
+router.post('/signup/request-otp', async (req, res) => {
+  cleanupSignupOtpSessions();
+  const phone = normalizePhone(req.body?.phone);
+  if (!phone) return res.status(400).json({ message: 'Enter a valid phone number' });
+  const existing = await User.exists({ phone });
+  if (existing) return res.status(409).json({ message: 'An account already exists for this phone number' });
+
+  const otp = String(randomInt(100000, 999999));
+  const otpSession = randomUUID();
+  signupOtpSessions.set(otpSession, {
+    phone,
+    otp,
+    verified: false,
+    expiresAt: Date.now() + signupOtpTtlMs
+  });
+
+  res.json({
+    otpSession,
+    phone,
+    message: 'OTP sent',
+    devOtp: otp
+  });
+});
+
+router.post('/signup/verify-otp', async (req, res) => {
+  cleanupSignupOtpSessions();
+  const phone = normalizePhone(req.body?.phone);
+  const otp = String(req.body?.otp || '').replace(/\D/g, '');
+  const otpSession = String(req.body?.otpSession || '');
+  const session = signupOtpSessions.get(otpSession);
+  if (!phone || !otpSession || !session || session.phone !== phone) return res.status(400).json({ message: 'Request a new OTP' });
+  if (session.expiresAt <= Date.now()) {
+    signupOtpSessions.delete(otpSession);
+    return res.status(400).json({ message: 'OTP expired. Request a new code' });
+  }
+  if (session.otp !== otp) return res.status(400).json({ message: 'Incorrect OTP' });
+  session.verified = true;
+  signupOtpSessions.set(otpSession, session);
+  res.json({ verified: true, otpSession, phone });
+});
+
 router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
   const { name, email, password } = req.body;
+  const phone = normalizePhone(req.body.phone);
+  const otpSession = String(req.body.otpSession || '');
   const username = normalizeUsername(req.body.username) || await uniqueUsername(name);
   const genderPreference = normalizeGenderPreference(req.body.genderPreference);
+  const phoneSession = signupOtpSessions.get(otpSession);
+  if (!phone || !phoneSession || phoneSession.phone !== phone || !phoneSession.verified || phoneSession.expiresAt <= Date.now()) return res.status(400).json({ message: 'Verify your phone number first' });
   if (!name || !email || !password || !username || !genderPreference) return res.status(400).json({ message: 'Name, username, email, gender preference, and password are required' });
   if (username.length < 3) return res.status(400).json({ message: 'Username must be at least 3 characters' });
   if (!req.file) return res.status(400).json({ message: 'Full-body photo is required' });
@@ -396,10 +461,12 @@ router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
   const existing = await User.findOne({
     $or: [
       { email: email.toLowerCase() },
+      { phone },
       { username }
     ]
   });
   if (existing?.email === email.toLowerCase()) return res.status(409).json({ message: 'An account already exists for this email' });
+  if (existing?.phone === phone) return res.status(409).json({ message: 'An account already exists for this phone number' });
   if (existing?.username === username) return res.status(409).json({ message: 'This username is already taken' });
 
   try {
@@ -409,6 +476,7 @@ router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
     const user = await User.create({
       name,
       email,
+      phone,
       username,
       genderPreference,
       passwordHash,
@@ -417,11 +485,13 @@ router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
     });
 
     generateFullBodyProfileInBackground(user._id, bodyPhoto, { enabled: generateFullBody });
+    signupOtpSessions.delete(otpSession);
     res.status(201).json({ token: sign(user), user: user.toClient() });
   } catch (error) {
     if (isBodyPhotoPreparationError(error)) return res.status(400).json({ message: error.message });
     if (error.code === 11000 && error.keyPattern?.username) return res.status(409).json({ message: 'This username is already taken' });
     if (error.code === 11000 && error.keyPattern?.email) return res.status(409).json({ message: 'An account already exists for this email' });
+    if (error.code === 11000 && error.keyPattern?.phone) return res.status(409).json({ message: 'An account already exists for this phone number' });
     throw error;
   }
 });

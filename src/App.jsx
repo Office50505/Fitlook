@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import OptimizedImage from './components/common/OptimizedImage.jsx';
+import ShaderBackground from './components/common/ShaderBackground.jsx';
 import { DEFAULT_MODEL_PLACEMENT, calculateModelPlacement, normalizedPlacement } from './utils/modelPlacement.js';
 
 const asset = (name) => `/assets/${name}`;
@@ -7,6 +8,8 @@ const MAX_BODY_PHOTO_BYTES = 8 * 1024 * 1024;
 const TARGET_BODY_PHOTO_BYTES = 6.5 * 1024 * 1024;
 const BODY_PHOTO_ACCEPT = 'image/*,.avif,.heic,.heif,image/avif,image/heic,image/heif';
 const API_TIMEOUT_MS = 25000;
+const AI_IMAGE_TIMEOUT_MS = 180000;
+const AI_VIDEO_TIMEOUT_MS = 300000;
 const PRODUCT_CACHE_TTL_MS = 30_000;
 const productListCache = new Map();
 const productDetailLocalCache = new Map();
@@ -631,7 +634,12 @@ async function api(path, options = {}) {
       return data;
     } catch (error) {
       if (externalSignal?.aborted) throw error;
-      if (timedOut) throw new Error('The request took too long. Check your connection and try again.');
+      if (timedOut) {
+        const isLongRunningAi = timeout >= AI_IMAGE_TIMEOUT_MS || /\/tryons\/|\/closet\/outfits\/generate/.test(path);
+        throw new Error(isLongRunningAi
+          ? 'AI rendering is taking longer than expected. Please try again in a moment.'
+          : 'The request took too long. Check your connection and try again.');
+      }
       lastError = error instanceof Error ? error : new Error('Unable to reach FitLook right now.');
       const canRetry = attempt < retryCount && (!lastError.status || lastError.status >= 500);
       if (!canRetry) {
@@ -2243,7 +2251,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
         )}
         {product.badge && <span className="badge">{product.badge}</span>}
         {hasUsableTryOn && <span className="badge tryon-badge">{hasTryOnVideo ? 'Video Try-On' : 'AI Try-On'}</span>}
-        {(tryOnLoading || tryOnVideoLoading) && <TryOnGenerating text={tryOnVideoLoading ? 'Generating video' : 'Generating try-on'} />}
+        <TryOnGenerating active={tryOnLoading || tryOnVideoLoading} text={tryOnVideoLoading ? 'Generating video' : 'Generating try-on'} />
       </div>
       <div className="product-info">
         <h3 className="product-title">{product.name}</h3>
@@ -2636,66 +2644,21 @@ function CutoutFallbackNotice({ isolation, originalSrc, onRetry }) {
   );
 }
 
-function RoomScene({ modelSource, alt, generating, user, onOpen, onEmpty }) {
-  const frameRef = useRef(null);
-  const stageSize = useElementSize(frameRef);
-  const isolation = useSubjectIsolation(modelSource, user);
-  const modelSrc = isolation.transparentUrl || '';
-  const fallbackSrc = modelSource?.imageUrl || '';
-  const visibleSrc = modelSrc;
-  const naturalSize = useImageNaturalSize(visibleSrc);
-  const [adjusting, setAdjusting] = useState(false);
-  const [placement, setPlacement] = useState(() => readSavedPlacement(visibleSrc));
-
-  useEffect(() => {
-    setPlacement(readSavedPlacement(visibleSrc));
-  }, [visibleSrc]);
-
-  const safePlacement = normalizedPlacement(placement);
-  const calculated = calculateModelPlacement({
-    stageWidth: stageSize.width,
-    stageHeight: stageSize.height,
-    imageWidth: naturalSize.width,
-    imageHeight: naturalSize.height,
-    placement: safePlacement,
-    controlsInset: adjusting ? 42 : 0
-  });
-  const statusText = isolation.status === 'requesting' || isolation.status === 'processing'
-      ? 'Preparing your room preview...'
-      : isolation.status === 'failed' && fallbackSrc
-        ? 'Transparent preview unavailable.'
-        : '';
-
-  const updatePlacement = (next) => setPlacement(normalizedPlacement(next));
-  const resetPlacement = () => setPlacement(DEFAULT_MODEL_PLACEMENT);
-  const saveCurrentPlacement = () => {
-    savePlacement(visibleSrc, placement);
-    announce('Model placement saved.');
-  };
+function RoomScene({ modelSource, alt, generating, onOpen, onEmpty }) {
+  const visibleSrc = modelSource?.imageUrl || '';
 
   return (
-    <div className={`room-scene ${adjusting ? 'adjusting' : ''}`} ref={frameRef}>
+    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''}`}>
       {visibleSrc ? (
-        <>
-          <FloorContactShadow placement={calculated} />
-          <TransparentModel
-            src={modelSrc}
-            fallback={fallbackSrc}
+        <button className="wardrobe-flat-model" type="button" onClick={onOpen} aria-label="Open wardrobe preview full screen">
+          <OptimizedImage
+            className="wardrobe-flat-image"
+            src={visibleSrc}
             alt={alt}
-            placement={calculated}
-            adjusting={adjusting}
-            onOpen={onOpen}
-            onPlacementChange={updatePlacement}
+            eager
+            style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', objectPosition: 'center center' }}
           />
-          <button className="model-adjust-toggle" type="button" onClick={() => setAdjusting((current) => !current)} aria-pressed={adjusting}>
-            Adjust Model
-          </button>
-          {adjusting && <ModelAdjustmentControls placement={safePlacement} onChange={updatePlacement} onReset={resetPlacement} onSave={saveCurrentPlacement} />}
-        </>
-      ) : isolation.status === 'failed' && fallbackSrc ? (
-        <CutoutFallbackNotice isolation={isolation} originalSrc={fallbackSrc} onRetry={isolation.retry} />
-      ) : fallbackSrc ? (
-        <div className="cutout-preparing" aria-hidden="true" />
+        </button>
       ) : (
         <button className="wardrobe-model-empty" type="button" onClick={onEmpty}>
           <UserIcon />
@@ -2703,7 +2666,6 @@ function RoomScene({ modelSource, alt, generating, user, onOpen, onEmpty }) {
           <span>Use your profile image for wardrobe try-ons.</span>
         </button>
       )}
-      {statusText && <p className={`room-scene-status ${isolation.status === 'failed' ? 'warning' : ''}`} aria-live="polite">{statusText}</p>}
     </div>
   );
 }
@@ -2747,6 +2709,27 @@ function ClosetPage({ user, setUser }) {
   useEffect(() => {
     loadCloset();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    let active = true;
+    const refreshProfile = () => {
+      api('/auth/me')
+        .then((data) => {
+          if (active && data.user) setUser(data.user);
+        })
+        .catch(() => {});
+    };
+    refreshProfile();
+    if (user.bodyPhotoStatus !== 'generating') return () => {
+      active = false;
+    };
+    const timer = window.setInterval(refreshProfile, 4500);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [user?.id, user?.bodyPhotoStatus, setUser]);
 
   if (!user) return <AuthPage mode="signup" setUser={setUser} />;
 
@@ -2942,6 +2925,7 @@ function ClosetPage({ user, setUser }) {
     try {
       const data = await api('/closet/outfits/generate', {
         method: 'POST',
+        timeout: AI_IMAGE_TIMEOUT_MS,
         body: JSON.stringify({
           itemIds: ids,
           occasion: details.occasion || occasion,
@@ -3083,6 +3067,18 @@ function ClosetPage({ user, setUser }) {
   const modelPreview = showingGeneratedOutfit ? latestOutfit.imageUrl : user.bodyPhotoUrl || latestOutfit?.imageUrl || '';
   const previewTitle = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Model';
   const previewAlt = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
+  const mobileWardrobeSections = wardrobeSections.filter((section) => ['Tops', 'Bottoms'].includes(section.label));
+  const pickMobileWardrobeSection = (section) => {
+    const selectedItem = section.items.find((item) => selectedIds.includes(item.id));
+    const nextItem = selectedItem || section.items[0];
+    setFilter(section.categories[0]);
+    if (!nextItem) {
+      setMessage(`Add ${section.label.toLowerCase()} to use them in your look.`);
+      openRoute('/closet/add');
+      return;
+    }
+    if (!selectedIds.includes(nextItem.id)) handleWardrobeItemClick(nextItem);
+  };
   const modelSource = {
     imageUrl: modelPreview,
     transparentImageUrl: showingGeneratedOutfit ? latestOutfit?.transparentImageUrl || '' : '',
@@ -3122,6 +3118,31 @@ function ClosetPage({ user, setUser }) {
         </aside>
 
         <section className="wardrobe-model-stage" aria-label="Wardrobe model preview">
+          <div className="wardrobe-mobile-category-rail" aria-label="Wardrobe quick controls">
+            <button type="button" onClick={() => user.bodyPhotoUrl ? setStagePreviewMode('model') : openRoute('/profile')}>
+              <span>{user.bodyPhotoUrl ? <img src={user.bodyPhotoUrl} alt="" /> : <UserIcon />}</span>
+              <small>Model</small>
+            </button>
+            {mobileWardrobeSections.map((section) => {
+              const selectedItem = section.items.find((item) => selectedIds.includes(item.id));
+              const previewItem = selectedItem || section.items[0];
+              return (
+                <button className={selectedItem ? 'active' : ''} type="button" key={section.label} onClick={() => pickMobileWardrobeSection(section)}>
+                  <span>{previewItem ? <img src={previewItem.imageUrl} alt="" /> : section.icon}</span>
+                  <small>{section.label}</small>
+                </button>
+              );
+            })}
+            <button type="button" onClick={() => applyAccessorySlot('cap', 'Cap')}>
+              <span><BagIcon /></span>
+              <small>Cap</small>
+            </button>
+            <button type="button" onClick={() => applyAccessorySlot('goggles', 'Sunglasses')}>
+              <span><EyeIcon /></span>
+              <small>Glasses</small>
+            </button>
+          </div>
+
           <div className="wardrobe-model-tools left">
             <button type="button" onClick={() => user.bodyPhotoUrl ? setStagePreviewMode('model') : openRoute('/profile')}>
               <span>{user.bodyPhotoUrl ? <img src={user.bodyPhotoUrl} alt="" /> : <UserIcon />}</span>
@@ -3142,7 +3163,6 @@ function ClosetPage({ user, setUser }) {
             <button type="button" onClick={clearWardrobeSelection} aria-label="Clear selection"><span>⌫</span><small>Clear</small></button>
           </div>
 
-          <div className="wardrobe-model-backdrop" aria-hidden="true" />
           <div className="wardrobe-model-frame">
             <RoomScene
               key={`${stagePreviewMode}:${modelPreview}`}
@@ -3158,10 +3178,6 @@ function ClosetPage({ user, setUser }) {
           {!generating && message && <p className={`wardrobe-stage-message ${/error|missing|not enough|failed|could not/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
 
           <div className="wardrobe-stage-actions">
-            <label className="wardrobe-auto-apply-toggle">
-              <input type="checkbox" checked={autoApply} onChange={(event) => setAutoApply(event.target.checked)} />
-              <span>Auto-apply</span>
-            </label>
             <button className="wardrobe-generate-button" type="button" onClick={() => generateOutfit(selectedIds, { title: 'My wardrobe look' })} disabled={generating || selectedIds.length === 0}>
               <SparkleLineIcon />
               <span>{generating ? 'Generating...' : 'Generate Look'}</span>
@@ -3343,6 +3359,7 @@ function ClosetComboPage({ user, setUser }) {
     try {
       const data = await api('/closet/outfits/generate', {
         method: 'POST',
+        timeout: AI_IMAGE_TIMEOUT_MS,
         body: JSON.stringify({
           itemIds: ids,
           occasion: details.occasion || occasion,
@@ -3743,29 +3760,28 @@ function ClosetAddPage({ user, setUser }) {
   );
 }
 
-function TryOnGenerating({ text = 'Try-on is being generated' }) {
-  const [progress, setProgress] = useState(7);
+function TryOnGenerating({ text = 'Try-on is being generated', active = true }) {
+  const [visible, setVisible] = useState(active);
+  const [complete, setComplete] = useState(false);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setProgress((current) => {
-        if (current >= 94) return current;
-        const step = current < 45 ? 7 : current < 76 ? 4 : 2;
-        return Math.min(94, current + step);
-      });
-    }, 850);
-    return () => window.clearInterval(timer);
-  }, []);
+    if (active) {
+      setVisible(true);
+      setComplete(false);
+      return undefined;
+    }
+
+    if (!visible) return undefined;
+    setComplete(true);
+    const timer = window.setTimeout(() => setVisible(false), 2200);
+    return () => window.clearTimeout(timer);
+  }, [active, visible]);
+
+  if (!visible) return null;
 
   return (
-    <div className="tryon-generating">
-      <div className="tryon-progress-copy">
-        <strong>{text}</strong>
-        <span>{progress}%</span>
-      </div>
-      <div className="tryon-progress-track" aria-label={`${progress}% generated`}>
-        <span style={{ width: `${progress}%` }} />
-      </div>
+    <div className="tryon-generating" role="status" aria-live="polite" aria-label={text}>
+      <ShaderBackground className="tryon-shader-background" complete={complete} />
     </div>
   );
 }
@@ -3844,6 +3860,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
     try {
       const data = await api(`/tryons/${product.id}`, {
         method: 'POST',
+        timeout: AI_IMAGE_TIMEOUT_MS,
         body: options.force ? JSON.stringify({ force: true }) : undefined
       });
       setTryOns((current) => ({ ...current, [product.id]: data.tryOn }));
@@ -3867,6 +3884,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
     try {
       const data = await api(`/tryons/${product.id}/video`, {
         method: 'POST',
+        timeout: AI_VIDEO_TIMEOUT_MS,
         body: options.force ? JSON.stringify({ force: true }) : undefined
       });
       setTryOns((current) => ({ ...current, [product.id]: data.tryOn }));
@@ -4433,7 +4451,7 @@ function CustomClothingTryOn({ user, setUser }) {
     try {
       const form = new FormData();
       form.append('garment', file);
-      const data = await api('/tryons/custom', { method: 'POST', body: form, signal: controller.signal });
+      const data = await api('/tryons/custom', { method: 'POST', body: form, timeout: AI_IMAGE_TIMEOUT_MS, signal: controller.signal });
       setResult(data.tryOn);
       recordEvent('custom_tryon');
       if (data.user) {
@@ -4494,7 +4512,7 @@ function CustomClothingTryOn({ user, setUser }) {
                 <span>AI Powered</span>
               </header>
               <div className={`custom-preview result ${result?.imageUrl ? 'has-image' : ''}`}>
-                {loading && <TryOnGenerating text="Rendering try-on" />}
+                <TryOnGenerating active={loading} text="Rendering try-on" />
                 {result?.imageUrl ? (
                   <>
                     <ZoomableImage src={result.imageUrl} alt="Generated custom try-on" />
@@ -4635,6 +4653,7 @@ function StyleBotPage({ user, setUser }) {
         try {
           const generated = await api('/tryons/external', {
             method: 'POST',
+            timeout: AI_IMAGE_TIMEOUT_MS,
             body: JSON.stringify({ product })
           });
           recordEvent('try_on', { query: product.name, metadata: { product } });
@@ -5157,8 +5176,6 @@ function ProductPage({ id, user, setUser }) {
   const [tryOnVideoError, setTryOnVideoError] = useState('');
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [detailImageView, setDetailImageView] = useState('tryon');
-  const [selectedSize, setSelectedSize] = useState('M');
-  const [selectedTone, setSelectedTone] = useState('charcoal');
   const productViewStarted = useRef('');
   const relatedProducts = related.products.filter((item) => item.id !== id).slice(0, 4);
 
@@ -5185,11 +5202,6 @@ function ProductPage({ id, user, setUser }) {
     setTryOnImageFailed(false);
     setDetailImageView(tryOn?.imageUrl ? 'tryon' : 'product');
   }, [tryOn?.imageUrl]);
-
-  useEffect(() => {
-    setSelectedSize('M');
-    setSelectedTone('charcoal');
-  }, [id]);
 
   useEffect(() => {
     if (!user || !product?.id || productViewStarted.current === product.id) return;
@@ -5266,6 +5278,7 @@ function ProductPage({ id, user, setUser }) {
     try {
       const data = await api(`/tryons/${product.id}`, {
         method: 'POST',
+        timeout: AI_IMAGE_TIMEOUT_MS,
         body: regenerate ? JSON.stringify({ force: true }) : undefined
       });
       setTryOn(data.tryOn);
@@ -5300,6 +5313,7 @@ function ProductPage({ id, user, setUser }) {
       if (needsImageTryOn) {
         const preview = await api(`/tryons/${product.id}`, {
           method: 'POST',
+          timeout: AI_IMAGE_TIMEOUT_MS,
           body: tryOn?.imageUrl ? JSON.stringify({ force: true }) : undefined
         });
         activeTryOn = preview.tryOn;
@@ -5318,6 +5332,7 @@ function ProductPage({ id, user, setUser }) {
       const regenerate = Boolean(activeTryOn?.videoUrl);
       const data = await api(`/tryons/${product.id}/video`, {
         method: 'POST',
+        timeout: AI_VIDEO_TIMEOUT_MS,
         body: regenerate ? JSON.stringify({ force: true }) : undefined
       });
       setTryOn(data.tryOn);
@@ -5375,7 +5390,7 @@ function ProductPage({ id, user, setUser }) {
                   <FullscreenIcon />
                 </button>
               )}
-              {(tryOnLoading || tryOnVideoLoading) && <TryOnGenerating text={tryOnVideoLoading ? 'Generating video' : 'Generating try-on'} />}
+              <TryOnGenerating active={tryOnLoading || tryOnVideoLoading} text={tryOnVideoLoading ? 'Generating video' : 'Generating try-on'} />
               {swapPreview && (
                 <button
                   className="original-product-preview"
@@ -5409,28 +5424,6 @@ function ProductPage({ id, user, setUser }) {
               <p className="product-editorial-rating"><span>Rating</span> {Number(product.rating || 0).toFixed(1)} {product.ratingCount ? `(${product.ratingCount} reviews)` : ''}</p>
             </div>
 
-            <div className="product-editorial-options" aria-label="Product options">
-              <div className="product-editorial-option-row">
-                <span>Colour <b>{selectedTone === 'charcoal' ? 'Charcoal' : selectedTone === 'stone' ? 'Stone' : 'Ink'}</b></span>
-                <div className="product-editorial-swatches" aria-label="Choose colour">
-                  {[
-                    ['charcoal', 'Charcoal'],
-                    ['stone', 'Stone'],
-                    ['ink', 'Ink']
-                  ].map(([tone, label]) => (
-                    <button key={tone} type="button" className={selectedTone === tone ? `active ${tone}` : tone} onClick={() => setSelectedTone(tone)} aria-label={`Choose ${label}`} title={label} />
-                  ))}
-                </div>
-              </div>
-              <div className="product-editorial-option-row product-editorial-size-row">
-                <span>Size <b>{selectedSize}</b></span>
-                <div className="product-editorial-size-options" aria-label="Choose size">
-                  {['XS', 'S', 'M', 'L', 'XL'].map((size) => <button className={selectedSize === size ? 'active' : ''} type="button" key={size} onClick={() => setSelectedSize(size)}>{size}</button>)}
-                </div>
-              </div>
-            </div>
-
-            <div className="product-editorial-ship"><span>Shipping</span><strong>Live catalog item</strong><small>Selected size: {selectedSize}</small></div>
             <div className="product-editorial-actions">
               {product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop brand</a>}
               {user ? (
@@ -5444,6 +5437,7 @@ function ProductPage({ id, user, setUser }) {
                 </button>
               ) : <a className="product-editorial-video" href="/signup">Generate video</a>}
             </div>
+            <div className="product-editorial-ship"><span>Shipping</span><strong>Live catalog item</strong></div>
             <div className="product-editorial-benefits">
               <div><strong>AI fit preview</strong><span>Built from your FitLook profile</span></div>
               <div><strong>Verified catalog</strong><span>Live brand and price details</span></div>
@@ -5851,43 +5845,18 @@ function AuthPage({ mode, setUser }) {
   const bodyPhotoCameraRef = useRef(null);
   const [message, setMessage] = useState('');
   const [nameValue, setNameValue] = useState('');
-  const [username, setUsername] = useState('');
-  const [usernameTouched, setUsernameTouched] = useState(false);
-  const [usernameSuggestions, setUsernameSuggestions] = useState([]);
+  const [signupStep, setSignupStep] = useState('phone');
+  const [phoneValue, setPhoneValue] = useState('');
+  const [otpValue, setOtpValue] = useState('');
+  const [otpSession, setOtpSession] = useState('');
+  const [devOtp, setDevOtp] = useState('');
+  const [otpLoading, setOtpLoading] = useState(false);
   const [bodyPhotoFile, setBodyPhotoFile] = useState(null);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
   const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const isSignup = mode === 'signup';
-
-  useEffect(() => {
-    if (!isSignup) return;
-    const cleanName = nameValue.trim();
-    if (!cleanName) {
-      setUsernameSuggestions([]);
-      if (!usernameTouched) setUsername('');
-      return;
-    }
-
-    let alive = true;
-    const timer = setTimeout(() => {
-      api(`/auth/username-suggestions?name=${encodeURIComponent(cleanName)}`)
-        .then((data) => {
-          if (!alive) return;
-          const suggestions = data.suggestions || [];
-          setUsernameSuggestions(suggestions);
-          if (!usernameTouched && suggestions[0]) setUsername(suggestions[0]);
-        })
-        .catch(() => {
-          if (alive) setUsernameSuggestions([]);
-        });
-    }, 250);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [isSignup, nameValue, usernameTouched]);
 
   useEffect(() => () => {
     if (bodyPhotoPreview) URL.revokeObjectURL(bodyPhotoPreview);
@@ -5900,17 +5869,72 @@ function AuthPage({ mode, setUser }) {
     setBodyPhotoPreview(file ? URL.createObjectURL(file) : '');
   };
 
+  const requestSignupOtp = async () => {
+    if (otpLoading) return;
+    setOtpLoading(true);
+    setMessage('');
+    try {
+      const data = await api('/auth/signup/request-otp', {
+        method: 'POST',
+        body: JSON.stringify({ phone: phoneValue })
+      });
+      setOtpSession(data.otpSession || '');
+      setPhoneValue(data.phone || phoneValue);
+      setDevOtp(data.devOtp || '');
+      setOtpValue('');
+      setMessage(data.devOtp ? `OTP sent. Test code: ${data.devOtp}` : 'OTP sent.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const verifySignupOtp = async () => {
+    if (otpLoading) return;
+    setOtpLoading(true);
+    setMessage('');
+    try {
+      const data = await api('/auth/signup/verify-otp', {
+        method: 'POST',
+        body: JSON.stringify({ phone: phoneValue, otp: otpValue, otpSession })
+      });
+      setOtpSession(data.otpSession || otpSession);
+      setPhoneValue(data.phone || phoneValue);
+      setSignupStep('details');
+      setMessage('');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
   const submit = async (event) => {
     event.preventDefault();
     if (isSubmitting) return;
+    if (isSignup && signupStep !== 'details') return;
     setIsSubmitting(true);
     setMessage(isSignup ? 'Creating account...' : 'Working...');
     try {
       const form = event.currentTarget;
       const body = isSignup ? new FormData(form) : JSON.stringify(Object.fromEntries(new FormData(form)));
       if (isSignup) {
+        const cleanName = String(body.get('name') || '').trim();
+        const random = Math.random().toString(36).slice(2, 8);
+        const suffix = `${Date.now().toString(36)}${random}`;
+        const baseUsername = cleanName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .slice(0, 24) || 'fitlook_user';
         const bodyPhoto = bodyPhotoFile || form.elements.bodyPhoto?.files?.[0] || bodyPhotoCameraRef.current?.files?.[0];
         if (!bodyPhoto) throw new Error('Choose or take a profile photo first.');
+        body.set('username', `${baseUsername}_${suffix}`.slice(0, 48));
+        body.set('email', `profile_${suffix}@fitlook.local`);
+        body.set('password', `FitLook-${suffix}-${random}`);
+        body.set('phone', phoneValue);
+        body.set('otpSession', otpSession);
         body.set('bodyPhoto', await prepareBodyPhoto(bodyPhoto));
       }
       const data = await api(isSignup ? '/auth/signup' : '/auth/login', { method: 'POST', body });
@@ -5984,73 +6008,80 @@ function AuthPage({ mode, setUser }) {
         <form className="auth-signup-form auth-signup-reference-form" onSubmit={submit} aria-busy={isSubmitting}>
           <a className="auth-signup-reference-logo" href="/">FitLook</a>
           <header className="auth-signup-reference-head">
-            <h1 id="signup-title">Create Your<br />Account</h1>
-            <p>Join a world of curated style made just for you.</p>
+            <h1 id="signup-title">{signupStep === 'phone' ? <>Verify Your<br />Number</> : <>Create Your<br />Account</>}</h1>
+            <p>{signupStep === 'phone' ? 'Start with your mobile number and OTP verification.' : 'Add the style details for your AI try-on profile.'}</p>
           </header>
 
-          <div className="auth-signup-reference-fields">
-            <label className="signup-field">
-              <span>Full name</span>
-              <input name="name" required autoFocus value={nameValue} autoComplete="name" placeholder="Enter your name" onChange={(event) => { setNameValue(event.target.value); setUsernameTouched(false); }} />
-            </label>
-            <label className="signup-field">
-              <span>Username</span>
-              <input name="username" required minLength="3" value={username} autoComplete="username" placeholder="Choose a username" onChange={(event) => { setUsernameTouched(true); setUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')); }} />
-            </label>
-            <label className="signup-field">
-              <span>Email address</span>
-              <input name="email" type="email" required autoComplete="email" placeholder="Enter your email" />
-            </label>
-            <label className="signup-field">
-              <span>Create password</span>
-              <input name="password" type="password" required minLength="6" autoComplete="new-password" placeholder="At least 6 characters" onKeyUp={(event) => setCapsLock(event.getModifierState?.('CapsLock'))} onBlur={() => setCapsLock(false)} />
-            </label>
-          </div>
-
-          {usernameSuggestions.length > 0 && (
-            <div className="signup-suggestions" aria-label="Username suggestions">
-              {usernameSuggestions.slice(0, 3).map((item) => <button type="button" key={item} onClick={() => { setUsernameTouched(true); setUsername(item); }}>{item}</button>)}
+          {signupStep === 'phone' ? (
+            <div className="signup-phone-step">
+              <div className="auth-signup-reference-fields">
+                <label className="signup-field">
+                  <span>Mobile number</span>
+                  <input name="phoneDisplay" type="tel" required autoFocus autoComplete="tel" placeholder="Enter mobile number" value={phoneValue} onChange={(event) => { setPhoneValue(event.target.value); setOtpSession(''); setOtpValue(''); setDevOtp(''); }} />
+                </label>
+              </div>
+              <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestSignupOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
+              {otpSession && (
+                <div className="auth-signup-reference-fields">
+                  <label className="signup-field">
+                    <span>OTP</span>
+                    <input name="otpDisplay" inputMode="numeric" pattern="[0-9]*" maxLength="6" placeholder="Enter 6-digit OTP" value={otpValue} onChange={(event) => setOtpValue(event.target.value.replace(/\D/g, '').slice(0, 6))} />
+                  </label>
+                  {devOtp && <p className="signup-otp-hint">Test OTP: {devOtp}</p>}
+                  <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifySignupOtp}>{otpLoading ? 'Verifying...' : 'Verify & continue'}</button>
+                </div>
+              )}
             </div>
-          )}
+          ) : (
+            <>
+              <button className="signup-back-step" type="button" onClick={() => setSignupStep('phone')}>Change number</button>
+              <div className="auth-signup-reference-fields">
+                <label className="signup-field">
+                  <span>Full name</span>
+                  <input name="name" required autoFocus value={nameValue} autoComplete="name" placeholder="Enter your name" onChange={(event) => setNameValue(event.target.value)} />
+                </label>
+              </div>
 
-          <fieldset className="signup-gender-group">
-            <legend>Style preference</legend>
-            {[
-              ['female', 'Women'],
-              ['male', 'Men'],
-              ['other', 'All styles']
-            ].map(([value, label], index) => (
-              <label key={value}>
-                <input type="radio" name="genderPreference" value={value} required={index === 0} />
-                <span>{label}</span>
+              <fieldset className="signup-gender-group">
+                <legend>Style preference</legend>
+                {[
+                  ['female', 'Women'],
+                  ['male', 'Men'],
+                  ['other', 'All styles']
+                ].map(([value, label], index) => (
+                  <label key={value}>
+                    <input type="radio" name="genderPreference" value={value} required={index === 0} />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </fieldset>
+
+              <div className="signup-reference-photo-row">
+                <label className={`signup-reference-photo-choice signup-upload-box ${bodyPhotoPreview ? 'has-preview' : ''}`}>
+                  <input name="bodyPhoto" type="file" accept={BODY_PHOTO_ACCEPT} onChange={previewBodyPhoto} />
+                  {bodyPhotoPreview ? <img className="upload-preview" src={bodyPhotoPreview} alt="Uploaded model profile preview" /> : <><strong>Upload a photo</strong><small>Clear selfie or full-body image</small></>}
+                </label>
+                <button className="signup-reference-photo-choice signup-camera-button" type="button" onClick={() => bodyPhotoCameraRef.current?.click()}><strong>Take a photo</strong><small>Use your camera</small></button>
+                <input ref={bodyPhotoCameraRef} className="camera-input" type="file" accept={BODY_PHOTO_ACCEPT} capture="user" onChange={previewBodyPhoto} />
+                <input type="hidden" name="profilePhotoMode" value={profilePhotoMode} />
+              </div>
+
+              {bodyPhotoPreview && (
+                <div className="signup-reference-profile-mode" role="radiogroup" aria-label="Choose how to use your uploaded photo">
+                  <button type="button" className={profilePhotoMode === 'exact' ? 'active' : ''} onClick={() => setProfilePhotoMode('exact')} aria-pressed={profilePhotoMode === 'exact'}>Use this exact photo</button>
+                  <button type="button" className={profilePhotoMode === 'ai-full-body' ? 'active' : ''} onClick={() => setProfilePhotoMode('ai-full-body')} aria-pressed={profilePhotoMode === 'ai-full-body'}>AI full body profile</button>
+                </div>
+              )}
+
+              <label className="signup-terms">
+                <input name="terms" type="checkbox" required />
+                <span>I agree to FitLook creating an AI try-on profile from my uploaded photo.</span>
               </label>
-            ))}
-          </fieldset>
-
-          <div className="signup-reference-photo-row">
-            <label className={`signup-reference-photo-choice signup-upload-box ${bodyPhotoPreview ? 'has-preview' : ''}`}>
-              <input name="bodyPhoto" type="file" accept={BODY_PHOTO_ACCEPT} onChange={previewBodyPhoto} />
-              {bodyPhotoPreview ? <img className="upload-preview" src={bodyPhotoPreview} alt="Uploaded model profile preview" /> : <><strong>Upload a photo</strong><small>Clear selfie or full-body image</small></>}
-            </label>
-            <button className="signup-reference-photo-choice signup-camera-button" type="button" onClick={() => bodyPhotoCameraRef.current?.click()}><strong>Take a photo</strong><small>Use your camera</small></button>
-            <input ref={bodyPhotoCameraRef} className="camera-input" type="file" accept={BODY_PHOTO_ACCEPT} capture="user" onChange={previewBodyPhoto} />
-            <input type="hidden" name="profilePhotoMode" value={profilePhotoMode} />
-          </div>
-
-          {bodyPhotoPreview && (
-            <div className="signup-reference-profile-mode" role="radiogroup" aria-label="Choose how to use your uploaded photo">
-              <button type="button" className={profilePhotoMode === 'exact' ? 'active' : ''} onClick={() => setProfilePhotoMode('exact')} aria-pressed={profilePhotoMode === 'exact'}>Use this exact photo</button>
-              <button type="button" className={profilePhotoMode === 'ai-full-body' ? 'active' : ''} onClick={() => setProfilePhotoMode('ai-full-body')} aria-pressed={profilePhotoMode === 'ai-full-body'}>AI full body profile</button>
-            </div>
+              <button className="signup-submit-button" type="submit" disabled={isSubmitting} aria-busy={isSubmitting}>{isSubmitting ? 'Creating account...' : 'Sign up'}</button>
+            </>
           )}
 
-          <label className="signup-terms">
-            <input name="terms" type="checkbox" required />
-            <span>I agree to FitLook creating an AI try-on profile from my uploaded photo.</span>
-          </label>
-          {capsLock && <p className="auth-caps-lock" role="status">Caps Lock is on</p>}
-          <button className="signup-submit-button" type="submit" disabled={isSubmitting} aria-busy={isSubmitting}>{isSubmitting ? 'Creating account...' : 'Sign up'}</button>
-          {message && <p className={`signup-message form-message ${message === 'Creating account...' ? '' : 'error-message'}`}>{message}</p>}
+          {message && <p className={`signup-message form-message ${/OTP sent|Creating account/.test(message) ? '' : 'error-message'}`}>{message}</p>}
           <p className="signup-switch">Already have an account? <a href="/login">Log in</a></p>
         </form>
 

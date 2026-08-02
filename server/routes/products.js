@@ -94,6 +94,15 @@ function cleanUrl(value) {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
+function highResolutionAmazonImageUrl(value) {
+  const url = cleanUrl(value);
+  if (!url || !/(?:m\.media-amazon\.(?:com|in)|images-(?:na|eu|fe)\.ssl-images-amazon\.com)\/images\//i.test(url)) return url;
+  if (/\._[^.]*_\.(?=(?:avif|jpe?g|png|webp)(?:[?#]|$))/i.test(url)) {
+    return url.replace(/\._[^.]*_\.(?=(?:avif|jpe?g|png|webp)(?:[?#]|$))/i, '._AC_SL1500_.');
+  }
+  return url.replace(/\.((?:avif|jpe?g|png|webp)(?:[?#].*)?)$/i, '._AC_SL1500_.$1');
+}
+
 function decodeHtml(value = '') {
   return String(value)
     .replace(/&amp;/g, '&')
@@ -287,10 +296,17 @@ function getDynamicImage(html) {
     getAttributeFromId(html, 'landingImage', ['data-a-dynamic-image', 'data-old-hires', 'src']) ||
     getAttributeFromId(html, 'imgTagWrapperId', ['data-a-dynamic-image', 'data-old-hires', 'src']);
   if (!raw) return '';
-  if (/^https?:\/\//i.test(raw) || raw.startsWith('//')) return raw;
+  if (/^https?:\/\//i.test(raw) || raw.startsWith('//')) return highResolutionAmazonImageUrl(raw);
   try {
     const images = JSON.parse(decodeHtml(raw));
-    return Object.keys(images).find((url) => /^https?:\/\//i.test(url)) || '';
+    const [bestUrl = ''] = Object.entries(images)
+      .filter(([url]) => /^https?:\/\//i.test(url))
+      .sort(([, a], [, b]) => {
+        const [aw = 0, ah = 0] = Array.isArray(a) ? a : [];
+        const [bw = 0, bh = 0] = Array.isArray(b) ? b : [];
+        return (Number(bw) * Number(bh)) - (Number(aw) * Number(ah));
+      })[0] || [];
+    return highResolutionAmazonImageUrl(bestUrl) || '';
   } catch {
     return '';
   }
@@ -389,8 +405,8 @@ function parseEmbeddedProduct(html) {
 function firstImage(value) {
   const image = toArray(value)[0];
   if (!image) return '';
-  if (typeof image === 'string') return image;
-  return image.url || image.contentUrl || '';
+  if (typeof image === 'string') return highResolutionAmazonImageUrl(image);
+  return highResolutionAmazonImageUrl(image.url || image.contentUrl) || '';
 }
 
 function productOffer(product) {
@@ -772,7 +788,7 @@ function extractAmazonSearchResults(html, baseUrl) {
       link: productUrl,
       price: pricesFromAmazonMarkup(region)[0],
       currency: visibleCurrency(region, baseUrl),
-      remoteImageUrl: absoluteUrl(image, baseUrl)
+      remoteImageUrl: highResolutionAmazonImageUrl(absoluteUrl(image, baseUrl))
     });
   }
   return results;

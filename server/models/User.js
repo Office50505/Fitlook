@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true, required: true },
     email: { type: String, trim: true, lowercase: true, unique: true, required: true },
+    phone: { type: String, trim: true, unique: true, sparse: true },
     username: {
       type: String,
       trim: true,
@@ -60,6 +61,7 @@ userSchema.methods.toClient = function toClient() {
     id: this._id.toString(),
     name: this.name,
     email: this.email,
+    phone: this.phone,
     username: this.username,
     genderPreference: this.genderPreference || 'other',
     tokens: this.tokens,
