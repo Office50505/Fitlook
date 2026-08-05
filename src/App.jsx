@@ -521,6 +521,10 @@ function currentSearchValue() {
   return new URLSearchParams(window.location.search).get('q') || '';
 }
 
+function isWardrobeRoomPreview(value = '') {
+  return /(?:wardrobe-room|wardrobe-stage-room)/i.test(String(value || ''));
+}
+
 function readRecentSearches() {
   try {
     const stored = JSON.parse(localStorage.getItem('fitlook_recent_searches') || '[]');
@@ -3051,8 +3055,10 @@ function ClosetPage({ user, setUser }) {
     generateOutfit(card.items.map((item) => item.id).filter(Boolean), { title: card.title, occasion: card.title });
   };
 
-  const showingGeneratedOutfit = stagePreviewMode === 'outfit' && Boolean(latestOutfit?.imageUrl);
-  const modelPreview = showingGeneratedOutfit ? latestOutfit.imageUrl : user.bodyPhotoUrl || latestOutfit?.imageUrl || '';
+  const latestOutfitImage = isWardrobeRoomPreview(latestOutfit?.imageUrl) ? '' : latestOutfit?.imageUrl || '';
+  const bodyPhotoPreview = isWardrobeRoomPreview(user.bodyPhotoUrl) ? '' : user.bodyPhotoUrl || '';
+  const showingGeneratedOutfit = stagePreviewMode === 'outfit' && Boolean(latestOutfitImage);
+  const modelPreview = showingGeneratedOutfit ? latestOutfitImage : bodyPhotoPreview;
   const previewTitle = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Model';
   const previewAlt = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
   const mobileWardrobeSections = wardrobeSections.filter((section) => ['Tops', 'Bottoms'].includes(section.label));
