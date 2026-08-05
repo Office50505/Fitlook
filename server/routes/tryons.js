@@ -14,6 +14,7 @@ import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility } from '../utils/genderPreference.js';
 import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
+import { readStoredFile, saveBuffer, storedFileSignature } from '../utils/storage.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -412,19 +413,17 @@ async function cachedDataUri({ cache, key, timer, label, load }) {
 
 async function dataUriFromUpload(image, label, timer, options = {}) {
   if (!image?.path) throw new Error(`${label} image is missing`);
-  const localPath = safeLocalPath(image.path);
   const mimetype = image.mimetype || 'image/jpeg';
-  const stats = await fs.stat(localPath);
   const minWidth = Number(options.minWidth || 0);
   const minHeight = Number(options.minHeight || 0);
-  const key = `local:${localPath}:${stats.size}:${stats.mtimeMs}:${mimetype}:${minWidth || ''}x${minHeight || ''}`;
+  const key = `stored:${await storedFileSignature(image)}:${mimetype}:${minWidth || ''}x${minHeight || ''}`;
   return cachedDataUri({
     cache: localImageDataUriCache,
     key,
     timer,
     label,
     load: async () => {
-      const bytes = await fs.readFile(localPath);
+      const { buffer: bytes } = await readStoredFile(image, label);
       const normalized = await normalizeAvifImage({
         bytes,
         mimetype,
@@ -490,8 +489,7 @@ async function dataUriFromProduct(product, timer, options = {}) {
 
 async function filePartFromUpload(image, label, timer) {
   if (!image?.path) throw new Error(`${label} image is missing`);
-  const localPath = safeLocalPath(image.path);
-  const bytes = await fs.readFile(localPath);
+  const { buffer: bytes } = await readStoredFile(image, label);
   const mimetype = image.mimetype || 'image/jpeg';
   const normalized = await normalizeAvifImage({
     bytes,
@@ -962,8 +960,7 @@ function readableVideoError(value, fallback = 'Could not generate video try-on')
 
 async function videoFirstFrameDataUri(image, label, timer) {
   if (!image?.path) throw new Error(`${label} image is missing`);
-  const localPath = safeLocalPath(image.path);
-  const bytes = await fs.readFile(localPath);
+  const { buffer: bytes } = await readStoredFile(image, label);
   const normalized = await normalizeAvifImage({
     bytes,
     mimetype: image.mimetype || 'image/jpeg',
@@ -1152,15 +1149,12 @@ async function callFalImageEdit({ user, product, garmentDataUri, prompt, timer }
 
 async function saveUserCacheFile({ user, bytes, filename, mimetype }) {
   const userId = user._id.toString();
-  const storedPath = path.posix.join('uploads', 'users', userId, 'tryons', filename);
-  await fs.mkdir(path.join(rootDir, 'uploads', 'users', userId, 'tryons'), { recursive: true });
-  await fs.writeFile(path.join(rootDir, storedPath), bytes);
-  return {
+  return saveBuffer({
+    key: path.posix.join('users', userId, 'tryons', filename),
+    buffer: bytes,
     filename,
-    path: storedPath,
-    mimetype,
-    size: bytes.length
-  };
+    mimetype
+  });
 }
 
 async function isolateGeneratedImage(user, image, timer) {
@@ -1322,17 +1316,15 @@ async function normalizeMemoryImageFile(file, label, timer) {
 
 async function saveUploadFile(file, prefix, user) {
   const filename = `${prefix}-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(file.mimetype)}`;
-  const storedPath = user
-    ? path.posix.join('uploads', 'users', user._id.toString(), 'garments', filename)
-    : path.posix.join('uploads', filename);
-  await fs.mkdir(path.dirname(path.join(rootDir, storedPath)), { recursive: true });
-  await fs.writeFile(path.join(rootDir, storedPath), file.buffer);
-  return {
+  const key = user
+    ? path.posix.join('users', user._id.toString(), 'garments', filename)
+    : filename;
+  return saveBuffer({
+    key,
+    buffer: file.buffer,
     filename,
-    path: storedPath,
     mimetype: file.mimetype,
-    size: file.size
-  };
+  });
 }
 
 async function saveGeneratedCustomTryOn({ user, garmentFile, timer }) {

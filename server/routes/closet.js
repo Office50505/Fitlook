@@ -10,6 +10,7 @@ import ClosetOutfit from '../models/ClosetOutfit.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
 import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
+import { deleteStoredFile, readStoredFile, saveBuffer } from '../utils/storage.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -383,15 +384,17 @@ async function analyzeClosetItemImage(file, timer) {
 
 async function saveUploadFile(file, prefix, user, folder = 'closet') {
   const filename = `${prefix}-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(file.mimetype)}`;
-  const storedPath = path.posix.join('uploads', 'users', user._id.toString(), folder, filename);
-  await fs.mkdir(path.dirname(path.join(rootDir, storedPath)), { recursive: true });
-  await fs.writeFile(path.join(rootDir, storedPath), file.buffer);
-  return { filename, path: storedPath, mimetype: file.mimetype, size: file.size || file.buffer.length };
+  return saveBuffer({
+    key: path.posix.join('users', user._id.toString(), folder, filename),
+    buffer: file.buffer,
+    filename,
+    mimetype: file.mimetype
+  });
 }
 
 async function greyStudioOutfitFromTransparent(transparentImage, user, timer) {
   if (!transparentImage?.path) return null;
-  const subjectBytes = await fs.readFile(safeLocalPath(transparentImage.path));
+  const { buffer: subjectBytes } = await readStoredFile(transparentImage, 'transparent outfit');
   const metadata = await sharp(subjectBytes, { failOn: 'none' }).metadata();
   const width = Number(metadata.width || 0);
   const height = Number(metadata.height || 0);
@@ -415,7 +418,7 @@ async function greyStudioOutfitFromTransparent(transparentImage, user, timer) {
 
 async function filePartFromStoredImage(image, label, timer) {
   if (!image?.path) throw new Error(`${label} image is missing`);
-  const bytes = await fs.readFile(safeLocalPath(image.path));
+  const { buffer: bytes } = await readStoredFile(image, label);
   const normalized = await sharp(bytes).rotate().jpeg({ quality: 90 }).toBuffer();
   timer?.mark(`${label} file prepared`, { kb: Math.round(normalized.length / 1024) });
   return {
@@ -479,7 +482,7 @@ async function combinedGarmentFromItems(items, timer) {
   const composites = [];
   for (let index = 0; index < slots.length; index += 1) {
     const item = slots[index];
-    const bytes = await fs.readFile(safeLocalPath(item.image.path));
+    const { buffer: bytes } = await readStoredFile(item.image, 'closet item');
     const thumb = await sharp(bytes)
       .rotate()
       .resize({ width: 820, height: Math.max(160, slotHeight - 44), fit: 'contain', background: '#fffdf8' })
@@ -780,7 +783,7 @@ router.patch('/items/:id', requireUser, async (req, res) => {
 router.delete('/items/:id', requireUser, async (req, res) => {
   const item = await ClosetItem.findOneAndDelete({ _id: req.params.id, user: req.user._id });
   if (!item) return res.status(404).json({ message: 'Closet item not found' });
-  if (item.image?.path) fs.unlink(safeLocalPath(item.image.path)).catch(() => {});
+  if (item.image?.path) deleteStoredFile(item.image).catch(() => {});
   res.json({ ok: true });
 });
 

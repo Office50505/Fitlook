@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 const outfitImageSchema = {
   filename: String,
   path: String,
+  url: String,
+  storage: { type: String, trim: true },
   mimetype: String,
   size: Number
 };
@@ -91,9 +93,9 @@ closetOutfitSchema.methods.toClient = function toClient(itemsById = new Map()) {
     quality: this.quality,
     tokenCost: this.tokenCost,
     favorite: Boolean(this.favorite),
-    garmentUrl: this.garment?.path ? `/${this.garment.path}` : null,
-    imageUrl: this.image?.path ? `/${this.image.path}` : null,
-    transparentImageUrl: this.transparentImage?.path ? `/${this.transparentImage.path}` : (this.imageProcessing?.transparentImageUrl || null),
+    garmentUrl: this.garment?.url || (this.garment?.path ? `/${this.garment.path}` : null),
+    imageUrl: this.image?.url || (this.image?.path ? `/${this.image.path}` : null),
+    transparentImageUrl: this.transparentImage?.url || (this.transparentImage?.path ? `/${this.transparentImage.path}` : (this.imageProcessing?.transparentImageUrl || null)),
     imageProcessing: this.imageProcessing || null,
     createdAt: this.createdAt
   };

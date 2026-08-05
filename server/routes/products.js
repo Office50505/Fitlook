@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs/promises';
 import multer from 'multer';
 import path from 'node:path';
 import Product, { productToClient } from '../models/Product.js';
@@ -10,6 +11,7 @@ import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility, genderedSearchQuery, genderPreferenceForQuery } from '../utils/genderPreference.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
 import { requireAdmin } from '../utils/adminAccess.js';
+import { saveBuffer, useBunny } from '../utils/storage.js';
 
 const router = express.Router();
 const readCacheTtlMs = Number(process.env.PRODUCT_READ_CACHE_TTL_MS || 5 * 60 * 1000);
@@ -1171,12 +1173,13 @@ router.post('/', requireAdmin, upload.single('image'), async (req, res) => {
 
   let image;
   if (req.file) {
-    image = {
-      filename: req.file.filename,
-      path: `uploads/${req.file.filename}`,
+    image = await saveBuffer({
+      key: req.file.filename,
+      buffer: await fs.readFile(req.file.path),
       mimetype: req.file.mimetype,
-      size: req.file.size
-    };
+      filename: req.file.filename
+    });
+    if (useBunny()) await fs.unlink(req.file.path).catch(() => {});
   } else if (req.body.remoteImageUrl) {
     image = { remoteUrl: cleanUrl(req.body.remoteImageUrl) };
   }

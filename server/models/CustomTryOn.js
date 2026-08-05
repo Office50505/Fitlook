@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 const tryOnImageSchema = {
   filename: String,
   path: String,
+  url: String,
+  storage: { type: String, trim: true },
   mimetype: String,
   size: Number
 };
@@ -54,6 +56,8 @@ const customTryOnSchema = new mongoose.Schema(
     garment: {
       filename: String,
       path: String,
+      url: String,
+      storage: { type: String, trim: true },
       mimetype: String,
       size: Number
     },
@@ -64,13 +68,15 @@ const customTryOnSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+customTryOnSchema.index({ user: 1, createdAt: -1 });
+
 customTryOnSchema.methods.toClient = function toClient() {
   return {
     id: this._id.toString(),
-    imageUrl: this.image?.path ? `/${this.image.path}` : null,
-    transparentImageUrl: this.transparentImage?.path ? `/${this.transparentImage.path}` : (this.imageProcessing?.transparentImageUrl || null),
+    imageUrl: this.image?.url || (this.image?.path ? `/${this.image.path}` : null),
+    transparentImageUrl: this.transparentImage?.url || (this.transparentImage?.path ? `/${this.transparentImage.path}` : (this.imageProcessing?.transparentImageUrl || null)),
     imageProcessing: this.imageProcessing || null,
-    garmentUrl: this.garment?.path ? `/${this.garment.path}` : null,
+    garmentUrl: this.garment?.url || (this.garment?.path ? `/${this.garment.path}` : null),
     provider: this.provider,
     model: this.model,
     quality: this.quality,

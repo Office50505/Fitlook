@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 const closetImageSchema = {
   filename: String,
   path: String,
+  url: String,
+  storage: { type: String, trim: true },
   mimetype: String,
   size: Number
 };
@@ -73,7 +75,7 @@ closetItemSchema.methods.toClient = function toClient() {
     favorite: Boolean(this.favorite),
     wearCount: this.wearCount || 0,
     lastWornAt: this.lastWornAt || null,
-    imageUrl: this.image?.path ? `/${this.image.path}` : null,
+    imageUrl: this.image?.url || (this.image?.path ? `/${this.image.path}` : null),
     visualProfile: this.visualProfile || null,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt

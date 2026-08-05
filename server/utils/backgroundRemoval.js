@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { publicUrlForKey, publicUrlForStoredFile, readStoredFile, saveBuffer, useBunny } from './storage.js';
 
 const PROCESSING_VERSION = 'subject-isolation-v4';
 const DEFAULT_PROVIDER = 'semantic-rembg';
@@ -27,7 +28,7 @@ function sha256(value) {
 }
 
 function publicUrlForPath(storedPath = '') {
-  return storedPath ? `/${storedPath.replace(/^\/+/, '')}` : '';
+  return storedPath ? publicUrlForKey(storedPath) : '';
 }
 
 function debugMaskPreviewFor(folder) {
@@ -150,17 +151,18 @@ async function imageBufferFromInput({ rootDir, imageUrl, imageBuffer, storedImag
   }
 
   if (storedImage?.path) {
-    const bytes = await fs.readFile(safeLocalPath(rootDir, storedImage.path));
-    logIsolation('source local file loaded', { sourceImageUrl: publicUrlForPath(storedImage.path), bytes: bytes.length });
-    return { bytes, sourceLabel: storedImage.path, sourceImageUrl: publicUrlForPath(storedImage.path) };
+    const { buffer: bytes } = await readStoredFile(storedImage, 'source image');
+    const sourceImageUrl = publicUrlForStoredFile(storedImage) || publicUrlForPath(storedImage.path);
+    logIsolation('source stored file loaded', { sourceImageUrl, bytes: bytes.length });
+    return { bytes, sourceLabel: storedImage.path, sourceImageUrl };
   }
 
   const source = String(imageUrl || '').trim();
   if (!source) throw new Error('Image source is missing');
   if (source.startsWith('/uploads/')) {
     const storedPath = source.replace(/^\/+/, '');
-    const bytes = await fs.readFile(safeLocalPath(rootDir, storedPath));
-    logIsolation('source local url loaded', { sourceImageUrl: source, bytes: bytes.length });
+    const { buffer: bytes } = await readStoredFile(storedPath, 'source image');
+    logIsolation('source stored url loaded', { sourceImageUrl: publicUrlForPath(storedPath), bytes: bytes.length });
     return { bytes, sourceLabel: storedPath, sourceImageUrl: source };
   }
 
@@ -866,6 +868,7 @@ export async function isolateSubjectAsset({ rootDir, user, imageUrl, imageBuffer
     : path.posix.join('uploads', 'transparent-cache');
   const filename = `subject-${cacheKey.slice(0, 24)}${extensionFor('image/png')}`;
   const storedPath = path.posix.join(folder, filename);
+  const storageRef = { path: storedPath, storage: useBunny() ? 'bunny' : 'local' };
   const absolutePath = path.join(rootDir, storedPath);
   const debugFolder = process.env.NODE_ENV === 'production' ? '' : path.posix.join(folder, 'debug', cacheKey.slice(0, 24));
   const debugAbsoluteDir = debugFolder ? path.join(rootDir, debugFolder) : '';
@@ -883,10 +886,10 @@ export async function isolateSubjectAsset({ rootDir, user, imageUrl, imageBuffer
   });
 
   try {
-    const cachedStat = await fs.stat(absolutePath);
-    const cachedMeta = await metadataForBuffer(await fs.readFile(absolutePath));
-    const cachedAlpha = await alphaStatsForBuffer(await fs.readFile(absolutePath));
-    const cachedQuality = await analyzeCutoutQuality(await fs.readFile(absolutePath));
+    const { buffer: cachedBytes } = await readStoredFile(storageRef, 'transparent cache');
+    const cachedMeta = await metadataForBuffer(cachedBytes);
+    const cachedAlpha = await alphaStatsForBuffer(cachedBytes);
+    const cachedQuality = await analyzeCutoutQuality(cachedBytes);
     if (!cachedAlpha.hasTransparentPixels) throw new Error('Cached transparent image did not contain alpha');
     assertCutoutQuality(cachedQuality);
     logIsolation('cache hit', {
@@ -902,8 +905,10 @@ export async function isolateSubjectAsset({ rootDir, user, imageUrl, imageBuffer
       image: {
         filename,
         path: storedPath,
+        url: useBunny() ? publicUrlForPath(storedPath) : undefined,
+        storage: useBunny() ? 'bunny' : 'local',
         mimetype: 'image/png',
-        size: cachedStat.size
+        size: cachedBytes.length
       },
       metadata: {
         sourceImageUrl: source.sourceImageUrl,
@@ -947,25 +952,25 @@ export async function isolateSubjectAsset({ rootDir, user, imageUrl, imageBuffer
       mimeType: storedImage?.mimetype || '',
       debugDir: debugAbsoluteDir
     });
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, result.outputBuffer);
-    const written = await fs.stat(absolutePath);
+    const written = await saveBuffer({
+      key: storedPath,
+      buffer: result.outputBuffer,
+      mimetype: result.mimeType,
+      filename
+    });
     logIsolation('storage write completed', {
       outputPath: storedPath,
       bytes: written.size,
-      finalTransparentUrl: publicUrlForPath(storedPath)
+      finalTransparentUrl: publicUrlForStoredFile(written)
     });
     return {
       cached: false,
       image: {
-        filename,
-        path: storedPath,
-        mimetype: result.mimeType,
-        size: result.outputBuffer.length
+        ...written
       },
       metadata: {
         sourceImageUrl: source.sourceImageUrl,
-        transparentImageUrl: publicUrlForPath(storedPath),
+        transparentImageUrl: publicUrlForStoredFile(written),
         processingStatus: 'completed',
         processingProvider: result.provider,
         processingVersion: PROCESSING_VERSION,

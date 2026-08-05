@@ -56,6 +56,8 @@ const productSchema = new mongoose.Schema(
     image: {
       filename: String,
       path: String,
+      url: String,
+      storage: { type: String, trim: true },
       remoteUrl: String,
       mimetype: String,
       size: Number
@@ -103,7 +105,7 @@ function productToClient(product) {
     tags: product.tags?.map(decodeHtml),
     colors: product.colors,
     tryOnModel: product.tryOnModel === LEGACY_UNRESTRICTED_MODEL ? 'wan-v2.6-image-to-image' : product.tryOnModel || 'gpt-image-2',
-    imageUrl: product.image?.path ? `/${product.image.path}` : product.image?.remoteUrl || null,
+    imageUrl: product.image?.url || (product.image?.path ? `/${product.image.path}` : product.image?.remoteUrl || null),
     isFeatured: product.isFeatured,
     isNewArrival: product.isNewArrival,
     createdAt: product.createdAt

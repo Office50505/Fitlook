@@ -13,10 +13,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test",
+    "db:create-indexes": "node scripts/create-indexes.js",
+    "storage:migrate:bunny": "node scripts/migrate-uploads-to-bunny.js",
+    "storage:migrate:bunny:apply": "node scripts/migrate-uploads-to-bunny.js --apply",
     "load:backend": "k6 run tests/load/backend-load.k6.js",
     "load:backend:read": "LOAD_PROFILE=read k6 run tests/load/backend-load.k6.js",
     "load:backend:auth": "LOAD_PROFILE=auth k6 run tests/load/backend-load.k6.js",
-    "load:backend:write": "LOAD_PROFILE=write k6 run tests/load/backend-load.k6.js"
+    "load:backend:write": "LOAD_PROFILE=write k6 run tests/load/backend-load.k6.js",
+    "load:aws:read": "BASE_URL=https://fitlook.in k6 run tests/load/backend-public-read.k6.js"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",

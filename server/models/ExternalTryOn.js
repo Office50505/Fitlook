@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 const tryOnImageSchema = {
   filename: String,
   path: String,
+  url: String,
+  storage: { type: String, trim: true },
   mimetype: String,
   size: Number
 };
@@ -70,8 +72,8 @@ externalTryOnSchema.methods.toClient = function toClient() {
   return {
     id: this._id.toString(),
     sourceUrl: this.sourceUrl,
-    imageUrl: this.image?.path ? `/${this.image.path}` : null,
-    transparentImageUrl: this.transparentImage?.path ? `/${this.transparentImage.path}` : (this.imageProcessing?.transparentImageUrl || null),
+    imageUrl: this.image?.url || (this.image?.path ? `/${this.image.path}` : null),
+    transparentImageUrl: this.transparentImage?.url || (this.transparentImage?.path ? `/${this.transparentImage.path}` : (this.imageProcessing?.transparentImageUrl || null)),
     imageProcessing: this.imageProcessing || null,
     provider: this.provider,
     model: this.model,
