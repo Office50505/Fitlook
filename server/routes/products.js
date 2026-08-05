@@ -12,7 +12,7 @@ import { recordAdminAudit } from '../utils/adminAudit.js';
 import { requireAdmin } from '../utils/adminAccess.js';
 
 const router = express.Router();
-const readCacheTtlMs = Number(process.env.PRODUCT_READ_CACHE_TTL_MS || 30 * 1000);
+const readCacheTtlMs = Number(process.env.PRODUCT_READ_CACHE_TTL_MS || 5 * 60 * 1000);
 const productListCache = createHybridCache('products:list', { ttlMs: readCacheTtlMs, maxItems: 150 });
 const productDetailCache = createHybridCache('products:detail', { ttlMs: readCacheTtlMs, maxItems: 300 });
 
@@ -1011,49 +1011,47 @@ function applyProductUpdate(product, body = {}) {
 
 router.get('/', async (req, res) => {
   const cacheKey = req.originalUrl;
-  const cached = await productListCache.get(cacheKey);
-  if (cached) return res.json(cached);
+  const payload = await productListCache.remember(cacheKey, async () => {
+    const { q, tag, category, brand, gender, featured, newArrival, sort } = req.query;
+    const limit = Math.min(Number(req.query.limit) || 48, 96);
+    const botAmazonRecord = { badge: 'Amazon', $or: [{ sourceUrl: /amazon\.[a-z.]+\/dp\//i }, { affiliateLink: /amazon\.[a-z.]+\/dp\//i }] };
+    const filter = { isActive: true, $nor: [botAmazonRecord] };
 
-  const { q, tag, category, brand, gender, featured, newArrival, sort } = req.query;
-  const limit = Math.min(Number(req.query.limit) || 48, 96);
-  const botAmazonRecord = { badge: 'Amazon', $or: [{ sourceUrl: /amazon\.[a-z.]+\/dp\//i }, { affiliateLink: /amazon\.[a-z.]+\/dp\//i }] };
-  const filter = { isActive: true, $nor: [botAmazonRecord] };
+    if (q) filter.$text = { $search: q };
+    if (tag) filter.tags = new RegExp(`^${escapeRegExp(String(tag).trim())}$`, 'i');
+    if (category) filter.category = new RegExp(`^${String(category).trim()}$`, 'i');
+    if (brand) filter.brand = new RegExp(`^${String(brand).trim()}$`, 'i');
+    if (gender) filter.gender = new RegExp(`^${String(gender).trim()}$`, 'i');
+    if (featured === 'true') filter.isFeatured = true;
+    if (newArrival === 'true') filter.isNewArrival = true;
 
-  if (q) filter.$text = { $search: q };
-  if (tag) filter.tags = new RegExp(`^${escapeRegExp(String(tag).trim())}$`, 'i');
-  if (category) filter.category = new RegExp(`^${String(category).trim()}$`, 'i');
-  if (brand) filter.brand = new RegExp(`^${String(brand).trim()}$`, 'i');
-  if (gender) filter.gender = new RegExp(`^${String(gender).trim()}$`, 'i');
-  if (featured === 'true') filter.isFeatured = true;
-  if (newArrival === 'true') filter.isNewArrival = true;
+    const projection = q ? { score: { $meta: 'textScore' } } : {};
+    const query = Product.find(filter, projection).limit(limit).lean();
+    if (q && !sort) query.sort({ score: { $meta: 'textScore' }, createdAt: -1 });
+    else query.sort(sortFor(sort));
 
-  const projection = q ? { score: { $meta: 'textScore' } } : {};
-  const query = Product.find(filter, projection).limit(limit).lean();
-  if (q && !sort) query.sort({ score: { $meta: 'textScore' }, createdAt: -1 });
-  else query.sort(sortFor(sort));
+    const [products, total, brands, categories, categoryCounts] = await Promise.all([
+      query,
+      Product.countDocuments(filter),
+      Product.distinct('brand', { isActive: true, $nor: [botAmazonRecord] }),
+      Product.distinct('category', { isActive: true, $nor: [botAmazonRecord] }),
+      Product.aggregate([
+        { $match: filter },
+        { $group: { _id: '$category', count: { $sum: 1 } } },
+        { $sort: { count: -1, _id: 1 } }
+      ])
+    ]);
 
-  const [products, total, brands, categories, categoryCounts] = await Promise.all([
-    query,
-    Product.countDocuments(filter),
-    Product.distinct('brand', { isActive: true, $nor: [botAmazonRecord] }),
-    Product.distinct('category', { isActive: true, $nor: [botAmazonRecord] }),
-    Product.aggregate([
-      { $match: filter },
-      { $group: { _id: '$category', count: { $sum: 1 } } },
-      { $sort: { count: -1, _id: 1 } }
-    ])
-  ]);
-
-  const payload = {
-    products: products.map(productToClient),
-    total,
-    facets: {
-      brands: brands.filter(Boolean).sort(),
-      categories: categories.filter(Boolean).sort(),
-      categoryCounts: categoryCounts.map((item) => ({ category: item._id || 'uncategorized', count: item.count }))
-    }
-  };
-  await productListCache.set(cacheKey, payload);
+    return {
+      products: products.map(productToClient),
+      total,
+      facets: {
+        brands: brands.filter(Boolean).sort(),
+        categories: categories.filter(Boolean).sort(),
+        categoryCounts: categoryCounts.map((item) => ({ category: item._id || 'uncategorized', count: item.count }))
+      }
+    };
+  });
   res.json(payload);
 });
 
@@ -1141,12 +1139,15 @@ router.post('/recategorize', requireAdmin, async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const cached = await productDetailCache.get(req.params.id);
-    if (cached) return res.json(cached);
-    const product = await Product.findOne({ _id: req.params.id, isActive: true }).lean();
-    if (!product) return res.status(404).json({ message: 'Product not found' });
-    const payload = { product: productToClient(product) };
-    await productDetailCache.set(req.params.id, payload);
+    const payload = await productDetailCache.remember(req.params.id, async () => {
+      const product = await Product.findOne({ _id: req.params.id, isActive: true }).lean();
+      if (!product) {
+        const error = new Error('Product not found');
+        error.statusCode = 404;
+        throw error;
+      }
+      return { product: productToClient(product) };
+    });
     res.json(payload);
   } catch {
     res.status(404).json({ message: 'Product not found' });

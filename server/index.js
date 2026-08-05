@@ -30,8 +30,14 @@ function allowedOrigins() {
     .filter(Boolean);
 }
 
+function shouldAllowLocalDevOrigins() {
+  const value = String(process.env.ALLOW_LOCAL_ORIGINS || '').toLowerCase();
+  if (['1', 'true', 'yes'].includes(value)) return true;
+  return process.env.NODE_ENV !== 'production';
+}
+
 function isLocalDevOrigin(origin) {
-  if (process.env.NODE_ENV === 'production') return false;
+  if (!shouldAllowLocalDevOrigins()) return false;
   try {
     const url = new URL(origin);
     if (url.protocol !== 'http:') return false;

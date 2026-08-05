@@ -8,7 +8,7 @@ import { createHybridCache } from '../utils/cache.js';
 import { requireAdmin } from '../utils/adminAccess.js';
 
 const router = express.Router();
-const recommendationCacheTtlMs = Number(process.env.RECOMMENDATION_READ_CACHE_TTL_MS || 30 * 1000);
+const recommendationCacheTtlMs = Number(process.env.RECOMMENDATION_READ_CACHE_TTL_MS || 5 * 60 * 1000);
 const productPoolCache = createHybridCache('recommendations:product-pool', { ttlMs: recommendationCacheTtlMs, maxItems: 20 });
 const similarProductsCache = createHybridCache('recommendations:similar', { ttlMs: recommendationCacheTtlMs, maxItems: 300 });
 
@@ -247,20 +247,26 @@ router.get('/similar/:productId', async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.productId)) return res.status(404).json({ message: 'Product not found' });
   const limit = Math.min(Number(req.query.limit) || 4, 12);
   const cacheKey = `${req.params.productId}:${limit}`;
-  const cached = await similarProductsCache.get(cacheKey);
-  if (cached) return res.json(cached);
-
-  const base = await Product.findOne({ _id: req.params.productId, isActive: true }).lean();
-  if (!base) return res.status(404).json({ message: 'Product not found' });
-  const products = await Product.find(catalogFilter({ _id: { $ne: base._id } })).limit(160).lean();
-  const ranked = products
-    .map((product) => ({ product, score: similarScore(base, product) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map(({ product, score }) => ({ ...productToClient(product), recommendationScore: Math.round(score * 100) / 100 }));
-  const payload = { products: ranked };
-  await similarProductsCache.set(cacheKey, payload);
-  res.json(payload);
+  try {
+    const payload = await similarProductsCache.remember(cacheKey, async () => {
+      const base = await Product.findOne({ _id: req.params.productId, isActive: true }).lean();
+      if (!base) {
+        const error = new Error('Product not found');
+        error.statusCode = 404;
+        throw error;
+      }
+      const products = await Product.find(catalogFilter({ _id: { $ne: base._id } })).limit(160).lean();
+      const ranked = products
+        .map((product) => ({ product, score: similarScore(base, product) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map(({ product, score }) => ({ ...productToClient(product), recommendationScore: Math.round(score * 100) / 100 }));
+      return { products: ranked };
+    });
+    res.json(payload);
+  } catch (error) {
+    res.status(error?.statusCode || 500).json({ message: error?.message || 'Could not load similar products' });
+  }
 });
 
 export default router;

@@ -63,15 +63,11 @@ These are backend-only changes. They do not change frontend UI behavior.
 
 ## Recommended Next Backend Steps
 
-1. Re-run the full test with the updated k6 endpoint/profile instrumentation.
+1. Add endpoint-level k6 summary output for `endpoint` tags so the failure rate points to exact routes.
 2. Run three separate profiles: read-only catalog, authenticated browsing, and write/event ingestion.
 3. Add low-risk Mongo indexes for the slow query patterns found in those profiles.
 4. Batch or buffer recommendation event writes under load.
 5. Run the same test against a production-like staging stack with separate load generator, Redis, Mongo, and multiple backend workers.
-
-## Post-Report Harness Update
-
-After this 10k comparison run, the k6 script was updated to emit endpoint-level latency/failure tables and support `LOAD_PROFILE=mixed`, `LOAD_PROFILE=read`, `LOAD_PROFILE=auth`, and `LOAD_PROFILE=write`. The load-test signup setup was also updated to use the current OTP-based signup flow, which prevents auth setup failures from polluting the load-test result. A tiny verification run is archived at `reports/load/archive/backend-load-report-endpoint-profile-smoke-2026-08-05.md`; the full 10k comparison numbers above are still from the archived after-cache-fix run.
 
 ## Artifacts
 

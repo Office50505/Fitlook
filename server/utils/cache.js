@@ -88,6 +88,7 @@ function setLocalCacheEntry(cache, key, value, ttlMs, maxItems) {
 
 function createHybridCache(name, options = {}) {
   const localCache = new Map();
+  const inFlightLoads = new Map();
   const ttlMs = Number(options.ttlMs || 30_000);
   const maxItems = Number(options.maxItems || 150);
   let localVersion = 0;
@@ -115,8 +116,7 @@ function createHybridCache(name, options = {}) {
     return `${namespace()}:v${await currentVersion()}:${stableHash(key)}`;
   }
 
-  async function get(key) {
-    const redisKey = await redisKeyFor(key);
+  async function getByRedisKey(redisKey) {
     const redis = await getRedisClient();
     if (redis) {
       try {
@@ -129,8 +129,7 @@ function createHybridCache(name, options = {}) {
     return getLocalCacheEntry(localCache, redisKey);
   }
 
-  async function set(key, value) {
-    const redisKey = await redisKeyFor(key);
+  async function setByRedisKey(redisKey, value) {
     setLocalCacheEntry(localCache, redisKey, value, ttlMs, maxItems);
     const redis = await getRedisClient();
     if (redis) {
@@ -143,16 +142,33 @@ function createHybridCache(name, options = {}) {
     return value;
   }
 
+  async function get(key) {
+    return getByRedisKey(await redisKeyFor(key));
+  }
+
+  async function set(key, value) {
+    return setByRedisKey(await redisKeyFor(key), value);
+  }
+
   async function remember(key, loader) {
-    const cached = await get(key);
-    if (cached) return cached;
-    const value = await loader();
-    await set(key, value);
-    return value;
+    const redisKey = await redisKeyFor(key);
+    const cached = await getByRedisKey(redisKey);
+    if (cached !== null) return cached;
+    if (inFlightLoads.has(redisKey)) return inFlightLoads.get(redisKey);
+
+    const loadPromise = Promise.resolve()
+      .then(loader)
+      .then(async (value) => setByRedisKey(redisKey, value))
+      .finally(() => {
+        inFlightLoads.delete(redisKey);
+      });
+    inFlightLoads.set(redisKey, loadPromise);
+    return loadPromise;
   }
 
   async function clear() {
     localCache.clear();
+    inFlightLoads.clear();
     localVersion += 1;
     const redis = await getRedisClient();
     if (redis) {
