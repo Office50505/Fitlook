@@ -27,6 +27,8 @@ const tokenOrderSchema = new mongoose.Schema(
 );
 
 tokenOrderSchema.index({ user: 1, createdAt: -1 });
+tokenOrderSchema.index({ createdAt: -1 });
+tokenOrderSchema.index({ status: 1, createdAt: -1 });
 
 tokenOrderSchema.methods.toClient = function toClient() {
   return {

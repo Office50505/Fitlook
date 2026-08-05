@@ -10,8 +10,10 @@ function defaultDevMode() {
 }
 
 function bodyPhotoUrl(user) {
+  if (user.bodyPhoto?.url) return user.bodyPhoto.url;
   const path = user.bodyPhoto?.path;
   if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
   const updatedAt = user.bodyPhoto?.generatedAt || user.updatedAt || user.createdAt;
   const version = updatedAt ? new Date(updatedAt).getTime() : 0;
   return `/${path}${version ? `?v=${version}` : ''}`;
@@ -52,6 +54,8 @@ const userSchema = new mongoose.Schema(
     bodyPhoto: {
       filename: String,
       path: String,
+      url: String,
+      storage: { type: String, trim: true },
       mimetype: String,
       size: Number,
       status: { type: String, enum: ['uploaded', 'generating', 'ready', 'failed'], default: 'uploaded' },
@@ -63,6 +67,8 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+userSchema.index({ createdAt: -1 });
 
 userSchema.methods.toClient = function toClient() {
   return {

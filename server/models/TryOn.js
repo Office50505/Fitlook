@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 const tryOnImageSchema = {
   filename: String,
   path: String,
+  url: String,
+  storage: { type: String, trim: true },
   mimetype: String,
   size: Number
 };
@@ -58,6 +60,8 @@ const tryOnSchema = new mongoose.Schema(
     video: {
       filename: String,
       path: String,
+      url: String,
+      storage: { type: String, trim: true },
       mimetype: String,
       size: Number,
       model: String,
@@ -76,10 +80,10 @@ function tryOnToClient(tryOn) {
   return {
     id: tryOn._id.toString(),
     productId: tryOn.product.toString(),
-    imageUrl: tryOn.image?.path ? `/${tryOn.image.path}` : null,
-    transparentImageUrl: tryOn.transparentImage?.path ? `/${tryOn.transparentImage.path}` : (tryOn.imageProcessing?.transparentImageUrl || null),
+    imageUrl: tryOn.image?.url || (tryOn.image?.path ? `/${tryOn.image.path}` : null),
+    transparentImageUrl: tryOn.transparentImage?.url || (tryOn.transparentImage?.path ? `/${tryOn.transparentImage.path}` : (tryOn.imageProcessing?.transparentImageUrl || null)),
     imageProcessing: tryOn.imageProcessing || null,
-    videoUrl: tryOn.video?.path ? `/${tryOn.video.path}` : null,
+    videoUrl: tryOn.video?.url || (tryOn.video?.path ? `/${tryOn.video.path}` : null),
     videoModel: tryOn.video?.model || '',
     videoTokenCost: tryOn.video?.tokenCost || 0,
     videoGeneratedAt: tryOn.video?.generatedAt || null,

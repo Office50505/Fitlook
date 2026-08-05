@@ -15,6 +15,7 @@ import User from '../models/User.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
 import { isAllowedAdminEmail, normalizeEmail, requireAdmin, signAdminSession } from '../utils/adminAccess.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
+import { deleteStoredFile, readStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
 
 const router = express.Router();
 const avifExtensions = new Set(['.avif']);
@@ -230,7 +231,9 @@ function fullBodyProfilePrompt() {
 async function generateFullBodyProfilePhoto(file) {
   if (!shouldGenerateFullBodyProfile()) return file;
 
-  const inputBuffer = await fs.readFile(file.path);
+  const inputBuffer = file.buffer || (file.url || file.storage === 'bunny'
+    ? (await readStoredFile(file, 'profile photo')).buffer
+    : await fs.readFile(file.path));
   const inputDataUri = `data:${file.mimetype || 'image/jpeg'};base64,${inputBuffer.toString('base64')}`;
   const model = profileImageModel();
   const submission = await falJson(`https://queue.fal.run/${model}`, {
@@ -250,13 +253,11 @@ async function generateFullBodyProfilePhoto(file) {
 
   const { bytes, mimetype } = await generatedBytesFromUrl(generatedUrl);
   const filename = `profile-fullbody-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionForMimetype(mimetype)}`;
-  const outputPath = path.join(path.dirname(file.path), filename);
-  await fs.writeFile(outputPath, bytes);
 
   return {
     ...file,
     filename,
-    path: outputPath,
+    buffer: bytes,
     mimetype,
     size: bytes.length
   };
@@ -303,22 +304,18 @@ async function normalizeBodyPhotoUpload(file) {
 
 async function bodyPhotoFromUpload(file, { generateFullBody = true } = {}) {
   const normalized = await normalizeBodyPhotoUpload(file);
-  return {
-    filename: normalized.filename,
-    path: `uploads/${normalized.filename}`,
+  const bytes = await fs.readFile(normalized.path);
+  const stored = await saveBuffer({
+    key: normalized.filename,
+    buffer: bytes,
     mimetype: normalized.mimetype,
-    size: normalized.size,
+    filename: normalized.filename
+  });
+  if (useBunny()) await fs.unlink(normalized.path).catch(() => {});
+  return {
+    ...stored,
     status: generateFullBody ? 'generating' : 'ready',
     source: generateFullBody ? 'upload' : 'exact-upload'
-  };
-}
-
-function localFileFromBodyPhoto(bodyPhoto) {
-  return {
-    filename: bodyPhoto.filename,
-    path: bodyPhoto.path,
-    mimetype: bodyPhoto.mimetype,
-    size: bodyPhoto.size
   };
 }
 
@@ -328,12 +325,14 @@ async function generateFullBodyProfileInBackground(userId, sourceBodyPhoto, { en
   setImmediate(async () => {
     try {
       if (debugGenerationLogs) console.log('[profile-fullbody] start', { userId: userId.toString(), source: sourceBodyPhoto.path });
-      const generated = await generateFullBodyProfilePhoto(localFileFromBodyPhoto(sourceBodyPhoto));
+      const generated = await generateFullBodyProfilePhoto(sourceBodyPhoto);
       const generatedBodyPhoto = {
-        filename: generated.filename,
-        path: `uploads/${generated.filename}`,
-        mimetype: generated.mimetype,
-        size: generated.size,
+        ...await saveBuffer({
+          key: generated.filename,
+          buffer: generated.buffer,
+          mimetype: generated.mimetype,
+          filename: generated.filename
+        }),
         status: 'ready',
         source: 'fal-full-body',
         generatedAt: new Date()
@@ -346,10 +345,10 @@ async function generateFullBodyProfileInBackground(userId, sourceBodyPhoto, { en
       );
 
       if (updated) {
-        await fs.unlink(sourceBodyPhoto.path).catch(() => {});
+        await deleteStoredFile(sourceBodyPhoto).catch(() => {});
         if (debugGenerationLogs) console.log('[profile-fullbody] done', { userId: userId.toString(), path: generatedBodyPhoto.path });
       } else {
-        await fs.unlink(generated.path).catch(() => {});
+        await deleteStoredFile(generatedBodyPhoto).catch(() => {});
         if (debugGenerationLogs) console.log('[profile-fullbody] skipped stale result', { userId: userId.toString() });
       }
     } catch (error) {
