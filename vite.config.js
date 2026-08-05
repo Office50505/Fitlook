@@ -6,7 +6,9 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        assetFileNames: 'assets/[name]-[hash]-m[extname]'
+        entryFileNames: 'assets/[name]-[hash]-fitlook2.js',
+        chunkFileNames: 'assets/[name]-[hash]-fitlook2.js',
+        assetFileNames: 'assets/[name]-[hash]-fitlook2[extname]'
       }
     }
   },

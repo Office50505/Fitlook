@@ -89,7 +89,12 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
   }
 
-  location ~* \.(?:js|css|png|jpg|jpeg|gif|svg|webp|avif|woff2?)$ {
+  location ~* \.(?:js|css)$ {
+    add_header Cache-Control "no-cache, must-revalidate" always;
+    try_files $uri =404;
+  }
+
+  location ~* \.(?:png|jpg|jpeg|gif|svg|webp|avif|woff2?)$ {
     add_header Cache-Control "public, max-age=31536000, immutable" always;
     try_files $uri =404;
   }
