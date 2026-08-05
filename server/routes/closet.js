@@ -389,6 +389,30 @@ async function saveUploadFile(file, prefix, user, folder = 'closet') {
   return { filename, path: storedPath, mimetype: file.mimetype, size: file.size || file.buffer.length };
 }
 
+async function greyStudioOutfitFromTransparent(transparentImage, user, timer) {
+  if (!transparentImage?.path) return null;
+  const subjectBytes = await fs.readFile(safeLocalPath(transparentImage.path));
+  const metadata = await sharp(subjectBytes, { failOn: 'none' }).metadata();
+  const width = Number(metadata.width || 0);
+  const height = Number(metadata.height || 0);
+  if (!width || !height) return null;
+
+  const buffer = await sharp({
+    create: {
+      width,
+      height,
+      channels: 3,
+      background: '#d7d7d5'
+    }
+  })
+    .composite([{ input: subjectBytes, left: 0, top: 0 }])
+    .jpeg({ quality: 92 })
+    .toBuffer();
+
+  timer?.mark('grey studio wardrobe composite created', { kb: Math.round(buffer.length / 1024), width, height });
+  return saveUploadFile({ buffer, mimetype: 'image/jpeg', size: buffer.length }, 'closet-outfit-grey', user, 'closet-outfits');
+}
+
 async function filePartFromStoredImage(image, label, timer) {
   if (!image?.path) throw new Error(`${label} image is missing`);
   const bytes = await fs.readFile(safeLocalPath(image.path));
@@ -809,16 +833,24 @@ router.post('/outfits/generate', requireUser, async (req, res) => {
     const isolation = await isolateSubjectAsset({ rootDir, user: req.user, storedImage: imageFile });
     if (isolation.metadata.processingStatus === 'completed') timer.mark('subject isolation completed', { cached: isolation.cached, path: isolation.image?.path });
     else timer.mark('subject isolation failed', { error: isolation.metadata.processingError });
+    let displayImageFile = imageFile;
+    if (isolation.metadata.processingStatus === 'completed' && isolation.image) {
+      try {
+        displayImageFile = await greyStudioOutfitFromTransparent(isolation.image, req.user, timer) || imageFile;
+      } catch (error) {
+        timer.mark('grey studio wardrobe composite failed', { error: readableError(error) });
+      }
+    }
     const outfit = await ClosetOutfit.create({
       user: req.user._id,
       title: cleanWord(req.body?.title, `Closet look for ${cleanWord(req.body?.occasion, 'today')}`),
       occasion: cleanWord(req.body?.occasion),
       weather: cleanWord(req.body?.weather),
       mood: cleanWord(req.body?.mood),
-      backdrop: cleanWord(req.body?.backdrop),
+      backdrop: 'neutral grey studio',
       pose: cleanWord(req.body?.pose),
       lighting: cleanWord(req.body?.lighting),
-      notes: cleanWord(req.body?.notes).slice(0, 500),
+      notes: cleanWord(req.body?.notes, 'Use a seamless neutral grey studio background. No room or lifestyle scene.').slice(0, 500),
       plannedFor: cleanDate(req.body?.plannedFor),
       itemIds: items.map((item) => item._id),
       provider: 'fitroom',
@@ -826,7 +858,7 @@ router.post('/outfits/generate', requireUser, async (req, res) => {
       quality: fitRoomHdMode() ? 'hd' : 'standard',
       tokenCost: chargedTokenCost(req.user),
       garment: garmentFile,
-      image: imageFile,
+      image: displayImageFile,
       transparentImage: isolation.image || undefined,
       imageProcessing: isolation.metadata
     });

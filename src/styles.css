@@ -21572,6 +21572,40 @@ main > section.wrap,
   max-width: none !important;
 }
 
+.atelier-category-page .atelier-category-wide {
+  width: 100% !important;
+  max-width: none !important;
+  padding-inline: var(--fl-page-pad);
+}
+
+.atelier-category-page .atelier-category-main {
+  padding-top: 0;
+}
+
+.atelier-category-page .atelier-category-title-section {
+  margin-bottom: 0;
+  padding-block: clamp(24px, 2.8vw, 44px) clamp(18px, 2vw, 30px);
+}
+
+.atelier-category-page .atelier-category-title-row {
+  align-items: center;
+}
+
+.atelier-category-page .atelier-category-title-row h1 {
+  font-size: clamp(42px, 4.6vw, 72px);
+  line-height: .92;
+}
+
+.atelier-category-page .atelier-category-hero-section {
+  margin-bottom: clamp(34px, 4vw, 58px);
+  padding-inline: 0;
+}
+
+.atelier-category-page .atelier-category-hero {
+  width: 100%;
+  height: clamp(440px, 31vw, 560px) !important;
+}
+
 img,
 video,
 canvas,
@@ -26108,5 +26142,293 @@ a.atelier-hero-orbit-wardrobe:hover {
     max-width: none !important;
     height: 100% !important;
     transform: none !important;
+  }
+}
+
+/* Responsive safety net: keep every primary page stable from iPhone to wide desktop. */
+html,
+body,
+#root,
+.app-page-transition {
+  max-width: 100%;
+}
+
+body {
+  overflow-x: clip;
+}
+
+.app-page-transition,
+main,
+.atelier-home,
+.fitlook-home,
+.atelier-category-page,
+.category-reference-page,
+.product-listing-page,
+.product-editorial-page,
+.wishlist-reference-page,
+.wardrobe-studio-page,
+.auth-login-reference-page,
+.auth-signup-reference-page {
+  min-width: 0;
+}
+
+.atelier-category-page .atelier-category-wide {
+  width: 100% !important;
+  max-width: none !important;
+  padding-left: var(--fl-page-pad) !important;
+  padding-right: var(--fl-page-pad) !important;
+}
+
+.atelier-category-page .atelier-category-hero-section {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.atelier-category-page .atelier-category-hero {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.atelier-category-page .atelier-category-card-grid,
+.atelier-category-page .atelier-category-product-grid,
+.department-product-grid,
+.product-listing-page .product-grid,
+.wishlist-product-grid {
+  min-width: 0 !important;
+}
+
+@media (max-width: 1200px) {
+  .atelier-category-page .atelier-category-hero {
+    height: clamp(360px, 42vw, 500px) !important;
+  }
+
+  .atelier-category-page .atelier-category-hero-copy {
+    right: clamp(24px, 4vw, 54px) !important;
+    bottom: clamp(34px, 5vw, 58px) !important;
+    left: clamp(24px, 4vw, 54px) !important;
+    max-width: min(560px, calc(100% - 48px)) !important;
+  }
+
+  .atelier-category-page .atelier-category-hero-copy strong {
+    font-size: clamp(42px, 6vw, 58px) !important;
+  }
+
+  .wardrobe-studio-shell {
+    grid-template-columns: minmax(230px, 280px) minmax(0, 1fr) minmax(250px, 310px) !important;
+  }
+
+  .wardrobe-model-tools.left {
+    left: 14px !important;
+  }
+
+  .wardrobe-model-tools.right {
+    right: 14px !important;
+  }
+}
+
+@media (max-width: 920px) {
+  .atelier-category-page .atelier-category-card-grid,
+  .atelier-category-page .atelier-category-product-grid,
+  .department-product-grid,
+  .product-listing-page .product-grid,
+  .wishlist-product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 18px 14px !important;
+  }
+
+  .product-listing-page .results-shell,
+  .results-shell {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .product-listing-page .filters-panel,
+  .filters-panel {
+    margin-top: 22px !important;
+  }
+}
+
+@media (max-width: 700px) {
+  html,
+  body,
+  #root,
+  .app-page-transition {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: clip !important;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  .atelier-category-page .atelier-category-wide {
+    padding-left: max(14px, env(safe-area-inset-left)) !important;
+    padding-right: max(14px, env(safe-area-inset-right)) !important;
+  }
+
+  .atelier-category-page .atelier-category-title-section {
+    padding-top: 22px !important;
+    padding-bottom: 16px !important;
+  }
+
+  .atelier-category-page .atelier-category-title-row {
+    gap: 12px !important;
+  }
+
+  .atelier-category-page .atelier-category-title-row h1 {
+    font-size: clamp(38px, 13vw, 54px) !important;
+    line-height: .95 !important;
+  }
+
+  .atelier-category-page .atelier-category-hero-section {
+    margin-bottom: 28px !important;
+  }
+
+  .atelier-category-page .atelier-category-hero {
+    height: min(430px, calc(100svh - 132px)) !important;
+    min-height: 330px !important;
+  }
+
+  .atelier-category-page .atelier-category-hero-copy {
+    right: 18px !important;
+    bottom: 24px !important;
+    left: 18px !important;
+    max-width: calc(100% - 36px) !important;
+  }
+
+  .atelier-category-page .atelier-category-hero-copy strong {
+    margin-bottom: 18px !important;
+    font-size: clamp(32px, 10vw, 44px) !important;
+    line-height: 1.02 !important;
+  }
+
+  .atelier-category-page .atelier-category-hero-copy em {
+    width: max-content !important;
+    max-width: 100% !important;
+    min-height: 42px !important;
+    padding: 0 22px !important;
+    white-space: normal !important;
+    text-align: center !important;
+  }
+
+  .atelier-category-quick-heading,
+  .atelier-category-audience-heading,
+  .atelier-category-products-head {
+    min-width: 0 !important;
+  }
+
+  .atelier-category-products-head {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  .atelier-category-quick-rail,
+  .atelier-category-audience-rail,
+  .atelier-arrivals-rail {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain !important;
+  }
+
+  .atelier-category-page .atelier-category-card-grid,
+  .atelier-category-page .atelier-category-product-grid,
+  .department-product-grid,
+  .product-listing-page .product-grid,
+  .wishlist-product-grid,
+  .product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 14px 10px !important;
+  }
+
+  .atelier-category-product h3,
+  .product-title {
+    font-size: clamp(14px, 4.2vw, 17px) !important;
+    line-height: 1.18 !important;
+  }
+
+  .wardrobe-studio-page {
+    height: calc(100svh - 64px) !important;
+    min-height: calc(100svh - 64px) !important;
+    max-height: calc(100svh - 64px) !important;
+  }
+
+  .wardrobe-studio-shell,
+  .wardrobe-model-stage,
+  .wardrobe-flat-scene {
+    height: 100% !important;
+    max-height: 100% !important;
+  }
+
+  .wardrobe-mobile-category-rail {
+    top: max(8px, env(safe-area-inset-top)) !important;
+  }
+
+  .wardrobe-model-tools.right {
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+  }
+
+  .wardrobe-flat-model img,
+  .wardrobe-flat-model picture,
+  .wardrobe-flat-model .optimized-image,
+  .wardrobe-flat-model .wardrobe-flat-image {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    object-fit: contain !important;
+    object-position: center center !important;
+  }
+
+  .auth-login-reference-page,
+  .auth-signup-reference-page {
+    min-height: 100svh !important;
+    max-width: 100% !important;
+  }
+
+  .auth-login-reference-page .auth-login-reference-panel,
+  .auth-signup-reference-form {
+    padding-left: max(16px, env(safe-area-inset-left)) !important;
+    padding-right: max(16px, env(safe-area-inset-right)) !important;
+  }
+
+  .auth-login-card,
+  .auth-signup-reference-card,
+  .auth-signup-reference-fields,
+  .auth-login-reference-page form {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .atelier-category-page .atelier-category-card-grid,
+  .atelier-category-page .atelier-category-product-grid,
+  .department-product-grid,
+  .product-listing-page .product-grid,
+  .wishlist-product-grid,
+  .product-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .site-header .brand {
+    font-size: clamp(30px, 11vw, 38px) !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-stage-actions {
+    width: min(300px, calc(100% - 20px)) !important;
+    grid-template-columns: minmax(0, 1fr) 46px !important;
+    gap: 8px !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-generate-button {
+    font-size: 9px !important;
+    letter-spacing: .06em !important;
   }
 }

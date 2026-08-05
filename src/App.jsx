@@ -513,20 +513,8 @@ function normalizePath() {
   return path || '/';
 }
 
-function safeAuthReturnPath(value) {
-  const path = String(value || '');
-  if (!path.startsWith('/') || path.startsWith('//') || /[\r\n]/.test(path)) return '';
-  const pathname = path.split(/[?#]/)[0].replace(/\.html$/, '').replace(/\/$/, '') || '/';
-  if (pathname === '/login' || pathname === '/signup') return '';
-  return path;
-}
-
 function authReturnPath() {
-  const requested = safeAuthReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
-  if (requested) return requested;
-  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  const currentPath = normalizePath();
-  return currentPath !== '/login' && currentPath !== '/signup' ? current : '/home';
+  return '/home';
 }
 
 function currentSearchValue() {
@@ -1127,7 +1115,7 @@ function FooterCol({ title, links }) {
 
 function FloatingStylistLauncher({ user }) {
   const openStylist = () => {
-    const href = user ? '/style-bot' : '/signup?returnTo=/style-bot';
+    const href = user ? '/style-bot' : '/signup';
     window.history.pushState({}, '', href);
     window.dispatchEvent(new PopStateEvent('popstate'));
   };
@@ -2683,7 +2671,6 @@ function ClosetPage({ user, setUser }) {
   const [weather, setWeather] = useState('');
   const [mood, setMood] = useState('');
   const [plannedFor, setPlannedFor] = useState(dateInputValue());
-  const [backdrop, setBackdrop] = useState('bright modern apartment');
   const [pose, setPose] = useState('front facing');
   const [lighting, setLighting] = useState('natural light');
   const [autoApply, setAutoApply] = useState(true);
@@ -2933,10 +2920,10 @@ function ClosetPage({ user, setUser }) {
           weather,
           mood,
           plannedFor,
-          backdrop: details.backdrop || backdrop,
+          backdrop: 'neutral grey studio',
           pose,
           lighting,
-          notes: [details.backdrop || backdrop, 'Keep the same wardrobe room scene; only the model and selected outfit should change.', pose, lighting].filter(Boolean).join(' · '),
+          notes: ['Use a seamless neutral grey studio background. No room, furniture, windows, plants, closet interior, or lifestyle scene.', pose, lighting].filter(Boolean).join(' · '),
           title: details.title || `Closet look for ${details.occasion || occasion || 'today'}`
         })
       });
@@ -3241,7 +3228,6 @@ function ClosetComboPage({ user, setUser }) {
   const [weather, setWeather] = useState('');
   const [mood, setMood] = useState('');
   const [plannedFor, setPlannedFor] = useState(dateInputValue());
-  const [backdrop, setBackdrop] = useState('neutral studio');
   const [pose, setPose] = useState('front facing');
   const [lighting, setLighting] = useState('natural light');
   const [generating, setGenerating] = useState(false);
@@ -3367,10 +3353,10 @@ function ClosetComboPage({ user, setUser }) {
           weather,
           mood,
           plannedFor,
-          backdrop,
+          backdrop: 'neutral grey studio',
           pose,
           lighting,
-          notes: [backdrop, pose, lighting].filter(Boolean).join(' · '),
+          notes: ['Use a seamless neutral grey studio background. No room, furniture, windows, plants, closet interior, or lifestyle scene.', pose, lighting].filter(Boolean).join(' · '),
           title: details.title || `Closet combo for ${details.occasion || occasion || 'today'}`
         })
       });
@@ -3406,7 +3392,6 @@ function ClosetComboPage({ user, setUser }) {
           </div>
           <div className="closet-scene-controls">
             <label><span>Plan date</span><input type="date" value={plannedFor} onChange={(event) => setPlannedFor(event.target.value)} /></label>
-            <label><span>Backdrop</span><select value={backdrop} onChange={(event) => setBackdrop(event.target.value)}><option>neutral studio</option><option>office lobby</option><option>cafe</option><option>outdoor street</option><option>wedding venue</option></select></label>
             <label><span>Pose</span><select value={pose} onChange={(event) => setPose(event.target.value)}><option>front facing</option><option>relaxed standing</option><option>walking pose</option><option>three-quarter angle</option></select></label>
             <label><span>Lighting</span><select value={lighting} onChange={(event) => setLighting(event.target.value)}><option>natural light</option><option>studio softbox</option><option>evening warm</option><option>bright daylight</option></select></label>
           </div>
@@ -6302,27 +6287,6 @@ function App() {
     };
     document.addEventListener('submit', submitInternally);
     return () => document.removeEventListener('submit', submitInternally);
-  }, []);
-
-  useEffect(() => {
-    const rememberAuthOrigin = (event) => {
-      const link = event.target.closest?.('a[href]');
-      if (!link) return;
-      const target = new URL(link.href, window.location.href);
-      if (target.origin !== window.location.origin) return;
-      const targetPath = target.pathname.replace(/\.html$/, '').replace(/\/$/, '') || '/';
-      if (targetPath !== '/login' && targetPath !== '/signup') return;
-
-      const existingReturnTo = safeAuthReturnPath(new URLSearchParams(window.location.search).get('returnTo'));
-      const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      const origin = existingReturnTo || safeAuthReturnPath(current);
-      if (!origin) return;
-
-      target.searchParams.set('returnTo', origin);
-      link.href = `${target.pathname}${target.search}${target.hash}`;
-    };
-    document.addEventListener('click', rememberAuthOrigin, true);
-    return () => document.removeEventListener('click', rememberAuthOrigin, true);
   }, []);
 
   useEffect(() => {
