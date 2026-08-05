@@ -1073,7 +1073,7 @@ function Footer({ compact = false }) {
         <div className="wrap wishlist-compact-footer-inner">
           <div className="wishlist-compact-footer-grid">
             <div className="wishlist-compact-brand"><a href="/">FitLook</a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div><a href="https://instagram.com/" target="_blank" rel="noreferrer">IG</a><a href="https://tiktok.com/" target="_blank" rel="noreferrer">TK</a><a href="https://x.com/" target="_blank" rel="noreferrer">X</a></div></div>
-            <div><h2>Shop</h2><a href="/search?newArrival=true">New in</a><a href="/search?gender=women">Women</a><a href="/search?gender=men">Men</a><a href="/sale">Sale</a></div>
+            <div><h2>Shop</h2><a href="/categories">New in</a><a href="/search?gender=women">Women</a><a href="/search?gender=men">Men</a><a href="/sale">Sale</a></div>
             <div><h2>Help</h2><a href="/support">Track order</a><a href="/support">Returns</a><a href="/support">Contact us</a><a href="/support">Shipping</a></div>
             <div><h2>Download our App</h2><p>Get the FitLook app for your daily fashion edit.</p><a className="wishlist-app-link" href="/support">App Store</a><a className="wishlist-app-link" href="/support">Google Play</a></div>
           </div>
@@ -1100,7 +1100,7 @@ function Footer({ compact = false }) {
               {socialLinks.map(([label, href]) => <a href={href} key={label} target="_blank" rel="noreferrer" aria-label={label}>{label.slice(0, 2)}</a>)}
             </div>
           </div>
-          <FooterCol title="Collections" links={[['New Arrivals', '/search?newArrival=true'], ["Men's Edit", '/search?gender=men'], ["Women's Edit", '/search?gender=women'], ['Accessories', '/search?category=accessories'], ['Seasonal Sale', '/sale']]} />
+          <FooterCol title="Collections" links={[['New Arrivals', '/categories'], ["Men's Edit", '/search?gender=men'], ["Women's Edit", '/search?gender=women'], ['Accessories', '/search?category=accessories'], ['Seasonal Sale', '/sale']]} />
           <FooterCol title="Company" links={[['Journal', '/blog'], ['Sustainability', '/about'], ['Virtual Atelier', '/custom-try-on'], ['Contact', '/contact'], ['Shipping', '/support']]} />
           <FooterCol title="Assurance" links={[['100% Secure Payment', '/support'], ['24/7 Dedicated Support', '/support'], ['30-Day Effortless Returns', '/support']]} />
           <div className="newsletter"><h3>Newsletter</h3><p>Early access to seasonal drops, private invitations, and high-fashion insights.</p><form className="newsletter-form" onSubmit={(event) => event.preventDefault()}><input type="email" placeholder="Your email address" aria-label="Email address" /><button type="submit">Subscribe</button></form></div>
@@ -1161,7 +1161,7 @@ function Hero({ compact = false }) {
     title: <>Summer<br /><em>Essentials</em></>,
     copy: 'Drop now live',
     cta: 'Shop Now',
-    href: '/search?newArrival=true',
+    href: '/categories',
     image: compact ? 'hero2.png' : 'hero1.png'
   };
 
@@ -1403,7 +1403,7 @@ function AtelierHome() {
             <div className="atelier-section-heading"><h2>Curated New Arrivals</h2><div className="atelier-product-arrows"><button type="button" aria-label="Previous arrivals" aria-controls="new-arrivals-rail" onClick={() => scrollArrivals(-1)}><AtelierIcon name="arrowLeft" /></button><button type="button" aria-label="Next arrivals" aria-controls="new-arrivals-rail" onClick={() => scrollArrivals(1)}><AtelierIcon name="arrowRight" /></button></div></div>
             <div className="atelier-product-grid atelier-arrivals-rail" id="new-arrivals-rail" ref={arrivalsRailRef} tabIndex="0" aria-label="Curated new arrivals" onKeyDown={handleArrivalRailKeyDown}>
               {arrivalProducts.map((product) => <article className="atelier-product" key={product.id}><a className="atelier-product-image" href={`/product/${encodeURIComponent(product.id)}`}>{product.badge && <span className="atelier-best-seller">{product.badge}</span>}<OptimizedImage src={product.imageUrl} alt={product.name} /><span className="atelier-product-quick-link">View Product</span></a><WishlistHeartButton product={product} className="card-wishlist-heart" /><span className="atelier-product-category">{displayCategory(product)}</span><h3>{product.name}</h3><div className="atelier-price"><strong>{formatMoney(product.price || 0, product.currency)}</strong>{product.compareAtPrice && product.compareAtPrice > product.price && <del>{formatMoney(product.compareAtPrice, product.currency)}</del>}</div></article>)}
-              {arrivalProducts.length > 0 && <a className="atelier-arrivals-more" href="/search?newArrival=true"><span>New arrivals</span><strong>View more</strong><small>Explore the full edit <b>→</b></small></a>}
+              {arrivalProducts.length > 0 && <a className="atelier-arrivals-more" href="/categories"><span>New arrivals</span><strong>View more</strong><small>Explore the full edit <b>→</b></small></a>}
             </div>
           </div>
         </section>
@@ -1574,7 +1574,7 @@ function HomeLookbook({ products = [], loading = false }) {
   return (
     <section className="home-lookbook section" aria-label="Shop the look">
       <div className="wrap">
-        <div className="section-head"><div><p className="kicker">Collections</p><h2>Shop the Look</h2></div><a className="view-all" href="/search?newArrival=true">View More ↗</a></div>
+        <div className="section-head"><div><p className="kicker">Collections</p><h2>Shop the Look</h2></div><a className="view-all" href="/categories">View More ↗</a></div>
         <div className="home-lookbook-grid">
           {loading && looks.length === 0 && Array.from({ length: 3 }).map((_, index) => <div className="home-look-card home-look-skeleton" key={index} />)}
           {looks.map((look) => (
@@ -1611,7 +1611,7 @@ const categoryHeroSlides = [
     title: 'The Art Of Summer',
     copy: 'Lightweight layers, refined textures, and warm-weather staples from the live catalog.',
     image: 'hero2.png',
-    href: '/search?newArrival=true',
+    href: '/categories',
     cta: 'Shop Now'
   },
   {
@@ -1635,7 +1635,7 @@ const categoryHeroSlides = [
     title: 'Layered Looks',
     copy: 'Casual staples and new arrivals arranged for quick category discovery.',
     image: 'trending-3.jpg',
-    href: '/search?newArrival=true',
+    href: '/categories',
     cta: 'Browse Now'
   }
 ];
@@ -6338,6 +6338,14 @@ function App() {
   }, [path, routeKey, user]);
 
   useEffect(() => {
+    if (path !== '/search') return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('newArrival')) return;
+    window.history.replaceState({}, '', '/categories');
+    setPath(normalizePath());
+  }, [path, routeKey]);
+
+  useEffect(() => {
     if (path !== '/signup' && path !== '/login') return;
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
@@ -6372,6 +6380,7 @@ function App() {
     if (path === '/') return <Home user={user} />;
     if (path === '/home') return <AtelierHome />;
     if (path === '/search' && legacyCategory) return <CategoryDepartmentPage category={legacyCategory} user={user} />;
+    if (path === '/search' && new URLSearchParams(window.location.search).has('newArrival')) return <CategoriesPage user={user} />;
     if (path === '/categories') return <CategoriesPage user={user} />;
     if (categoryMatch) return <CategoryDepartmentPage category={decodeURIComponent(categoryMatch[1])} user={user} />;
     if (path === '/search' && !hasSearchParameters) return <CategoriesPage user={user} />;
