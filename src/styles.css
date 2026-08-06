@@ -29204,3 +29204,69 @@ main,
     min-height: 52px !important;
   }
 }
+
+/* Fullscreen media preview must open in the current viewport, not at the page scroll position. */
+.image-lightbox {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10000 !important;
+  display: grid !important;
+  place-items: center !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  padding: clamp(14px, 3vw, 40px) !important;
+  overscroll-behavior: contain !important;
+}
+
+.image-lightbox figure {
+  display: grid !important;
+  place-items: center !important;
+  align-content: center !important;
+  width: min(94vw, 1040px) !important;
+  max-width: min(94vw, 1040px) !important;
+  max-height: calc(100dvh - 76px) !important;
+  margin: 0 !important;
+}
+
+.image-lightbox .lightbox-zoom-frame,
+.image-lightbox .zoomable-image {
+  width: min(94vw, 1040px) !important;
+  max-width: min(94vw, 1040px) !important;
+  max-height: calc(100dvh - 112px) !important;
+}
+
+.image-lightbox img,
+.image-lightbox .lightbox-zoom-frame img,
+.lightbox-video {
+  width: auto !important;
+  height: auto !important;
+  max-width: min(94vw, 1040px) !important;
+  max-height: calc(100dvh - 112px) !important;
+  object-fit: contain !important;
+}
+
+.image-lightbox figcaption {
+  max-width: min(94vw, 1040px) !important;
+}
+
+@media (max-width: 700px) {
+  .image-lightbox {
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)) !important;
+  }
+
+  .image-lightbox figure,
+  .image-lightbox .lightbox-zoom-frame,
+  .image-lightbox .zoomable-image {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+  }
+
+  .image-lightbox img,
+  .image-lightbox .lightbox-zoom-frame img,
+  .lightbox-video {
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 92px) !important;
+  }
+}

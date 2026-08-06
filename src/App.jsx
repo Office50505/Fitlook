@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import OptimizedImage from './components/common/OptimizedImage.jsx';
 import ShaderBackground from './components/common/ShaderBackground.jsx';
 import { cartItemCount, cartSubtotal, readCartItems, removeCartItem, updateCartQuantity } from './utils/cart.js';
@@ -164,6 +165,7 @@ function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1
   const [zooming, setZooming] = useState(false);
   const [origin, setOrigin] = useState({ x: 50, y: 50 });
   const frameRef = useRef(null);
+  const touchZoomRef = useRef(null);
   const canOpen = typeof onOpen === 'function';
 
   const moveOrigin = (event) => {
@@ -179,13 +181,42 @@ function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1
     if (disableZoom || zoom <= 1) return;
     moveOrigin(event);
     setZooming(true);
-    if (event.pointerType !== 'mouse') event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
   const stopZoom = (event) => {
     if (disableZoom || zoom <= 1) return;
     setZooming(false);
-    if (event.pointerType !== 'mouse') event.currentTarget.releasePointerCapture?.(event.pointerId);
+    if (event.pointerType !== 'mouse') {
+      touchZoomRef.current = null;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+  };
+
+  const handlePointerDown = (event) => {
+    if (disableZoom || zoom <= 1 || event.pointerType === 'mouse') return;
+    touchZoomRef.current = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      active: false
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handlePointerMove = (event) => {
+    if (disableZoom || zoom <= 1) return;
+    if (event.pointerType === 'mouse') {
+      if (zooming) moveOrigin(event);
+      return;
+    }
+    const touchZoom = touchZoomRef.current;
+    if (!touchZoom || touchZoom.id !== event.pointerId) return;
+    const distance = Math.hypot(event.clientX - touchZoom.x, event.clientY - touchZoom.y);
+    if (!touchZoom.active && distance > 8) {
+      touchZoom.active = true;
+      setZooming(true);
+    }
+    if (touchZoom.active) moveOrigin(event);
   };
 
   const openImage = () => {
@@ -215,10 +246,8 @@ function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1
       onPointerEnter={(event) => {
         if (event.pointerType === 'mouse') startZoom(event);
       }}
-      onPointerDown={startZoom}
-      onPointerMove={(event) => {
-        if (zooming || event.pointerType === 'mouse') moveOrigin(event);
-      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
       onPointerUp={stopZoom}
       onPointerCancel={stopZoom}
       onPointerLeave={stopZoom}
@@ -1309,14 +1338,9 @@ const atelierHeroSlides = [
 ];
 
 function AtelierProductRailCard({ product }) {
-  const [fullscreenPreview, setFullscreenPreview] = useState(null);
-  const openPreview = (event) => {
-    event.preventDefault();
-    setFullscreenPreview({ src: product.imageUrl || asset('hero2.png'), alt: product.name, title: product.name });
-  };
   return (
     <article className="atelier-product">
-      <a className="atelier-product-image" href={`/product/${encodeURIComponent(product.id)}`} onClick={openPreview} aria-label={`Open preview for ${product.name}`}>
+      <a className="atelier-product-image" href={`/product/${encodeURIComponent(product.id)}`} aria-label={`Open ${product.name}`}>
         {product.badge && <span className="atelier-best-seller">{product.badge}</span>}
         <OptimizedImage src={product.imageUrl} alt={product.name} />
         <span className="atelier-product-quick-link">View Product</span>
@@ -1328,26 +1352,15 @@ function AtelierProductRailCard({ product }) {
         <strong>{formatMoney(product.price || 0, product.currency)}</strong>
         {product.compareAtPrice && product.compareAtPrice > product.price && <del>{formatMoney(product.compareAtPrice, product.currency)}</del>}
       </div>
-      {fullscreenPreview && <ImageLightbox image={fullscreenPreview} onClose={() => setFullscreenPreview(null)} />}
     </article>
   );
 }
 
 function AtelierCategoryProductCard({ product }) {
-  const [fullscreenPreview, setFullscreenPreview] = useState(null);
-  const openPreview = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setFullscreenPreview({ src: product.imageUrl || asset('hero2.png'), alt: product.name, title: product.name });
-  };
-
   return (
     <article className="atelier-category-product">
       <a href={`/product/${encodeURIComponent(product.id)}`}>
-        <div className="atelier-category-product-image" role="button" tabIndex="0" aria-label={`Open preview for ${product.name}`} onClick={openPreview} onKeyDown={(event) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return;
-          openPreview(event);
-        }}>
+        <div className="atelier-category-product-image">
           <OptimizedImage src={product.imageUrl} alt={product.name} />
         </div>
         <span className="atelier-category-product-brand">{displayBrand(product)}</span>
@@ -1355,7 +1368,6 @@ function AtelierCategoryProductCard({ product }) {
         <strong>{formatMoney(product.price || 0, product.currency)}</strong>
       </a>
       <WishlistHeartButton product={product} className="card-wishlist-heart" />
-      {fullscreenPreview && <ImageLightbox image={fullscreenPreview} onClose={() => setFullscreenPreview(null)} />}
     </article>
   );
 }
@@ -2228,7 +2240,6 @@ function CategoryDepartmentPage({ category, user }) {
 function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, tryOnLoading = false, tryOnVideoLoading = false, tryOnError = '', tryOnVideoError = '', onTryOn, onTryOnVideo }) {
   const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const [isWishlisted, setIsWishlisted] = useState(() => readWishlistProductIds().includes(String(product.id)));
-  const [fullscreenPreview, setFullscreenPreview] = useState(null);
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? `${Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}% OFF` : '';
   const productImage = product.imageUrl || asset('hero2.png');
@@ -2267,26 +2278,9 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
     announce(saved ? `${product.name} saved to your wishlist.` : `${product.name} removed from your wishlist.`);
   };
 
-  const openCardPreview = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (hasTryOnVideo) {
-      setFullscreenPreview({ type: 'video', src: tryOn.videoUrl, poster: tryOn.imageUrl, alt: `Video try-on for ${product.name}`, title: product.name });
-      return;
-    }
-    setFullscreenPreview({
-      src: image,
-      alt: hasUsableTryOn ? `AI try-on for ${product.name}` : product.name,
-      title: product.name
-    });
-  };
-
   const content = (
     <>
-      <div className="product-media" role="button" tabIndex={locked ? undefined : 0} aria-label={`Open preview for ${product.name}`} onClick={locked ? undefined : openCardPreview} onKeyDown={(event) => {
-        if (locked || (event.key !== 'Enter' && event.key !== ' ')) return;
-        openCardPreview(event);
-      }}>
+      <div className="product-media">
         {hasTryOnVideo ? (
           <video src={tryOn.videoUrl} poster={tryOn.imageUrl} autoPlay muted loop playsInline />
         ) : (
@@ -2339,7 +2333,6 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
           {tryOnVideoError && <p>{tryOnVideoError}</p>}
         </div>
       )}
-      {fullscreenPreview && <ImageLightbox image={fullscreenPreview} onClose={() => setFullscreenPreview(null)} />}
     </article>
   );
 }
@@ -4973,7 +4966,18 @@ function ImageLightbox({ image, onClose }) {
     closeButtonRef.current?.focus();
   }, []);
 
-  return (
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousOverscroll = document.body.style.overscrollBehavior;
+    document.body.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'contain';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.overscrollBehavior = previousOverscroll;
+    };
+  }, []);
+
+  const lightbox = (
     <div className={`image-lightbox ${isVideo ? 'video-lightbox' : ''}`} role="dialog" aria-modal="true" aria-label={isVideo ? 'Full screen video preview' : 'Full screen image preview'} onClick={onClose}>
       <button className="lightbox-close" ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close full screen preview">×</button>
       <figure onClick={(event) => event.stopPropagation()}>
@@ -4986,6 +4990,8 @@ function ImageLightbox({ image, onClose }) {
       </figure>
     </div>
   );
+
+  return createPortal(lightbox, document.body);
 }
 
 function TokenPage({ user, setUser }) {
@@ -5898,28 +5904,18 @@ function SizeRequestPanel({ product, onClose }) {
 }
 
 function EditorialRelatedProduct({ product }) {
-  const [fullscreenPreview, setFullscreenPreview] = useState(null);
   const category = displayCategory(product);
   const brand = displayBrand(product);
-  const openPreview = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setFullscreenPreview({ src: product.imageUrl || asset('hero2.png'), alt: product.name, title: product.name });
-  };
   return (
     <article className="product-editorial-related-card">
       <a href={`/product/${encodeURIComponent(product.id)}`}>
-        <img src={product.imageUrl || asset('hero2.png')} alt={product.name} role="button" tabIndex="0" onClick={openPreview} onKeyDown={(event) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return;
-          openPreview(event);
-        }} />
+        <img src={product.imageUrl || asset('hero2.png')} alt={product.name} />
         <p>{brand}</p>
         <h3>{product.name}</h3>
         <strong>{formatMoney(product.price || 0, product.currency)}</strong>
         <span>{category}</span>
       </a>
       <WishlistHeartButton product={product} className="card-wishlist-heart" />
-      {fullscreenPreview && <ImageLightbox image={fullscreenPreview} onClose={() => setFullscreenPreview(null)} />}
     </article>
   );
 }
