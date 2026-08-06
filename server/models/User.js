@@ -9,14 +9,22 @@ function defaultDevMode() {
   return ['1', 'true', 'yes', 'on'].includes(String(process.env.SIGNUP_DEV_MODE_DEFAULT || '').toLowerCase());
 }
 
-function bodyPhotoUrl(user) {
-  if (user.bodyPhoto?.url) return user.bodyPhoto.url;
-  const path = user.bodyPhoto?.path;
+function storedPhotoUrl(photo, user) {
+  if (photo?.url) return photo.url;
+  const path = photo?.path;
   if (!path) return null;
   if (/^https?:\/\//i.test(path)) return path;
-  const updatedAt = user.bodyPhoto?.generatedAt || user.updatedAt || user.createdAt;
+  const updatedAt = photo?.generatedAt || user.updatedAt || user.createdAt;
   const version = updatedAt ? new Date(updatedAt).getTime() : 0;
   return `/${path}${version ? `?v=${version}` : ''}`;
+}
+
+function bodyPhotoUrl(user) {
+  return storedPhotoUrl(user.bodyPhoto, user);
+}
+
+function bodyPhotoOriginalUrl(user) {
+  return storedPhotoUrl(user.bodyPhoto?.original, user);
 }
 
 const userSchema = new mongoose.Schema(
@@ -61,7 +69,15 @@ const userSchema = new mongoose.Schema(
       status: { type: String, enum: ['uploaded', 'generating', 'ready', 'failed'], default: 'uploaded' },
       source: { type: String, trim: true },
       generatedAt: Date,
-      error: String
+      error: String,
+      original: {
+        filename: String,
+        path: String,
+        url: String,
+        storage: { type: String, trim: true },
+        mimetype: String,
+        size: Number
+      }
     },
     onboardingSeenAt: Date
   },
@@ -92,6 +108,7 @@ userSchema.methods.toClient = function toClient() {
     wishlistCount: this.wishlistProducts?.length || 0,
     joinedAt: this.createdAt,
     bodyPhotoUrl: bodyPhotoUrl(this),
+    bodyPhotoOriginalUrl: bodyPhotoOriginalUrl(this),
     bodyPhotoStatus: this.bodyPhoto?.status || 'uploaded',
     bodyPhotoSource: this.bodyPhoto?.source || 'upload',
     bodyPhotoGeneratedAt: this.bodyPhoto?.generatedAt || null

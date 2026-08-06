@@ -588,7 +588,13 @@ function currentSearchValue() {
 }
 
 function isWardrobeRoomPreview(value = '') {
-  return /(?:wardrobe-room|wardrobe-stage-room)/i.test(String(value || ''));
+  return /(?:wardrobe-room|wardrobe-stage-room|warm-modern-wardrobe|closet-room|room-preview)/i.test(String(value || ''));
+}
+
+function safeWardrobeImageUrl(value = '') {
+  const url = typeof value === 'string' ? value.trim() : '';
+  if (!url || isWardrobeRoomPreview(url)) return '';
+  return url;
 }
 
 function readRecentSearches() {
@@ -2799,7 +2805,7 @@ function CutoutFallbackNotice({ isolation, originalSrc, onRetry }) {
 }
 
 function RoomScene({ modelSource, alt, generating, onOpen, onEmpty }) {
-  const visibleSrc = (typeof modelSource?.imageUrl === 'string' ? modelSource.imageUrl.trim() : '') || DEFAULT_WARDROBE_MODEL_SRC;
+  const visibleSrc = safeWardrobeImageUrl(modelSource?.imageUrl);
   const imageAlt = alt || 'Wardrobe preview';
 
   return (
@@ -2811,7 +2817,7 @@ function RoomScene({ modelSource, alt, generating, onOpen, onEmpty }) {
             src={visibleSrc}
             alt={imageAlt}
             eager
-            fallbackSrc={DEFAULT_WARDROBE_MODEL_SRC}
+            fallbackSrc=""
             style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', objectPosition: 'center center' }}
           />
         </button>
@@ -2892,7 +2898,7 @@ function ClosetPage({ user, setUser }) {
   const closetOutfits = Array.isArray(state.outfits) ? state.outfits.filter((outfit) => outfit && typeof outfit === 'object') : [];
   const closetSuggestions = Array.isArray(state.suggestions) ? state.suggestions.filter((suggestion) => suggestion && typeof suggestion === 'object') : [];
   const closetStats = state.stats && typeof state.stats === 'object' && !Array.isArray(state.stats) ? state.stats : {};
-  const userBodyPhotoUrl = typeof user.bodyPhotoUrl === 'string' ? user.bodyPhotoUrl : '';
+  const userBodyPhotoUrl = safeWardrobeImageUrl(user.bodyPhotoOriginalUrl) || safeWardrobeImageUrl(user.bodyPhotoUrl);
   const selectedItems = selectedIds.map((id) => closetItems.find((item) => item.id === id)).filter(Boolean);
   const filteredItems = closetItems.filter((item) => filter === 'all' || item.category === filter);
   const plannerDays = nextPlannerDays(7);
@@ -3233,8 +3239,8 @@ function ClosetPage({ user, setUser }) {
     generateOutfit(cardItems.map((item) => item.id).filter(Boolean), { title: card.title, occasion: card.title });
   };
 
-  const latestOutfitImage = isWardrobeRoomPreview(latestOutfit?.imageUrl) ? '' : latestOutfit?.imageUrl || '';
-  const bodyPhotoPreview = isWardrobeRoomPreview(userBodyPhotoUrl) ? DEFAULT_WARDROBE_MODEL_SRC : (userBodyPhotoUrl || DEFAULT_WARDROBE_MODEL_SRC);
+  const latestOutfitImage = safeWardrobeImageUrl(latestOutfit?.imageUrl);
+  const bodyPhotoPreview = userBodyPhotoUrl;
   const showingGeneratedOutfit = stagePreviewMode === 'outfit' && Boolean(latestOutfitImage);
   const modelPreview = showingGeneratedOutfit ? latestOutfitImage : bodyPhotoPreview;
   const previewTitle = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Model';
@@ -3295,7 +3301,7 @@ function ClosetPage({ user, setUser }) {
         <section className="wardrobe-model-stage" aria-label="Wardrobe model preview" style={{ background: '#d7d7d5', backgroundImage: 'none' }}>
           <div className="wardrobe-mobile-category-rail" aria-label="Wardrobe quick controls">
             <button type="button" onClick={() => setStagePreviewMode('model')}>
-              <span><OptimizedImage src={bodyPhotoPreview} fallbackSrc={DEFAULT_WARDROBE_MODEL_SRC} alt="" /></span>
+              <span>{bodyPhotoPreview ? <OptimizedImage src={bodyPhotoPreview} fallbackSrc="" alt="" /> : <UserIcon />}</span>
               <small>Model</small>
             </button>
             {mobileWardrobeSections.map((section) => {
@@ -3320,7 +3326,7 @@ function ClosetPage({ user, setUser }) {
 
           <div className="wardrobe-model-tools left">
             <button type="button" onClick={() => setStagePreviewMode('model')}>
-              <span><OptimizedImage src={bodyPhotoPreview} fallbackSrc={DEFAULT_WARDROBE_MODEL_SRC} alt="" /></span>
+              <span>{bodyPhotoPreview ? <OptimizedImage src={bodyPhotoPreview} fallbackSrc="" alt="" /> : <UserIcon />}</span>
               <small>Model</small>
             </button>
             <button type="button" onClick={() => applyAccessorySlot('cap', 'Cap')}>
@@ -3345,7 +3351,7 @@ function ClosetPage({ user, setUser }) {
               alt={previewAlt}
               generating={generating}
               user={user}
-              onOpen={() => setFullscreenImage({ src: modelPreview, alt: previewAlt, title: previewTitle })}
+              onOpen={() => modelPreview ? setFullscreenImage({ src: modelPreview, alt: previewAlt, title: previewTitle }) : openRoute('/profile')}
               onEmpty={() => openRoute('/profile')}
             />
           </div>
@@ -3358,7 +3364,7 @@ function ClosetPage({ user, setUser }) {
               <SparkleLineIcon />
               <span>{generating ? 'Generating...' : 'Generate Look'}</span>
             </button>
-            <button className="wardrobe-heart-button" type="button" onClick={() => latestOutfit?.imageUrl ? setFullscreenImage({ src: latestOutfit.imageUrl, alt: latestOutfit.title, title: latestOutfit.title }) : setMessage('Generate a look first to preview it.') } aria-label="Open latest look"><HeartIcon /></button>
+            <button className="wardrobe-heart-button" type="button" onClick={() => latestOutfitImage ? setFullscreenImage({ src: latestOutfitImage, alt: latestOutfit.title, title: latestOutfit.title }) : setMessage('Generate a look first to preview it.') } aria-label="Open latest look"><HeartIcon /></button>
           </div>
         </section>
 
@@ -5179,7 +5185,7 @@ function ProfilePage({ user, setUser }) {
   const [photoFile, setPhotoFile] = useState(null);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
-  const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
+  const [profilePhotoMode, setProfilePhotoMode] = useState('exact');
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [creditHistory, setCreditHistory] = useState({
     loading: false,
@@ -5242,7 +5248,7 @@ function ProfilePage({ user, setUser }) {
 
   if (!user) return <AuthPage mode="signup" setUser={setUser} />;
 
-  const photoSrc = preview || user.bodyPhotoUrl;
+  const photoSrc = preview || user.bodyPhotoOriginalUrl || user.bodyPhotoUrl;
   const selectPhoto = (event) => {
     const file = event.currentTarget.files?.[0];
     setPhotoFile(file || null);
@@ -6302,7 +6308,7 @@ function AuthPage({ mode, setUser }) {
   const [otpLoading, setOtpLoading] = useState(false);
   const [bodyPhotoFile, setBodyPhotoFile] = useState(null);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
-  const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
+  const [profilePhotoMode, setProfilePhotoMode] = useState('exact');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const isSignup = mode === 'signup';

@@ -1,12 +1,21 @@
-import { Queue, QueueEvents, Worker } from 'bullmq';
 import { serviceMetadata } from './runtime.js';
+
+let Queue;
+let QueueEvents;
+let Worker;
+
+try {
+  ({ Queue, QueueEvents, Worker } = await import('bullmq'));
+} catch (error) {
+  console.warn('[jobs] bullmq unavailable; queue features disabled', { error: error.message });
+}
 
 const queues = new Map();
 const queueEvents = new Map();
 
 function enabled() {
   const raw = String(process.env.QUEUE_ENABLED ?? 'true').toLowerCase();
-  return ['1', 'true', 'yes', 'on'].includes(raw) && Boolean(process.env.REDIS_URL);
+  return Boolean(Queue && QueueEvents && Worker) && ['1', 'true', 'yes', 'on'].includes(raw) && Boolean(process.env.REDIS_URL);
 }
 
 function redisConnection() {

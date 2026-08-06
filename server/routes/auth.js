@@ -38,7 +38,7 @@ function shouldGenerateFullBodyProfile() {
 }
 
 function shouldGenerateFullBodyProfileForRequest(req) {
-  const mode = String(req.body?.profilePhotoMode || 'ai-full-body').toLowerCase();
+  const mode = String(req.body?.profilePhotoMode || 'exact').toLowerCase();
   return shouldGenerateFullBodyProfile() && mode !== 'exact';
 }
 
@@ -310,7 +310,8 @@ async function bodyPhotoFromUpload(file, { generateFullBody = true } = {}) {
   return {
     ...stored,
     status: generateFullBody ? 'generating' : 'ready',
-    source: generateFullBody ? 'upload' : 'exact-upload'
+    source: generateFullBody ? 'upload' : 'exact-upload',
+    original: stored
   };
 }
 
@@ -327,7 +328,15 @@ async function runProfileFullBodyJob({ userId, sourceBodyPhoto }) {
       }),
       status: 'ready',
       source: 'fal-full-body',
-      generatedAt: new Date()
+      generatedAt: new Date(),
+      original: sourceBodyPhoto.original || {
+        filename: sourceBodyPhoto.filename,
+        path: sourceBodyPhoto.path,
+        url: sourceBodyPhoto.url,
+        storage: sourceBodyPhoto.storage,
+        mimetype: sourceBodyPhoto.mimetype,
+        size: sourceBodyPhoto.size
+      }
     };
 
     const updated = await User.findOneAndUpdate(
@@ -337,7 +346,9 @@ async function runProfileFullBodyJob({ userId, sourceBodyPhoto }) {
     );
 
     if (updated) {
-      await deleteStoredFile(sourceBodyPhoto).catch(() => {});
+      if (generatedBodyPhoto.original?.path !== sourceBodyPhoto.path && generatedBodyPhoto.original?.url !== sourceBodyPhoto.url) {
+        await deleteStoredFile(sourceBodyPhoto).catch(() => {});
+      }
       if (debugGenerationLogs) console.log('[profile-fullbody] done', { userId: userId.toString(), path: generatedBodyPhoto.path });
       return { updated: true, path: generatedBodyPhoto.path };
     }
