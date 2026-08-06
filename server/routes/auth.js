@@ -38,7 +38,7 @@ function shouldGenerateFullBodyProfile() {
 }
 
 function shouldGenerateFullBodyProfileForRequest(req) {
-  const mode = String(req.body?.profilePhotoMode || 'exact').toLowerCase();
+  const mode = String(req.body?.profilePhotoMode || 'ai-full-body').toLowerCase();
   return shouldGenerateFullBodyProfile() && mode !== 'exact';
 }
 
@@ -845,6 +845,28 @@ router.post('/body-photo', requireUser, upload.single('bodyPhoto'), async (req, 
     throw error;
   }
 });
+
+router.post('/body-photo/generate-full-body', requireUser, asyncRoute(async (req, res) => {
+  if (!shouldGenerateFullBodyProfile()) return res.status(400).json({ message: 'AI full-body profile generation is disabled' });
+  const currentBodyPhoto = req.user.bodyPhoto?.toObject ? req.user.bodyPhoto.toObject() : req.user.bodyPhoto;
+  const sourceBodyPhoto = currentBodyPhoto?.original || currentBodyPhoto;
+  if (!sourceBodyPhoto?.path && !sourceBodyPhoto?.url) return res.status(400).json({ message: 'Upload a profile photo first' });
+
+  if (currentBodyPhoto?.status === 'generating') {
+    return res.json({ user: req.user.toClient() });
+  }
+
+  req.user.bodyPhoto = {
+    ...sourceBodyPhoto,
+    status: 'generating',
+    source: 'upload',
+    error: undefined,
+    original: sourceBodyPhoto
+  };
+  await req.user.save();
+  await generateFullBodyProfileInBackground(req.user._id, req.user.bodyPhoto.toObject ? req.user.bodyPhoto.toObject() : req.user.bodyPhoto, { enabled: true });
+  res.json({ user: req.user.toClient() });
+}));
 
 export default router;
 export { requireUser, runProfileFullBodyJob };

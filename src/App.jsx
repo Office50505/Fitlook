@@ -2867,6 +2867,10 @@ function ClosetPage({ user, setUser }) {
       .catch((err) => setState({ items: [], outfits: [], stats: {}, suggestions: [], loading: false, error: err.message }));
   };
 
+  const uploadedBodyPhotoUrl = safeWardrobeImageUrl(user?.bodyPhotoOriginalUrl);
+  const generatedBodyPhotoUrl = user?.bodyPhotoSource === 'fal-full-body' ? safeWardrobeImageUrl(user?.bodyPhotoUrl) : '';
+  const userBodyPhotoUrl = generatedBodyPhotoUrl || uploadedBodyPhotoUrl || safeWardrobeImageUrl(user?.bodyPhotoUrl);
+
   useEffect(() => {
     loadCloset();
   }, [user?.id]);
@@ -2898,7 +2902,6 @@ function ClosetPage({ user, setUser }) {
   const closetOutfits = Array.isArray(state.outfits) ? state.outfits.filter((outfit) => outfit && typeof outfit === 'object') : [];
   const closetSuggestions = Array.isArray(state.suggestions) ? state.suggestions.filter((suggestion) => suggestion && typeof suggestion === 'object') : [];
   const closetStats = state.stats && typeof state.stats === 'object' && !Array.isArray(state.stats) ? state.stats : {};
-  const userBodyPhotoUrl = safeWardrobeImageUrl(user.bodyPhotoOriginalUrl) || safeWardrobeImageUrl(user.bodyPhotoUrl);
   const selectedItems = selectedIds.map((id) => closetItems.find((item) => item.id === id)).filter(Boolean);
   const filteredItems = closetItems.filter((item) => filter === 'all' || item.category === filter);
   const plannerDays = nextPlannerDays(7);
@@ -3200,7 +3203,8 @@ function ClosetPage({ user, setUser }) {
   const generatedWardrobeCombos = [
     ...dressItems.slice(0, 6).map((dress, index) => ({
       id: `dress-look-${dress.id}-${index}`,
-      title: `${categoryLabel(dress.category)} pairing`,
+      title: `${occasion || 'Today'} dress pairing`,
+      reason: `Picked for ${occasion || 'today'} from your wardrobe.`,
       items: uniqueClosetItems([
         dress,
         closetItemsForCategories(['shoes'], index),
@@ -3210,7 +3214,8 @@ function ClosetPage({ user, setUser }) {
     })),
     ...Array.from({ length: 6 }).map((_, index) => ({
       id: `wardrobe-look-${index}`,
-      title: closetOccasions[index] || `Wardrobe look ${index + 1}`,
+      title: `${closetOccasions[index] || occasion || 'Today'} outfit pair`,
+      reason: `Recommended for ${closetOccasions[index] || occasion || 'today'}.`,
       items: uniqueClosetItems([
         closetItemsForCategories(['tops', 'ethnic'], index),
         closetItemsForCategories(['bottoms'], index),
@@ -3223,11 +3228,15 @@ function ClosetPage({ user, setUser }) {
   const recommendationCombos = closetSuggestions.length
     ? closetSuggestions
       .slice(0, 6)
-      .map((suggestion, index) => ({ id: suggestion.key || suggestion.title || `suggestion-${index}`, title: suggestion.title || closetOccasions[index] || 'Recommended look', items: (Array.isArray(suggestion.items) ? suggestion.items : []).filter((item) => item?.imageUrl) }))
+      .map((suggestion, index) => ({
+        id: suggestion.key || suggestion.title || `suggestion-${index}`,
+        title: suggestion.title || closetOccasions[index] || 'Recommended look',
+        reason: suggestion.reason || `Recommended for ${occasion || 'today'}.`,
+        items: (Array.isArray(suggestion.items) ? suggestion.items : []).filter((item) => item?.imageUrl)
+      }))
       .filter((card) => card.items.length > 0)
     : generatedWardrobeCombos;
   const wardrobeRecommendationCards = recommendationCombos.slice(0, 10);
-  const score = Math.min(98, 72 + selectedItems.length * 5 + recommendationCombos.length * 2);
 
   const tryRecommendedLook = (card) => {
     const cardItems = Array.isArray(card?.items) ? card.items.filter((item) => item?.id) : [];
@@ -3236,7 +3245,7 @@ function ClosetPage({ user, setUser }) {
       return;
     }
     applyComboItems(cardItems);
-    generateOutfit(cardItems.map((item) => item.id).filter(Boolean), { title: card.title, occasion: card.title });
+    generateOutfit(cardItems.map((item) => item.id).filter(Boolean), { title: card.title, occasion });
   };
 
   const latestOutfitImage = safeWardrobeImageUrl(latestOutfit?.imageUrl);
@@ -3245,6 +3254,7 @@ function ClosetPage({ user, setUser }) {
   const modelPreview = showingGeneratedOutfit ? latestOutfitImage : bodyPhotoPreview;
   const previewTitle = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Model';
   const previewAlt = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
+  const visibleWardrobeStageError = /error|missing|not enough|failed|could not|select closet|generate a look first|no other/i.test(message) ? message : '';
   const mobileWardrobeSections = wardrobeSections.filter((section) => ['Tops', 'Bottoms'].includes(section.label));
   const wardrobeFallbackForSection = (section) => (
     section.label === 'Bottoms' ? asset('category-icons/jeans.png') : asset('category-icons/tops.png')
@@ -3357,7 +3367,7 @@ function ClosetPage({ user, setUser }) {
           </div>
 
           {showingGeneratedOutfit && !generating && <AiPreviewDisclaimer className="wardrobe-ai-disclaimer" />}
-          {!generating && message && <p className={`wardrobe-stage-message ${/error|missing|not enough|failed|could not/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
+          {!generating && visibleWardrobeStageError && <p className="wardrobe-stage-message error-message">{visibleWardrobeStageError}</p>}
 
           <div className="wardrobe-stage-actions">
             <button className="wardrobe-generate-button" type="button" onClick={() => generateOutfit(selectedIds, { title: 'My wardrobe look' })} disabled={generating || selectedIds.length === 0}>
@@ -3375,7 +3385,7 @@ function ClosetPage({ user, setUser }) {
           </div>
           <div className="wardrobe-recommendation-tabs">
             {closetOccasions.slice(0, 4).map((idea, index) => (
-              <button className={index === 0 ? 'active' : ''} type="button" key={idea} onClick={() => askForSuggestions(idea)}>{idea}</button>
+              <button className={occasion === idea ? 'active' : ''} type="button" key={idea} onClick={() => askForSuggestions(idea)}>{idea}</button>
             ))}
           </div>
 
@@ -3387,8 +3397,9 @@ function ClosetPage({ user, setUser }) {
                   {card.items.length > 1 && <span className="wardrobe-combo-strip">
                     {card.items.slice(1, 4).map((item) => <img key={`${card.id}-${item.id}`} src={item.imageUrl} alt={item.name} />)}
                   </span>}
-                  <small>{card.items.length} wardrobe {card.items.length === 1 ? 'piece' : 'pieces'}</small>
+                  <small>{card.items.length} wardrobe {card.items.length === 1 ? 'piece' : 'pieces'} · {occasion}</small>
                   <strong>{card.title}</strong>
+                  {card.reason && <span className="wardrobe-recommendation-reason">{card.reason}</span>}
                   <em>Try this look</em>
                 </button>
               </article>
@@ -3398,14 +3409,6 @@ function ClosetPage({ user, setUser }) {
                 <a href="/closet/add">Add New Item</a>
               </article>
             )}
-          </div>
-
-          <div className="wardrobe-score-card">
-            <p>Style Score</p>
-            <div>
-              <strong>{score}</strong>
-              <span><b>{selectedItems.length ? 'Great Choice!' : 'Ready to Style'}</b><small>{selectedItems.length ? 'This look suits your wardrobe.' : 'Select clothes to build a look.'}</small></span>
-            </div>
           </div>
         </aside>
       </div>
@@ -3873,14 +3876,19 @@ function ClosetAddPage({ user, setUser }) {
       form.set('item', await prepareClosetItemPhoto(file));
       const data = await api('/closet/items', { method: 'POST', body: form });
       setSavedItems((current) => [data.item, ...current].slice(0, 6));
-      event.currentTarget.reset();
+      formRef.current?.reset();
       if (cameraRef.current) cameraRef.current.value = '';
+      if (fileRef.current) fileRef.current.value = '';
       setUploadPreview('');
       setDetectedProfile(null);
       setSeason('summer');
       setTags([]);
       setTagInput('');
-      setMessage('Added to your closet with AI-detected details.');
+      setMessage('Item added to wardrobe.');
+      window.setTimeout(() => {
+        window.history.pushState({}, '', '/closet');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, 700);
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -5185,7 +5193,7 @@ function ProfilePage({ user, setUser }) {
   const [photoFile, setPhotoFile] = useState(null);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
-  const [profilePhotoMode, setProfilePhotoMode] = useState('exact');
+  const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [creditHistory, setCreditHistory] = useState({
     loading: false,
@@ -5249,6 +5257,8 @@ function ProfilePage({ user, setUser }) {
   if (!user) return <AuthPage mode="signup" setUser={setUser} />;
 
   const photoSrc = preview || user.bodyPhotoOriginalUrl || user.bodyPhotoUrl;
+  const hasUploadedPhoto = Boolean(user.bodyPhotoOriginalUrl || user.bodyPhotoUrl);
+  const hasAiProfile = user.bodyPhotoSource === 'fal-full-body' && Boolean(user.bodyPhotoUrl);
   const selectPhoto = (event) => {
     const file = event.currentTarget.files?.[0];
     setPhotoFile(file || null);
@@ -5276,6 +5286,21 @@ function ProfilePage({ user, setUser }) {
       setPhotoFile(null);
       setPreview('');
       setMessage(data.user?.bodyPhotoStatus === 'generating' ? 'Photo saved. Full-body try-on profile is preparing in the background.' : 'Profile photo updated.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createAiBodyProfile = async () => {
+    if (user.bodyPhotoStatus === 'generating') return;
+    setSaving(true);
+    setMessage('Preparing your AI full-body profile...');
+    try {
+      const data = await api('/auth/body-photo/generate-full-body', { method: 'POST' });
+      setUser(data.user);
+      setMessage('AI full-body profile is preparing in the background.');
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -5344,6 +5369,7 @@ function ProfilePage({ user, setUser }) {
               <input ref={cameraRef} className="camera-input" type="file" accept={BODY_PHOTO_ACCEPT} capture="user" onChange={selectPhoto} />
               <div className="profile-reference-photo-tools"><button type="button" onClick={() => cameraRef.current?.click()}>Take photo</button><div role="radiogroup" aria-label="Profile photo mode"><label><input type="radio" name="profilePhotoMode" value="ai-full-body" checked={profilePhotoMode === 'ai-full-body'} onChange={(event) => setProfilePhotoMode(event.target.value)} /> AI full-body profile</label><label><input type="radio" name="profilePhotoMode" value="exact" checked={profilePhotoMode === 'exact'} onChange={(event) => setProfilePhotoMode(event.target.value)} /> Exact photo</label></div></div>
               {preview && <button className="profile-reference-save-photo" type="submit" disabled={saving}>{saving ? 'Saving photo...' : 'Save new photo'}</button>}
+              {hasUploadedPhoto && !hasAiProfile && user.bodyPhotoStatus !== 'generating' && <button className="profile-reference-save-photo secondary" type="button" disabled={saving} onClick={createAiBodyProfile}>{saving ? 'Starting AI profile...' : 'Create AI full-body profile'}</button>}
               {message && <p className={`profile-reference-message ${/failed|error|clearer/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
               {user.bodyPhotoStatus === 'generating' && <p className="profile-reference-message">Full-body profile is preparing in the background.</p>}
             </form>
@@ -5823,6 +5849,7 @@ function ProductPage({ id, user, setUser }) {
                 </button>
               )}
             </div>
+            {showingTryOn && <AiPreviewDisclaimer className="product-ai-disclaimer product-gallery-disclaimer" />}
             <div className="product-editorial-thumbnails" aria-label="Product image gallery">
               {galleryItems.map((item) => (
                 <button className={item.active ? 'active' : ''} type="button" key={item.key} onClick={item.onSelect} aria-label={`Show ${item.label}`} title={item.label}>
@@ -5861,7 +5888,6 @@ function ProductPage({ id, user, setUser }) {
               <div><strong>AI fit preview</strong><span>Built from your FitLook profile</span></div>
               <div><strong>Verified catalog</strong><span>Live brand and price details</span></div>
             </div>
-            {showingTryOn && <AiPreviewDisclaimer className="product-ai-disclaimer" />}
             {tryOnError && <p className="form-message error-message">{tryOnError}</p>}
             {tryOnVideoError && <p className="form-message error-message">{tryOnVideoError}</p>}
 
@@ -6109,59 +6135,73 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
   const steps = useMemo(() => [
     {
       eyebrow: 'Welcome',
-      title: `Welcome to FitLook${user?.name ? `, ${user.name.split(/\s+/)[0]}` : ''}`,
-      body: 'FitLook exists to make online fashion feel personal before you buy. Build a try-on profile, explore curated pieces, and see how styles work with your wardrobe.',
-      gain: 'You get a faster way to choose pieces with more confidence.',
+      title: 'Let’s take a quick tour',
+      body: 'A few seconds to show how FitLook helps you browse, try on, and plan looks.',
+      gain: 'Skip anytime.',
       icon: <SparkleLineIcon />,
-      visual: 'Profile - Browse - Try on'
+      visual: 'Profile - Browse - Try on',
+      target: 'FitLook',
+      position: 'center'
     },
     {
       eyebrow: 'Explore',
       title: 'Shop the catalog',
-      body: 'Use Home, Categories, and Search to browse new arrivals, sale edits, and product collections. Filters help you narrow by category, brand, gender, and price.',
+      body: 'Use search, categories, and new arrivals to find pieces faster.',
       gain: 'Find relevant pieces without digging through the whole store.',
       icon: <SearchIcon />,
-      visual: 'Search + filters'
+      visual: 'Search + filters',
+      target: 'Search and explore',
+      position: 'top'
     },
     {
       eyebrow: 'Preview',
       title: 'AI Try-On',
-      body: 'Open supported products and generate a preview using your saved try-on portrait. You can switch between the product photo and your AI preview on the product page.',
+      body: 'Open a product and generate a preview with your saved try-on profile.',
       gain: 'See the fit and vibe on your profile before spending time or credits on more looks.',
       icon: <TryOnIcon />,
-      visual: 'Product - AI preview'
+      visual: 'Product - AI preview',
+      target: 'AI try-on button',
+      position: 'right'
     },
     {
       eyebrow: 'Wardrobe',
       title: 'Build your Smart Closet',
-      body: 'Upload clothing you already own, save closet items, and combine them into outfits. The wardrobe workspace helps you plan looks around your own pieces.',
+      body: 'Upload your own clothes, choose tops and bottoms, and generate outfit ideas.',
       gain: 'Turn browsing into outfit planning instead of one-item decisions.',
       icon: <ClosetIcon />,
-      visual: 'Upload - Combine - Save'
+      visual: 'Upload - Combine - Save',
+      target: 'Wardrobe',
+      position: 'left'
     },
     {
       eyebrow: 'Personalize',
       title: 'Use Wishlist, Credits, and Concierge',
-      body: 'Save products to Wishlist, manage try-on credits from the Credits page, and ask FitLook Concierge for style ideas when you want help choosing.',
+      body: 'Save favorites, manage credits, and ask AI Stylist when you need help.',
       gain: 'Keep favorites, budget previews, and get guidance without losing your place.',
       icon: <HeartIcon />,
-      visual: 'Save - Credit - Ask'
+      visual: 'Save - Credit - Ask',
+      target: 'Saved and credits',
+      position: 'bottom-right'
     },
     {
       eyebrow: 'Workflow',
       title: 'A simple way to use FitLook',
-      body: 'Start with search or a category, open a product, generate a try-on when it matters, then save favorites or build outfits in your closet.',
+      body: 'Browse, open a product, try it on, then save it or build an outfit.',
       gain: 'Use credits only where they help you decide.',
       icon: <BagIcon />,
-      visual: 'Browse - Try - Decide'
+      visual: 'Browse - Try - Decide',
+      target: 'Product flow',
+      position: 'bottom'
     },
     {
       eyebrow: 'Ready',
       title: 'You are all set',
-      body: 'Your profile is ready for a more visual shopping flow. Jump in, explore styles, and come back to your Profile page anytime to replay this tour.',
+      body: 'You can replay this tour anytime from Profile.',
       gain: 'Let us get your first look moving.',
       icon: <GlobeIcon />,
-      visual: 'Enter FitLook'
+      visual: 'Enter FitLook',
+      target: 'Start shopping',
+      position: 'center'
     }
   ], [user?.name]);
 
@@ -6233,15 +6273,18 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
 
   return (
     <div
-      className="onboarding-overview"
+      className={`onboarding-overview onboarding-tour-step-${stepIndex} onboarding-tour-${step.position}`}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) markComplete('outside-click');
       }}
     >
+      <div className="onboarding-tour-spotlight" aria-hidden="true">
+        <span>{step.icon}</span>
+      </div>
       <section
         ref={dialogRef}
-        className="onboarding-dialog"
+        className={`onboarding-dialog ${stepIndex === 0 || isLastStep ? 'intro' : 'tooltip'}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="onboarding-title"
@@ -6251,28 +6294,19 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
         <header className="onboarding-topbar">
           <div>
             <p>{step.eyebrow}</p>
-            <span>{stepIndex + 1} of {steps.length}</span>
+            <span>{stepIndex + 1} / {steps.length}</span>
           </div>
           <button type="button" onClick={() => markComplete('skip')} disabled={saving}>
-            {saving ? 'Saving...' : 'Skip'}
+            {saving ? 'Saving...' : '×'}
           </button>
         </header>
 
-        <div className="onboarding-progress" aria-label={`Step ${stepIndex + 1} of ${steps.length}`}>
-          {steps.map((item, index) => (
-            <span className={index === stepIndex ? 'active' : ''} key={item.title} />
-          ))}
-        </div>
-
         <div className="onboarding-content">
-          <div className="onboarding-visual" aria-hidden="true">
-            <span>{step.icon}</span>
-            <strong>{step.visual}</strong>
-          </div>
           <div className="onboarding-copy">
+            <small>{step.target}</small>
             <h2 id="onboarding-title">{step.title}</h2>
             <p id="onboarding-copy">{step.body}</p>
-            <small>{step.gain}</small>
+            <b>{step.gain}</b>
           </div>
         </div>
 
@@ -6282,13 +6316,18 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
           <button type="button" onClick={() => setStepIndex((current) => Math.max(0, current - 1))} disabled={stepIndex === 0 || saving}>
             Back
           </button>
+          <div className="onboarding-progress" aria-label={`Step ${stepIndex + 1} of ${steps.length}`}>
+            {steps.map((item, index) => (
+              <span className={index === stepIndex ? 'active' : ''} key={item.title} />
+            ))}
+          </div>
           <button
             ref={nextButtonRef}
             type="button"
             onClick={() => isLastStep ? markComplete('finish') : setStepIndex((current) => Math.min(steps.length - 1, current + 1))}
             disabled={saving}
           >
-            {saving ? 'Saving...' : isLastStep ? 'Get Started' : 'Next'}
+            {saving ? 'Saving...' : isLastStep ? 'Done' : stepIndex === 0 ? 'Take a tour' : 'Next'}
           </button>
         </footer>
       </section>
@@ -6308,7 +6347,7 @@ function AuthPage({ mode, setUser }) {
   const [otpLoading, setOtpLoading] = useState(false);
   const [bodyPhotoFile, setBodyPhotoFile] = useState(null);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
-  const [profilePhotoMode, setProfilePhotoMode] = useState('exact');
+  const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const isSignup = mode === 'signup';
