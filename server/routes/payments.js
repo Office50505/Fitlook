@@ -1,5 +1,8 @@
 import express from 'express';
+import ClosetOutfit from '../models/ClosetOutfit.js';
+import CustomTryOn from '../models/CustomTryOn.js';
 import TokenOrder from '../models/TokenOrder.js';
+import TryOn from '../models/TryOn.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
 
@@ -310,6 +313,95 @@ function orderIdFromCallback(req) {
 
 router.get('/plans', (_req, res) => {
   res.json({ plans: [MONTHLY_PLAN] });
+});
+
+router.get('/credits/history', requireUser, async (req, res) => {
+  const userId = req.user._id;
+  const [orders, tryOns, customTryOns, closetOutfits] = await Promise.all([
+    TokenOrder.find({ user: userId, status: 'completed' }).sort({ creditedAt: -1, createdAt: -1 }).limit(30).lean(),
+    TryOn.find({ user: userId }).sort({ createdAt: -1 }).limit(40).populate('product', 'name').lean(),
+    CustomTryOn.find({ user: userId }).sort({ createdAt: -1 }).limit(30).lean(),
+    ClosetOutfit.find({ user: userId }).sort({ createdAt: -1 }).limit(30).lean()
+  ]);
+
+  const purchaseItems = orders.map((order) => ({
+    id: `order-${order._id}`,
+    type: 'purchase',
+    title: order.planName || 'Credit purchase',
+    detail: order.amount ? `${order.currency || 'INR'} ${(Number(order.amount || 0) / 100).toLocaleString('en-IN')}` : 'Payment verified',
+    credits: Number(order.tokens || 0),
+    date: order.creditedAt || order.createdAt,
+    status: order.status
+  }));
+
+  const productTryOnItems = tryOns.flatMap((tryOn) => {
+    const items = [];
+    const tokenCost = Number(tryOn.tokenCost || 0);
+    if (tokenCost > 0) {
+      items.push({
+        id: `tryon-${tryOn._id}`,
+        type: 'usage',
+        title: 'AI try-on image',
+        detail: tryOn.product?.name || 'Product preview',
+        credits: -tokenCost,
+        date: tryOn.createdAt,
+        status: 'used'
+      });
+    }
+    const videoCost = Number(tryOn.video?.tokenCost || 0);
+    if (videoCost > 0 && tryOn.video?.generatedAt) {
+      items.push({
+        id: `tryon-video-${tryOn._id}`,
+        type: 'usage',
+        title: 'Generated video',
+        detail: tryOn.product?.name || 'Product video preview',
+        credits: -videoCost,
+        date: tryOn.video.generatedAt,
+        status: 'used'
+      });
+    }
+    return items;
+  });
+
+  const customTryOnItems = customTryOns
+    .filter((tryOn) => Number(tryOn.tokenCost || 0) > 0)
+    .map((tryOn) => ({
+      id: `custom-${tryOn._id}`,
+      type: 'usage',
+      title: 'Custom try-on',
+      detail: 'Uploaded garment render',
+      credits: -Number(tryOn.tokenCost || 0),
+      date: tryOn.createdAt,
+      status: 'used'
+    }));
+
+  const closetItems = closetOutfits
+    .filter((outfit) => Number(outfit.tokenCost || 0) > 0)
+    .map((outfit) => ({
+      id: `closet-${outfit._id}`,
+      type: 'usage',
+      title: 'Wardrobe look',
+      detail: outfit.title || 'Generated outfit',
+      credits: -Number(outfit.tokenCost || 0),
+      date: outfit.createdAt,
+      status: 'used'
+    }));
+
+  const items = [...purchaseItems, ...productTryOnItems, ...customTryOnItems, ...closetItems]
+    .filter((item) => item.date)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 50);
+
+  const totalPurchased = purchaseItems.reduce((sum, item) => sum + Math.max(0, Number(item.credits || 0)), 0);
+  const totalUsed = [...productTryOnItems, ...customTryOnItems, ...closetItems]
+    .reduce((sum, item) => sum + Math.abs(Math.min(0, Number(item.credits || 0))), 0);
+
+  res.json({
+    balance: Number(req.user.tokens || 0),
+    totalPurchased,
+    totalUsed,
+    items
+  });
 });
 
 router.post('/phonepe/subscription', requireUser, async (req, res) => {

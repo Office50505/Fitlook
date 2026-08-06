@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import OptimizedImage from './components/common/OptimizedImage.jsx';
 import ShaderBackground from './components/common/ShaderBackground.jsx';
+import { cartItemCount, cartSubtotal, readCartItems, removeCartItem, updateCartQuantity } from './utils/cart.js';
+import { trackClientEvent } from './utils/analytics.js';
 import { DEFAULT_MODEL_PLACEMENT, calculateModelPlacement, normalizedPlacement } from './utils/modelPlacement.js';
+import { updateProductSeo, updateRouteSeo } from './utils/seo.js';
 
 const asset = (name) => `/assets/${name}`;
 const MAX_BODY_PHOTO_BYTES = 8 * 1024 * 1024;
@@ -150,10 +153,18 @@ function nextPlannerDays(count = 7) {
   });
 }
 
-function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1.65, disableZoom = false, onError }) {
+const AI_PREVIEW_DISCLAIMER = 'AI previews can make mistakes. Check fit, colour, and product details before buying.';
+const DEFAULT_WARDROBE_MODEL_SRC = '/assets/wardrobe-default-model.png';
+
+function AiPreviewDisclaimer({ className = '' }) {
+  return <p className={`ai-preview-disclaimer ${className}`.trim()}>{AI_PREVIEW_DISCLAIMER}</p>;
+}
+
+function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1.65, disableZoom = false, onError, onOpen }) {
   const [zooming, setZooming] = useState(false);
   const [origin, setOrigin] = useState({ x: 50, y: 50 });
   const frameRef = useRef(null);
+  const canOpen = typeof onOpen === 'function';
 
   const moveOrigin = (event) => {
     const frame = frameRef.current;
@@ -177,15 +188,30 @@ function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1
     if (event.pointerType !== 'mouse') event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
 
+  const openImage = () => {
+    if (canOpen) onOpen();
+  };
+
+  const handleKeyDown = (event) => {
+    if (!canOpen || (event.key !== 'Enter' && event.key !== ' ')) return;
+    event.preventDefault();
+    onOpen();
+  };
+
   return (
     <div
       ref={frameRef}
-      className={`zoomable-image ${zooming ? 'is-zoomed' : ''} ${disableZoom || zoom <= 1 ? 'no-zoom' : ''} ${className}`.trim()}
+      className={`zoomable-image ${zooming ? 'is-zoomed' : ''} ${disableZoom || zoom <= 1 ? 'no-zoom' : ''} ${canOpen ? 'generated-image-open' : ''} ${className}`.trim()}
+      role={canOpen ? 'button' : undefined}
+      tabIndex={canOpen ? 0 : undefined}
+      aria-label={canOpen ? `Open ${alt || 'generated image'} full screen` : undefined}
       style={{
         '--zoom-origin-x': `${origin.x}%`,
         '--zoom-origin-y': `${origin.y}%`,
         '--zoom-scale': zoom
       }}
+      onClick={canOpen ? openImage : undefined}
+      onKeyDown={handleKeyDown}
       onPointerEnter={(event) => {
         if (event.pointerType === 'mouse') startZoom(event);
       }}
@@ -500,6 +526,13 @@ const pageMeta = {
   '/about': ['About', 'Shopping online should feel more certain.', 'FitLook combines product discovery with AI try-on previews so shoppers can compare styles with more confidence.', 'hero2.png'],
   '/support': ['Help', 'Support for shopping and try-on.', 'Find answers about shipping, returns, profile photos, tokens, and account access.', 'search-shirt-4.jpg'],
   '/contact': ['Contact', 'Tell us what you need.', 'For order, token, account, and AI try-on questions, reach the FitLook support team.', 'hero2.png'],
+  '/cart': ['Cart', 'Review your selected products.', 'Cart is prepared for product checkout, with backend order APIs still required before payment can be enabled.', 'hero2.png'],
+  '/faq': ['FAQ', 'Common FitLook questions.', 'Answers for AI try-on, credits, shopping, privacy, and account support.', 'hero2.png'],
+  '/shipping': ['Shipping Policy', 'Delivery information.', 'Shipping terms depend on connected brand and order support.', 'hero2.png'],
+  '/returns': ['Return and Refund Policy', 'Return and refund guidance.', 'Return eligibility depends on brand policies and final order support.', 'hero2.png'],
+  '/cancellation': ['Cancellation Policy', 'Cancellation guidance.', 'Cancellation support will follow the checkout and order backend contract.', 'hero2.png'],
+  '/data-deletion': ['Data Deletion', 'Request deletion of FitLook data.', 'Learn how uploaded photos, generated looks, and account data can be removed.', 'hero2.png'],
+  '/ai-disclaimer': ['AI Try-On Disclaimer', 'AI previews are visual guides.', 'AI-generated previews help visualize outfits; actual fit, colour, and fabric appearance may vary.', 'hero2.png'],
   '/careers': ['Careers', 'Build the future of fitting rooms.', 'Future roles across product, design, engineering, fashion operations, and partnerships would be listed here.', 'hero2.png'],
   '/blog': ['Blog', 'Fit notes, styling ideas, and AI try-on updates.', 'Editorial content, product guides, and try-on tips would live here.', 'arrival-4.jpg'],
   '/press': ['Press', 'FitLook press and media.', 'Company information, product screenshots, and media contact details would be available here.', 'hero2.png'],
@@ -648,6 +681,7 @@ async function api(path, options = {}) {
 }
 
 function recordEvent(type, payload = {}) {
+  trackClientEvent(type, payload);
   if (!localStorage.getItem('fitlook_token')) return;
   api('/recommendations/events', {
     method: 'POST',
@@ -901,9 +935,35 @@ function useTryOnCache(user, products) {
   return [tryOns, setTryOns];
 }
 
+function MobileBottomNav({ user }) {
+  const currentPath = normalizePath();
+  const mobileNavLinks = [
+    { label: 'Home', href: '/home', Icon: HomeIcon },
+    { label: 'Explore', href: '/categories', Icon: GridIcon },
+    { label: 'Try-On', href: '/custom-try-on', Icon: TryOnIcon },
+    { label: 'AI Stylist', href: user ? '/style-bot' : '/signup', Icon: SparkleLineIcon },
+    { label: 'Wardrobe', href: '/closet', Icon: ClosetIcon },
+    { label: 'Profile', href: user ? '/profile' : '/signup', Icon: UserIcon }
+  ];
+  const isActiveLink = (href, index) => {
+    const hrefPath = href.split('?')[0] || '/';
+    return currentPath === hrefPath || (currentPath === '/' && index === 0);
+  };
+
+  return (
+    <nav className="mobile-bottom-nav" aria-label="Primary mobile navigation">
+      {mobileNavLinks.map(({ label, href, Icon }, index) => {
+        const active = isActiveLink(href, index);
+        return <a className={active ? 'active' : ''} href={href} aria-current={active ? 'page' : undefined} key={label}><Icon /><span>{label}</span></a>;
+      })}
+    </nav>
+  );
+}
+
 function Header({ user, setUser }) {
   const tokenLabel = user ? `${user.tokens} Tokens` : 'Tokens';
   const [menuOpen, setMenuOpen] = useState(false);
+  const [wishlistCount, setWishlistCount] = useState(() => user?.wishlistCount || readWishlistProductIds().length);
   const headerRef = useRef(null);
   const desktopSearchRef = useRef(null);
   const mobileSearchRef = useRef(null);
@@ -919,7 +979,7 @@ function Header({ user, setUser }) {
   };
   const navLinks = [
     ['Home', '/home'],
-    ['Category', '/categories'],
+    ['Explore', '/categories'],
     ['Wardrobe', '/closet'],
     ['Custom Try On', '/custom-try-on'],
     ['Wishlist', '/wishlist']
@@ -957,13 +1017,23 @@ function Header({ user, setUser }) {
   }, [menuOpen]);
 
   useEffect(() => {
+    setWishlistCount(user?.wishlistCount || readWishlistProductIds().length);
+  }, [user?.wishlistCount]);
+
+  useEffect(() => {
+    const syncWishlist = (event) => {
+      const ids = event.detail?.ids;
+      setWishlistCount(Array.isArray(ids) ? ids.length : readWishlistProductIds().length);
+    };
+    window.addEventListener('fitlook:wishlist-change', syncWishlist);
+    return () => {
+      window.removeEventListener('fitlook:wishlist-change', syncWishlist);
+    };
+  }, []);
+
+  useEffect(() => {
     const focusSearch = () => {
-      if (window.matchMedia('(max-width: 820px)').matches) {
-        setMenuOpen(true);
-        window.setTimeout(() => mobileSearchRef.current?.focus(), 0);
-      } else {
-        desktopSearchRef.current?.focus();
-      }
+      desktopSearchRef.current?.focus();
     };
     const onKeyDown = (event) => {
       const element = event.target;
@@ -1025,7 +1095,9 @@ function Header({ user, setUser }) {
             </form>
           </div>
           <div className="header-actions">
+            <button className="icon-button mobile-search-trigger" type="button" aria-label="Open search" onClick={() => { setMenuOpen(true); window.setTimeout(() => mobileSearchRef.current?.focus(), 0); }}><SearchIcon /></button>
             <a className="header-credit-button" href="/tokens" aria-label={user ? `Buy credits. ${tokenLabel} available` : 'Buy credits'}><SparkleLineIcon /><span>Credits</span>{user && <strong>{user.tokens}</strong>}</a>
+            <a className="icon-button header-count-button" href="/wishlist" aria-label={`${wishlistCount} wishlist items`}><HeartIcon />{wishlistCount > 0 && <strong>{wishlistCount}</strong>}</a>
             {user ? <a className="icon-button" href="/profile" aria-label="Profile"><UserIcon /></a> : <a className="icon-button" href="/signup" aria-label="Account"><UserIcon /></a>}
             {user && <button className="text-button" onClick={logout}>Log out</button>}
             <button className="icon-button menu-toggle" type="button" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-controls="mobile-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
@@ -1117,7 +1189,7 @@ function FooterCol({ title, links }) {
   );
 }
 
-function FloatingStylistLauncher({ user }) {
+function FloatingStylistLauncher({ user, className = '' }) {
   const openStylist = () => {
     const href = user ? '/style-bot' : '/signup';
     window.history.pushState({}, '', href);
@@ -1133,7 +1205,7 @@ function FloatingStylistLauncher({ user }) {
 
   return (
     <button
-      className="ai-stylist-launcher"
+      className={`ai-stylist-launcher ${className}`.trim()}
       type="button"
       aria-label="Open AI Stylist"
       title="Open AI Stylist"
@@ -1236,9 +1308,85 @@ const atelierHeroSlides = [
   }
 ];
 
-function AtelierHome() {
+function AtelierProductRailCard({ product }) {
+  const [fullscreenPreview, setFullscreenPreview] = useState(null);
+  const openPreview = (event) => {
+    event.preventDefault();
+    setFullscreenPreview({ src: product.imageUrl || asset('hero2.png'), alt: product.name, title: product.name });
+  };
+  return (
+    <article className="atelier-product">
+      <a className="atelier-product-image" href={`/product/${encodeURIComponent(product.id)}`} onClick={openPreview} aria-label={`Open preview for ${product.name}`}>
+        {product.badge && <span className="atelier-best-seller">{product.badge}</span>}
+        <OptimizedImage src={product.imageUrl} alt={product.name} />
+        <span className="atelier-product-quick-link">View Product</span>
+      </a>
+      <WishlistHeartButton product={product} className="card-wishlist-heart" />
+      <span className="atelier-product-category">{displayCategory(product)}</span>
+      <h3>{product.name}</h3>
+      <div className="atelier-price">
+        <strong>{formatMoney(product.price || 0, product.currency)}</strong>
+        {product.compareAtPrice && product.compareAtPrice > product.price && <del>{formatMoney(product.compareAtPrice, product.currency)}</del>}
+      </div>
+      {fullscreenPreview && <ImageLightbox image={fullscreenPreview} onClose={() => setFullscreenPreview(null)} />}
+    </article>
+  );
+}
+
+function AtelierCategoryProductCard({ product }) {
+  const [fullscreenPreview, setFullscreenPreview] = useState(null);
+  const openPreview = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setFullscreenPreview({ src: product.imageUrl || asset('hero2.png'), alt: product.name, title: product.name });
+  };
+
+  return (
+    <article className="atelier-category-product">
+      <a href={`/product/${encodeURIComponent(product.id)}`}>
+        <div className="atelier-category-product-image" role="button" tabIndex="0" aria-label={`Open preview for ${product.name}`} onClick={openPreview} onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          openPreview(event);
+        }}>
+          <OptimizedImage src={product.imageUrl} alt={product.name} />
+        </div>
+        <span className="atelier-category-product-brand">{displayBrand(product)}</span>
+        <h3>{product.name}</h3>
+        <strong>{formatMoney(product.price || 0, product.currency)}</strong>
+      </a>
+      <WishlistHeartButton product={product} className="card-wishlist-heart" />
+      {fullscreenPreview && <ImageLightbox image={fullscreenPreview} onClose={() => setFullscreenPreview(null)} />}
+    </article>
+  );
+}
+
+function AtelierProductStrip({ title, railId, label, products, viewHref = '/categories', viewLabel = 'View more', railRef, onScroll, onKeyDown }) {
+  if (!products.length) return null;
+  return (
+    <section className="atelier-arrivals atelier-product-strip">
+      <div className="atelier-wide">
+        <div className="atelier-section-heading">
+          <h2>{title}</h2>
+          <div className="atelier-product-arrows">
+            <button type="button" aria-label={`Previous ${label}`} aria-controls={railId} onClick={() => onScroll(railRef, -1)}><AtelierIcon name="arrowLeft" /></button>
+            <button type="button" aria-label={`Next ${label}`} aria-controls={railId} onClick={() => onScroll(railRef, 1)}><AtelierIcon name="arrowRight" /></button>
+          </div>
+        </div>
+        <div className="atelier-product-grid atelier-arrivals-rail" id={railId} ref={railRef} tabIndex="0" aria-label={label} onKeyDown={(event) => onKeyDown(railRef, event)}>
+          {products.map((product) => <AtelierProductRailCard product={product} key={product.id} />)}
+          <a className="atelier-arrivals-more" href={viewHref}><span>{label}</span><strong>{viewLabel}</strong><small>Explore the full edit <b>→</b></small></a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AtelierHome({ user }) {
   const state = useProducts({ limit: 96, sort: 'newest' });
   const arrivalsRailRef = useRef(null);
+  const tryOnRailRef = useRef(null);
+  const essentialsRailRef = useRef(null);
+  const categoryRailRef = useRef(null);
   const [heroSlideIndex, setHeroSlideIndex] = useState(0);
   const catalogProducts = useMemo(
     () => (state.products || []).filter((product) => product?.id && product?.imageUrl),
@@ -1246,45 +1394,33 @@ function AtelierHome() {
   );
   const newArrivalProducts = catalogProducts.filter((product) => product.isNewArrival);
   const arrivalProducts = [...newArrivalProducts, ...catalogProducts.filter((product) => !product.isNewArrival)].slice(0, 12);
+  const productsAfterArrivals = catalogProducts.filter((product) => !arrivalProducts.some((arrival) => arrival.id === product.id));
+  const tryOnPickProducts = (productsAfterArrivals.length ? productsAfterArrivals : catalogProducts).slice(0, 12);
+  const productsAfterTryOnPicks = catalogProducts.filter((product) => (
+    !arrivalProducts.some((arrival) => arrival.id === product.id)
+    && !tryOnPickProducts.some((item) => item.id === product.id)
+  ));
+  const dailyEssentialProducts = (productsAfterTryOnPicks.length ? productsAfterTryOnPicks : [...catalogProducts].reverse()).slice(0, 12);
+  const feedGender = productGenderForPreference(user?.genderPreference || '');
+  const genderedFeedPool = useMemo(() => {
+    if (!feedGender) return catalogProducts;
+    const exactGenderProducts = catalogProducts.filter((product) => String(product.gender || '').toLowerCase() === feedGender);
+    if (exactGenderProducts.length) return exactGenderProducts;
+    return catalogProducts.filter((product) => {
+      const productGender = String(product.gender || '').toLowerCase();
+      return productGender === feedGender || productGender === 'unisex';
+    });
+  }, [catalogProducts, feedGender]);
+  const mixedFeedProducts = useMemo(() => {
+    const shuffled = [...genderedFeedPool];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+    return shuffled.slice(0, 36);
+  }, [genderedFeedPool]);
+  const mixedFeedLabel = feedGender ? `${feedGender === 'women' ? "Women's" : "Men's"} picks from every department` : 'Mixed picks from every department';
   const promoProducts = catalogProducts.slice(4, 6);
-  const lookProducts = useMemo(() => {
-    const outfitCategories = ['tops', 'dresses', 'jeans', 'shirts', 't-shirts', 'jackets', 'shorts', 'pants', 'sleepwear'];
-    const excludedCategories = new Set(['eyewear', 'accessories', 'shoes', 'innerwear']);
-    const usedIds = new Set();
-    const usedCategories = new Set();
-    const selected = [];
-    const genderRank = (product) => {
-      const gender = String(product.gender || '').toLowerCase();
-      if (gender === 'women') return 0;
-      if (gender === 'unisex') return 1;
-      if (gender === 'men') return 2;
-      return 3;
-    };
-    const outfitPool = catalogProducts
-      .filter((product) => !excludedCategories.has(categorySlug(product.category)))
-      .sort((a, b) => genderRank(a) - genderRank(b));
-
-    outfitCategories.forEach((slug) => {
-      if (selected.length >= 3) return;
-      const product = outfitPool.find((item) => (
-        categorySlug(item.category) === slug
-        && !usedIds.has(item.id)
-        && !usedCategories.has(slug)
-      ));
-      if (!product) return;
-      selected.push(product);
-      usedIds.add(product.id);
-      usedCategories.add(slug);
-    });
-
-    outfitPool.forEach((product) => {
-      if (selected.length >= 3 || usedIds.has(product.id)) return;
-      selected.push(product);
-      usedIds.add(product.id);
-    });
-
-    return selected;
-  }, [catalogProducts]);
   const categoryCards = useMemo(() => {
     const counts = state.facets?.categoryCounts || [];
     return counts
@@ -1309,16 +1445,16 @@ function AtelierHome() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const scrollArrivals = (direction) => {
-    const rail = arrivalsRailRef.current;
+  const scrollProductRail = (railRef, direction) => {
+    const rail = railRef.current;
     if (!rail) return;
     rail.scrollBy({ left: direction * Math.max(rail.clientWidth * .82, 300), behavior: 'smooth' });
   };
 
-  const handleArrivalRailKeyDown = (event) => {
+  const handleProductRailKeyDown = (railRef, event) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
-    scrollArrivals(event.key === 'ArrowRight' ? 1 : -1);
+    scrollProductRail(railRef, event.key === 'ArrowRight' ? 1 : -1);
   };
 
   return (
@@ -1338,10 +1474,6 @@ function AtelierHome() {
             ))}
           </div>
           <div className="atelier-hero-editorial-scrim" aria-hidden="true" />
-          <div className="atelier-hero-editorial-orbits" aria-label="FitLook tools">
-            <a className="atelier-hero-orbit atelier-hero-orbit-custom" href="/custom-try-on"><UploadCloudIcon /><strong>Custom<br />Try-On</strong></a>
-            <a className="atelier-hero-orbit atelier-hero-orbit-wardrobe" href="/closet"><ClosetIcon /><strong>Wardrobe</strong><small>Style every day</small></a>
-          </div>
           <div className="atelier-hero-editorial-content">
             <div className="atelier-hero-editorial-copy" key={heroSlide.id}>
               <span>{heroSlide.kicker}</span>
@@ -1367,21 +1499,15 @@ function AtelierHome() {
           </div>
         </section>
 
-        <section className="atelier-quick-links" aria-label="FitLook benefits">
-          <div className="atelier-wide atelier-quick-grid">
-            {[
-              ['clock', 'New Arrivals', 'Updated Daily'],
-              ['sparkle', 'AI Stylist', 'Personalized Fits'],
-              ['globe', 'World Delivery', 'Express Shipping']
-            ].map(([icon, title, copy]) => <div className="atelier-quick-item" key={title}><span className="atelier-quick-icon"><AtelierIcon name={icon} /></span><span><strong>{title}</strong><small>{copy}</small></span></div>)}
-          </div>
-        </section>
-
         <section className="atelier-category-section">
           <div className="atelier-wide">
             <div className="atelier-section-heading"><h2>Shop by Category</h2><a className="atelier-text-link" href="/categories">View All Departments <span>→</span></a></div>
-            <div className="atelier-category-grid">
-              {categoryCards.map(({ category, count, slug, collectionVisual }) => <a className={`atelier-category category-icon-${slug}`} href={categoryPageHref(category)} key={slug}><div className="atelier-category-image"><OptimizedImage src={asset(collectionVisual.image)} alt={`${displayCategory({ category })} category`} style={{ objectPosition: collectionVisual.position }} /></div><span>{displayCategory({ category })} <small>{count}</small></span></a>)}
+            <div className="atelier-category-rail-wrap">
+              <button className="atelier-category-scroll-button prev" type="button" aria-label="Previous categories" onClick={() => scrollProductRail(categoryRailRef, -1)}><AtelierIcon name="arrowLeft" /></button>
+              <div className="atelier-category-grid" ref={categoryRailRef} tabIndex="0" aria-label="Shop by category" onKeyDown={(event) => handleProductRailKeyDown(categoryRailRef, event)}>
+                {categoryCards.map(({ category, count, slug, collectionVisual }) => <a className={`atelier-category category-icon-${slug}`} href={categoryPageHref(category)} key={slug}><div className="atelier-category-image"><OptimizedImage src={asset(collectionVisual.image)} alt={`${displayCategory({ category })} category`} style={{ objectPosition: collectionVisual.position }} /></div><span>{displayCategory({ category })} <small>{count}</small></span></a>)}
+              </div>
+              <button className="atelier-category-scroll-button next" type="button" aria-label="Next categories" onClick={() => scrollProductRail(categoryRailRef, 1)}><AtelierIcon name="arrowRight" /></button>
             </div>
           </div>
         </section>
@@ -1390,35 +1516,22 @@ function AtelierHome() {
           {promoProducts.map((product) => <article className="atelier-promo atelier-promo-sale" key={product.id}><a className="atelier-promo-link" href={`/product/${encodeURIComponent(product.id)}`}><div><span className="atelier-eyebrow">{displayCategory(product)}</span><h3>{product.name}</h3><p>{displayBrand(product)} · {formatMoney(product.price || 0, product.currency)}</p><span className="atelier-text-link">View Product →</span></div><OptimizedImage src={product.imageUrl} alt={product.name} /></a><WishlistHeartButton product={product} className="card-wishlist-heart" /></article>)}
         </section>}
 
-        <section className="atelier-arrivals">
-          <div className="atelier-wide">
-            <div className="atelier-section-heading"><h2>Curated New Arrivals</h2><div className="atelier-product-arrows"><button type="button" aria-label="Previous arrivals" aria-controls="new-arrivals-rail" onClick={() => scrollArrivals(-1)}><AtelierIcon name="arrowLeft" /></button><button type="button" aria-label="Next arrivals" aria-controls="new-arrivals-rail" onClick={() => scrollArrivals(1)}><AtelierIcon name="arrowRight" /></button></div></div>
-            <div className="atelier-product-grid atelier-arrivals-rail" id="new-arrivals-rail" ref={arrivalsRailRef} tabIndex="0" aria-label="Curated new arrivals" onKeyDown={handleArrivalRailKeyDown}>
-              {arrivalProducts.map((product) => <article className="atelier-product" key={product.id}><a className="atelier-product-image" href={`/product/${encodeURIComponent(product.id)}`}>{product.badge && <span className="atelier-best-seller">{product.badge}</span>}<OptimizedImage src={product.imageUrl} alt={product.name} /><span className="atelier-product-quick-link">View Product</span></a><WishlistHeartButton product={product} className="card-wishlist-heart" /><span className="atelier-product-category">{displayCategory(product)}</span><h3>{product.name}</h3><div className="atelier-price"><strong>{formatMoney(product.price || 0, product.currency)}</strong>{product.compareAtPrice && product.compareAtPrice > product.price && <del>{formatMoney(product.compareAtPrice, product.currency)}</del>}</div></article>)}
-              {arrivalProducts.length > 0 && <a className="atelier-arrivals-more" href="/categories"><span>New arrivals</span><strong>View more</strong><small>Explore the full edit <b>→</b></small></a>}
+        <AtelierProductStrip title="Curated New Arrivals" railId="new-arrivals-rail" label="Curated new arrivals" products={arrivalProducts} railRef={arrivalsRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
+        <AtelierProductStrip title="AI Try-On Picks" railId="ai-tryon-picks-rail" label="AI try-on picks" products={tryOnPickProducts} viewHref="/categories" railRef={tryOnRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
+        <AtelierProductStrip title="Daily Essentials" railId="daily-essentials-rail" label="Daily essentials" products={dailyEssentialProducts} viewHref="/categories" railRef={essentialsRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
+        {mixedFeedProducts.length > 0 && (
+          <section className="atelier-mixed-feed">
+            <div className="atelier-wide">
+              <div className="atelier-section-heading atelier-mixed-feed-heading">
+                <h2>More to explore</h2>
+                <p>{mixedFeedLabel}</p>
+              </div>
+              <div className="atelier-mixed-grid" aria-label="Mixed product recommendations">
+                {mixedFeedProducts.map((product) => <AtelierProductRailCard product={product} key={`mixed-${product.id}`} />)}
+              </div>
             </div>
-          </div>
-        </section>
-
-        {lookProducts.length > 0 && <section className="atelier-lookbook atelier-wide">
-          <div className="atelier-lookbook-heading"><span className="atelier-eyebrow">Editorial</span><h2>Shop the Look</h2></div>
-          <div className="atelier-lookbook-grid">
-            {lookProducts[0] && <article className="atelier-look atelier-look-large"><a className="atelier-look-link" href={`/product/${encodeURIComponent(lookProducts[0].id)}`}><OptimizedImage src={lookProducts[0].imageUrl} alt={lookProducts[0].name} /><div><h3>{lookProducts[0].name}</h3><p>{displayCategory(lookProducts[0])} · {displayBrand(lookProducts[0])}</p><span>View Product</span></div></a><WishlistHeartButton product={lookProducts[0]} className="card-wishlist-heart" /></article>}
-            {lookProducts.length > 1 && <div className="atelier-lookbook-side">{lookProducts.slice(1, 3).map((product) => <article className="atelier-look" key={product.id}><a className="atelier-look-link" href={`/product/${encodeURIComponent(product.id)}`}><OptimizedImage src={product.imageUrl} alt={product.name} /><div><h3>{product.name}</h3><p>{displayCategory(product)} · {displayBrand(product)}</p><span>View Product</span></div></a><WishlistHeartButton product={product} className="card-wishlist-heart" /></article>)}</div>}
-          </div>
-        </section>}
-
-        <section className="atelier-newsletter">
-          <div className="atelier-newsletter-inner">
-            <h2>Join the Atelier</h2>
-            <p>Subscribe for private access to new edits, styling notes, and seasonal arrivals.</p>
-            <form onSubmit={(event) => event.preventDefault()}>
-              <input type="email" placeholder="Your Email Address" aria-label="Your Email Address" />
-              <button type="submit">Subscribe</button>
-            </form>
-            <small>By signing up you agree to our privacy policy</small>
-          </div>
-        </section>
+          </section>
+        )}
       </main>
     </div>
   );
@@ -1487,111 +1600,6 @@ function HomePromoBand() {
             <small>On eligible brand orders</small>
           </span>
         </a>
-      </div>
-    </section>
-  );
-}
-
-const homeLookTargets = [
-  { label: 'Innerwear', slug: 'innerwear', match: /\b(inner\s?wear|underwear|briefs?|boxers?|vests?|camisoles?)\b/i },
-  { label: 'Shirts', slug: 'shirts', match: /\b(shirts?|button[-\s]?down|formal shirt|casual shirt)\b/i },
-  { label: 'Lingerie', slug: 'lingerie', match: /\b(lingerie|lingeries|bra|bralette|panty|panties)\b/i }
-];
-
-function productLookText(product = {}) {
-  return [
-    product.name,
-    product.category,
-    product.brand,
-    product.description,
-    Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
-  ].filter(Boolean).join(' ');
-}
-
-function productLookCategorySlug(product = {}) {
-  return categorySlug(product.category || displayCategory(product));
-}
-
-function buildHomeLooks(products = []) {
-  const usableProducts = products.filter((product) => product?.imageUrl);
-  const usedProductIds = new Set();
-  const usedCategories = new Set();
-  const looks = [];
-
-  homeLookTargets.forEach((target) => {
-    const product = usableProducts.find((item) => !usedProductIds.has(item.id) && target.match.test(productLookText(item)));
-    if (!product) return;
-    usedProductIds.add(product.id);
-    usedCategories.add(productLookCategorySlug(product));
-    looks.push({
-      label: target.label,
-      image: product.imageUrl,
-      href: `/search?category=${encodeURIComponent(productLookCategorySlug(product) || target.slug)}`,
-      productName: product.name
-    });
-  });
-
-  usableProducts.forEach((product) => {
-    if (looks.length >= 3) return;
-    const slug = productLookCategorySlug(product);
-    if (usedProductIds.has(product.id) || usedCategories.has(slug)) return;
-    usedProductIds.add(product.id);
-    usedCategories.add(slug);
-    looks.push({
-      label: displayCategory(product),
-      image: product.imageUrl,
-      href: `/search?category=${encodeURIComponent(slug)}`,
-      productName: product.name
-    });
-  });
-
-  usableProducts.forEach((product) => {
-    if (looks.length >= 3 || usedProductIds.has(product.id)) return;
-    usedProductIds.add(product.id);
-    looks.push({
-      label: displayCategory(product),
-      image: product.imageUrl,
-      href: `/search?category=${encodeURIComponent(productLookCategorySlug(product))}`,
-      productName: product.name
-    });
-  });
-
-  return looks.slice(0, 3);
-}
-
-function HomeLookbook({ products = [], loading = false }) {
-  const looks = useMemo(() => buildHomeLooks(products), [products]);
-  if (!loading && looks.length === 0) return null;
-
-  return (
-    <section className="home-lookbook section" aria-label="Shop the look">
-      <div className="wrap">
-        <div className="section-head"><div><p className="kicker">Collections</p><h2>Shop the Look</h2></div><a className="view-all" href="/categories">View More ↗</a></div>
-        <div className="home-lookbook-grid">
-          {loading && looks.length === 0 && Array.from({ length: 3 }).map((_, index) => <div className="home-look-card home-look-skeleton" key={index} />)}
-          {looks.map((look) => (
-            <a className="home-look-card" href={look.href} key={`${look.label}-${look.image}`}>
-              <OptimizedImage src={look.image} alt={look.productName || look.label} />
-              <span><strong>{look.label}</strong><small>{look.productName}</small></span>
-            </a>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function NewsletterSection() {
-  return (
-    <section className="home-newsletter" aria-labelledby="home-newsletter-title">
-      <div className="wrap home-newsletter-inner">
-        <SparkleLineIcon />
-        <h2 id="home-newsletter-title">Join the Atelier</h2>
-        <p>Subscribe to receive early access to seasonal drops, private invitations to the Virtual Atelier, and high-fashion insights.</p>
-        <form className="home-newsletter-form" onSubmit={(event) => event.preventDefault()}>
-          <input type="email" placeholder="Your email address" aria-label="Email address" />
-          <button type="submit">Subscribe</button>
-        </form>
       </div>
     </section>
   );
@@ -1812,6 +1820,8 @@ function AtelierCategoriesPage() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [brandFilter, setBrandFilter] = useState('all');
   const [sortFilter, setSortFilter] = useState('newest');
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const quickCategoryRailRef = useRef(null);
   const state = useProducts({ limit: 96, sort: 'newest' });
 
   const catalog = useMemo(() => {
@@ -1902,6 +1912,7 @@ function AtelierCategoriesPage() {
     setCategoryFilter('all');
     setBrandFilter('all');
     setSortFilter('newest');
+    setFilterPanelOpen(false);
   }, [activeAudience]);
 
   const resetCategoryFilters = () => {
@@ -1910,9 +1921,33 @@ function AtelierCategoriesPage() {
     setSortFilter('newest');
   };
   const filtersActive = categoryFilter !== 'all' || brandFilter !== 'all' || sortFilter !== 'newest';
+  const selectedCategoryLabel = catalog.filterCategories.find((category) => category.value === categoryFilter)?.label || 'All categories';
+  const selectedBrandLabel = catalog.filterBrands.find((brand) => brand.value === brandFilter)?.label || 'All brands';
+  const sortOptions = [
+    ['newest', 'Newest'],
+    ['price-low', 'Price: Low to High'],
+    ['price-high', 'Price: High to Low'],
+    ['name', 'Name A-Z']
+  ];
+  const activeFilterChips = [
+    categoryFilter !== 'all' && ['Category', selectedCategoryLabel, () => setCategoryFilter('all')],
+    brandFilter !== 'all' && ['Brand', selectedBrandLabel, () => setBrandFilter('all')],
+    sortFilter !== 'newest' && ['Sort', sortOptions.find(([value]) => value === sortFilter)?.[1] || 'Newest', () => setSortFilter('newest')]
+  ].filter(Boolean);
+  const activeFilterCount = activeFilterChips.length;
 
   const categoryHref = (category) => {
     return categoryPageHref(category, catalog.selectedAudience?.genderFilter || '');
+  };
+  const scrollQuickCategoryRail = (direction) => {
+    const rail = quickCategoryRailRef.current;
+    if (!rail) return;
+    rail.scrollBy({ left: direction * Math.max(rail.clientWidth * .76, 260), behavior: 'smooth' });
+  };
+  const handleQuickCategoryKeyDown = (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    scrollQuickCategoryRail(event.key === 'ArrowRight' ? 1 : -1);
   };
   const categoryHero = activeAudience === 'all'
     ? {
@@ -1983,11 +2018,15 @@ function AtelierCategoriesPage() {
 
         {catalog.quickCategories.length > 0 && <section className="atelier-category-wide atelier-category-quick-section" aria-labelledby="category-quick-title">
           <div className="atelier-category-quick-heading"><p id="category-quick-title">Explore fashion</p><span>Live catalog</span></div>
-          <nav className="atelier-category-quick-rail" aria-label="Fashion categories">
-            {catalog.quickCategories.map((category) => <a className={`category-icon-${categorySlug(category.category)}`} href={categoryHref(category.category)} key={category.category}>
-              <span className="atelier-category-quick-image"><OptimizedImage src={asset(category.collectionVisual.image)} alt="" style={{ objectPosition: category.collectionVisual.position }} /></span><strong>{category.label}</strong><small>{category.count} items</small>
-            </a>)}
-          </nav>
+          <div className="atelier-category-rail-wrap">
+            <button className="atelier-category-scroll-button prev" type="button" aria-label="Previous fashion categories" onClick={() => scrollQuickCategoryRail(-1)}><AtelierIcon name="arrowLeft" /></button>
+            <nav className="atelier-category-quick-rail" aria-label="Fashion categories" ref={quickCategoryRailRef} tabIndex="0" onKeyDown={handleQuickCategoryKeyDown}>
+              {catalog.quickCategories.map((category) => <a className={`category-icon-${categorySlug(category.category)}`} href={categoryHref(category.category)} key={category.category}>
+                <span className="atelier-category-quick-image"><OptimizedImage src={asset(category.collectionVisual.image)} alt="" style={{ objectPosition: category.collectionVisual.position }} /></span><strong>{category.label}</strong><small>{category.count} items</small>
+              </a>)}
+            </nav>
+            <button className="atelier-category-scroll-button next" type="button" aria-label="Next fashion categories" onClick={() => scrollQuickCategoryRail(1)}><AtelierIcon name="arrowRight" /></button>
+          </div>
         </section>}
 
         {catalog.audienceCards.length > 0 && <section className="atelier-category-wide atelier-category-audience-section" aria-labelledby="category-audience-title">
@@ -2006,34 +2045,37 @@ function AtelierCategoriesPage() {
 
         <section className="atelier-category-wide atelier-category-filter-section" aria-label="Catalog filters">
           <div className="atelier-category-filter-head">
-            <div><p>Filters</p><span>{catalog.filteredProductCount} styles showing</span></div>
-            <button type="button" onClick={resetCategoryFilters} disabled={!filtersActive}>Reset</button>
+            <div><p>{catalog.filteredProductCount} styles</p><span>{activeAudience === 'all' ? 'All fashion' : catalog.selectedAudience?.label || 'Fashion'} catalog</span></div>
+            <div className="atelier-category-filter-actions">
+              <button className="atelier-category-filter-toggle" type="button" aria-expanded={filterPanelOpen} aria-controls="category-filter-panel" onClick={() => setFilterPanelOpen((open) => !open)}>Filter{activeFilterCount > 0 && <strong>{activeFilterCount}</strong>}</button>
+              {filtersActive && <button className="atelier-category-filter-clear" type="button" onClick={resetCategoryFilters}>Clear all</button>}
+            </div>
           </div>
-          <div className="atelier-category-filter-controls">
-            <label>
+          {filterPanelOpen && <div className="atelier-category-filter-controls" id="category-filter-panel">
+            <label className="atelier-category-filter-select">
               <span>Category</span>
-              <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+              <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="Filter by category">
                 <option value="all">All categories</option>
                 {catalog.filterCategories.map((category) => <option value={category.value} key={category.value}>{category.label} ({category.count})</option>)}
               </select>
             </label>
-            <label>
+            <label className="atelier-category-filter-select">
               <span>Brand</span>
-              <select value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}>
+              <select value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)} aria-label="Filter by brand">
                 <option value="all">All brands</option>
                 {catalog.filterBrands.map((brand) => <option value={brand.value} key={brand.value}>{brand.label} ({brand.count})</option>)}
               </select>
             </label>
-            <label>
-              <span>Sort</span>
-              <select value={sortFilter} onChange={(event) => setSortFilter(event.target.value)}>
-                <option value="newest">Newest first</option>
-                <option value="price-low">Price low to high</option>
-                <option value="price-high">Price high to low</option>
-                <option value="name">Name A-Z</option>
+            <label className="atelier-category-filter-sort">
+              <span>Sort by</span>
+              <select value={sortFilter} onChange={(event) => setSortFilter(event.target.value)} aria-label="Sort catalog">
+                {sortOptions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
               </select>
             </label>
-          </div>
+          </div>}
+          {filtersActive && <div className="atelier-category-filter-chips" aria-label="Active filters">
+            {activeFilterChips.map(([type, label, clear]) => <button type="button" onClick={clear} key={`${type}-${label}`}>{type}: {label} <b aria-hidden="true">x</b></button>)}
+          </div>}
         </section>
 
         {state.error && <div className="atelier-category-wide"><StatusPanel text={state.error} onRetry={state.retry} /></div>}
@@ -2046,10 +2088,7 @@ function AtelierCategoriesPage() {
               <a href={categoryHref(category.category)}>View All</a>
             </div>
             <div className="atelier-category-product-grid">
-              {category.products.map((product) => <article className="atelier-category-product" key={product.id}>
-                <a href={`/product/${encodeURIComponent(product.id)}`}><div className="atelier-category-product-image"><OptimizedImage src={product.imageUrl} alt={product.name} /></div><span className="atelier-category-product-brand">{displayBrand(product)}</span><h3>{product.name}</h3><strong>{formatMoney(product.price || 0, product.currency)}</strong></a>
-                <WishlistHeartButton product={product} className="card-wishlist-heart" />
-              </article>)}
+              {category.products.map((product) => <AtelierCategoryProductCard product={product} key={product.id} />)}
             </div>
           </section>
         ))}
@@ -2189,6 +2228,7 @@ function CategoryDepartmentPage({ category, user }) {
 function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, tryOnLoading = false, tryOnVideoLoading = false, tryOnError = '', tryOnVideoError = '', onTryOn, onTryOnVideo }) {
   const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const [isWishlisted, setIsWishlisted] = useState(() => readWishlistProductIds().includes(String(product.id)));
+  const [fullscreenPreview, setFullscreenPreview] = useState(null);
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? `${Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}% OFF` : '';
   const productImage = product.imageUrl || asset('hero2.png');
@@ -2227,9 +2267,26 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
     announce(saved ? `${product.name} saved to your wishlist.` : `${product.name} removed from your wishlist.`);
   };
 
+  const openCardPreview = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (hasTryOnVideo) {
+      setFullscreenPreview({ type: 'video', src: tryOn.videoUrl, poster: tryOn.imageUrl, alt: `Video try-on for ${product.name}`, title: product.name });
+      return;
+    }
+    setFullscreenPreview({
+      src: image,
+      alt: hasUsableTryOn ? `AI try-on for ${product.name}` : product.name,
+      title: product.name
+    });
+  };
+
   const content = (
     <>
-      <div className="product-media">
+      <div className="product-media" role="button" tabIndex={locked ? undefined : 0} aria-label={`Open preview for ${product.name}`} onClick={locked ? undefined : openCardPreview} onKeyDown={(event) => {
+        if (locked || (event.key !== 'Enter' && event.key !== ' ')) return;
+        openCardPreview(event);
+      }}>
         {hasTryOnVideo ? (
           <video src={tryOn.videoUrl} poster={tryOn.imageUrl} autoPlay muted loop playsInline />
         ) : (
@@ -2282,6 +2339,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
           {tryOnVideoError && <p>{tryOnVideoError}</p>}
         </div>
       )}
+      {fullscreenPreview && <ImageLightbox image={fullscreenPreview} onClose={() => setFullscreenPreview(null)} />}
     </article>
   );
 }
@@ -2308,6 +2366,85 @@ const closetComboSlots = [
   { key: 'footwear', label: 'Footwear', helper: 'Choose shoes', categories: ['shoes'] },
   { key: 'accessory', label: 'Accessory', helper: 'Cap, goggles, watch', categories: ['accessories'] }
 ];
+
+function closetText(value, fallback = '') {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return fallback;
+}
+
+function closetList(value) {
+  if (Array.isArray(value)) return value.map((item) => closetText(item).trim()).filter(Boolean);
+  if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function normalizeClosetItem(item = {}, index = 0) {
+  const source = item && typeof item === 'object' ? item : {};
+  const id = closetText(source.id || source._id || source.productId, `closet-item-${index}`);
+  return {
+    ...source,
+    id,
+    name: closetText(source.name || source.title, 'Wardrobe item'),
+    category: closetText(source.category, 'other').toLowerCase() || 'other',
+    imageUrl: closetText(source.imageUrl || source.image || source.thumbnailUrl),
+    color: closetText(source.color),
+    fabric: closetText(source.fabric),
+    pattern: closetText(source.pattern),
+    formality: closetText(source.formality),
+    favorite: Boolean(source.favorite),
+    tags: closetList(source.tags),
+    occasions: closetList(source.occasions),
+    createdAt: closetText(source.createdAt),
+    updatedAt: closetText(source.updatedAt || source.createdAt)
+  };
+}
+
+function normalizeClosetOutfit(outfit = {}, index = 0) {
+  const source = outfit && typeof outfit === 'object' ? outfit : {};
+  return {
+    ...source,
+    id: closetText(source.id || source._id, `closet-outfit-${index}`),
+    title: closetText(source.title || source.name, 'Generated wardrobe look'),
+    imageUrl: closetText(source.imageUrl || source.image),
+    transparentImageUrl: closetText(source.transparentImageUrl),
+    plannedFor: source.plannedFor || null,
+    imageProcessing: source.imageProcessing && typeof source.imageProcessing === 'object' ? source.imageProcessing : null,
+    items: Array.isArray(source.items) ? source.items.map(normalizeClosetItem).filter((entry) => entry.id) : []
+  };
+}
+
+function normalizeClosetSuggestion(suggestion = {}, index = 0) {
+  const source = suggestion && typeof suggestion === 'object' ? suggestion : {};
+  const items = Array.isArray(source.items) ? source.items.map(normalizeClosetItem).filter((entry) => entry.id) : [];
+  return {
+    ...source,
+    key: closetText(source.key || source.id, `closet-suggestion-${index}`),
+    title: closetText(source.title || source.name, 'Recommended look'),
+    reason: closetText(source.reason, 'AI-picked from your closet'),
+    itemIds: Array.isArray(source.itemIds) ? source.itemIds.map((id) => closetText(id)).filter(Boolean) : items.map((item) => item.id),
+    items
+  };
+}
+
+function normalizeClosetData(data = {}) {
+  const source = data && typeof data === 'object' ? data : {};
+  return {
+    items: Array.isArray(source.items) ? source.items.map(normalizeClosetItem).filter((item) => item.id) : [],
+    outfits: Array.isArray(source.outfits) ? source.outfits.map(normalizeClosetOutfit).filter((outfit) => outfit.id) : [],
+    suggestions: Array.isArray(source.suggestions) ? source.suggestions.map(normalizeClosetSuggestion).filter((suggestion) => suggestion.key) : [],
+    stats: source.stats && typeof source.stats === 'object' && !Array.isArray(source.stats) ? source.stats : {}
+  };
+}
+
+function uniqueClosetItems(items = []) {
+  const seen = new Set();
+  return (Array.isArray(items) ? items : []).filter((item) => {
+    if (!item?.id || seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
 
 function placementStorageKey(modelSrc = '') {
   return `fitlook:model-placement:${String(modelSrc || '').slice(0, 180)}`;
@@ -2638,7 +2775,8 @@ function CutoutFallbackNotice({ isolation, originalSrc, onRetry }) {
 }
 
 function RoomScene({ modelSource, alt, generating, onOpen, onEmpty }) {
-  const visibleSrc = modelSource?.imageUrl || '';
+  const visibleSrc = (typeof modelSource?.imageUrl === 'string' ? modelSource.imageUrl.trim() : '') || DEFAULT_WARDROBE_MODEL_SRC;
+  const imageAlt = alt || 'Wardrobe preview';
 
   return (
     <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''}`}>
@@ -2647,8 +2785,9 @@ function RoomScene({ modelSource, alt, generating, onOpen, onEmpty }) {
           <OptimizedImage
             className="wardrobe-flat-image"
             src={visibleSrc}
-            alt={alt}
+            alt={imageAlt}
             eager
+            fallbackSrc={DEFAULT_WARDROBE_MODEL_SRC}
             style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', objectPosition: 'center center' }}
           />
         </button>
@@ -2693,7 +2832,7 @@ function ClosetPage({ user, setUser }) {
     setState((current) => ({ ...current, loading: true, error: '' }));
     api('/closet')
       .then((data) => {
-        setState({ items: data.items || [], outfits: data.outfits || [], stats: data.stats || {}, suggestions: data.suggestions || [], loading: false, error: '' });
+        setState({ ...normalizeClosetData(data), loading: false, error: '' });
       })
       .catch((err) => setState({ items: [], outfits: [], stats: {}, suggestions: [], loading: false, error: err.message }));
   };
@@ -2725,12 +2864,17 @@ function ClosetPage({ user, setUser }) {
 
   if (!user) return <AuthPage mode="signup" setUser={setUser} />;
 
-  const selectedItems = selectedIds.map((id) => state.items.find((item) => item.id === id)).filter(Boolean);
-  const filteredItems = state.items.filter((item) => filter === 'all' || item.category === filter);
+  const closetItems = Array.isArray(state.items) ? state.items.filter((item) => item && typeof item === 'object') : [];
+  const closetOutfits = Array.isArray(state.outfits) ? state.outfits.filter((outfit) => outfit && typeof outfit === 'object') : [];
+  const closetSuggestions = Array.isArray(state.suggestions) ? state.suggestions.filter((suggestion) => suggestion && typeof suggestion === 'object') : [];
+  const closetStats = state.stats && typeof state.stats === 'object' && !Array.isArray(state.stats) ? state.stats : {};
+  const userBodyPhotoUrl = typeof user.bodyPhotoUrl === 'string' ? user.bodyPhotoUrl : '';
+  const selectedItems = selectedIds.map((id) => closetItems.find((item) => item.id === id)).filter(Boolean);
+  const filteredItems = closetItems.filter((item) => filter === 'all' || item.category === filter);
   const plannerDays = nextPlannerDays(7);
-  const plannedByDay = new Map((state.outfits || []).filter((outfit) => outfit.plannedFor).map((outfit) => [dateInputValue(outfit.plannedFor), outfit]));
-  const latestOutfit = state.outfits?.[0] || null;
-  const mainPreview = latestOutfit?.imageUrl || user.bodyPhotoUrl || asset('hero2.png');
+  const plannedByDay = new Map(closetOutfits.filter((outfit) => outfit.plannedFor).map((outfit) => [dateInputValue(outfit.plannedFor), outfit]));
+  const latestOutfit = closetOutfits[0] || null;
+  const mainPreview = latestOutfit?.imageUrl || userBodyPhotoUrl || asset('hero2.png');
   const wardrobeSlots = [
     { key: 'topwear', label: 'Topwear', helper: 'Shirts, tops, kurtas', short: 'To', categories: ['tops', 'outerwear', 'ethnic'] },
     { key: 'bottomwear', label: 'Bottomwear', helper: 'Pants, denim, skirts', short: 'Bo', categories: ['bottoms'] },
@@ -2739,19 +2883,22 @@ function ClosetPage({ user, setUser }) {
     { key: 'footwear', label: 'Footwear', helper: 'Shoes, boots, sandals', short: 'Fo', categories: ['shoes'] }
   ];
   const wardrobeSlotMatches = (slot, item, strict = false) => {
+    if (!item?.category) return false;
     if (!slot.categories.includes(item.category)) return false;
     if (!slot.keywords?.length) return true;
-    const text = [item.name, item.category, item.color, item.formality, ...(item.tags || []), ...(item.occasions || [])].filter(Boolean).join(' ').toLowerCase();
+    const tags = Array.isArray(item.tags) ? item.tags : [];
+    const occasions = Array.isArray(item.occasions) ? item.occasions : [];
+    const text = [item.name, item.category, item.color, item.formality, ...tags, ...occasions].filter(Boolean).join(' ').toLowerCase();
     const keywordMatch = slot.keywords.some((keyword) => text.includes(keyword));
     return strict ? keywordMatch : keywordMatch || slot.categories.includes(item.category);
   };
   const wardrobeOptionsForSlot = (slot) => {
-    const exactOptions = state.items.filter((item) => wardrobeSlotMatches(slot, item, true));
-    return exactOptions.length ? exactOptions : state.items.filter((item) => wardrobeSlotMatches(slot, item));
+    const exactOptions = closetItems.filter((item) => wardrobeSlotMatches(slot, item, true));
+    return exactOptions.length ? exactOptions : closetItems.filter((item) => wardrobeSlotMatches(slot, item));
   };
   const wardrobeRail = wardrobeSlots.map((slot) => {
     const options = wardrobeOptionsForSlot(slot);
-    const selected = state.items.find((item) => item.id === comboSlots[slot.key]) || null;
+    const selected = closetItems.find((item) => item.id === comboSlots[slot.key]) || null;
     return {
       ...slot,
       item: selected || options[0] || null,
@@ -2760,12 +2907,12 @@ function ClosetPage({ user, setUser }) {
     };
   });
   const activeWardrobeSlot = wardrobeRail.find((slot) => slot.key === activeWardrobeKey) || wardrobeRail[0];
-  const lookbookCards = state.outfits.length
-    ? state.outfits.slice(0, 5).map((outfit) => ({ id: outfit.id, title: outfit.title, imageUrl: outfit.imageUrl, items: outfit.items || [] }))
-    : state.suggestions.slice(0, 5).map((suggestion, index) => ({ id: suggestion.key || `${suggestion.title}-${index}`, title: suggestion.title, items: suggestion.items || [] }));
-  const comboOptions = state.suggestions.slice(0, 6);
+  const lookbookCards = closetOutfits.length
+    ? closetOutfits.slice(0, 5).map((outfit) => ({ id: outfit.id, title: outfit.title, imageUrl: outfit.imageUrl, items: Array.isArray(outfit.items) ? outfit.items : [] }))
+    : closetSuggestions.slice(0, 5).map((suggestion, index) => ({ id: suggestion.key || `${suggestion.title}-${index}`, title: suggestion.title, items: Array.isArray(suggestion.items) ? suggestion.items : [] }));
+  const comboOptions = closetSuggestions.slice(0, 6);
   const selectedKey = selectedIds.slice().sort().join(':');
-  const comboPreviewItems = (selectedItems.length ? selectedItems : state.items.filter((item) => ['tops', 'bottoms', 'suits', 'outerwear', 'shoes'].includes(item.category))).slice(0, 4);
+  const comboPreviewItems = (selectedItems.length ? selectedItems : closetItems.filter((item) => ['tops', 'bottoms', 'suits', 'outerwear', 'shoes'].includes(item.category))).slice(0, 4);
   const wardrobeSections = [
     { label: 'Tops', icon: <TryOnIcon />, categories: ['tops', 'ethnic', 'activewear'] },
     { label: 'Bottoms', icon: <ClosetIcon />, categories: ['bottoms'] },
@@ -2773,7 +2920,7 @@ function ClosetPage({ user, setUser }) {
     { label: 'Shoes', icon: <TagIcon />, categories: ['shoes'] }
   ].map((section) => ({
     ...section,
-    items: state.items.filter((item) => section.categories.includes(item.category))
+    items: closetItems.filter((item) => section.categories.includes(item.category))
   }));
   const closetSelectionCards = [
     {
@@ -2781,10 +2928,10 @@ function ClosetPage({ user, setUser }) {
       step: '01',
       title: 'Add Clothes',
       copy: 'Upload wardrobe photos and save category, color, fabric, season and occasion tags.',
-      meta: `${state.stats.total || state.items.length} saved`,
+      meta: `${closetStats.total || closetItems.length} saved`,
       action: 'Open Add Page',
       tone: 'add',
-      items: state.items.slice(0, 3)
+      items: closetItems.slice(0, 3)
     },
     {
       href: '/closet/combo',
@@ -2804,22 +2951,23 @@ function ClosetPage({ user, setUser }) {
       meta: `${closetCategories.length - 1} filters`,
       action: 'View Wardrobe',
       tone: 'items',
-      items: state.items.slice(0, 4)
+      items: closetItems.slice(0, 4)
     }
   ];
 
   const slotItems = closetComboSlots.map((slot) => ({
     ...slot,
-    selected: state.items.find((item) => item.id === comboSlots[slot.key]) || null,
-    options: state.items.filter((item) => slot.categories.includes(item.category))
+    selected: closetItems.find((item) => item.id === comboSlots[slot.key]) || null,
+    options: closetItems.filter((item) => slot.categories.includes(item.category))
   }));
 
   const selectedIdsFromSlots = (slots) => [...new Set(Object.values(slots).filter(Boolean))];
 
-  const slotsFromItems = (items) => {
+  const slotsFromItems = (items = []) => {
+    const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
     const next = {};
     closetComboSlots.forEach((slot) => {
-      const item = items.find((entry) => slot.categories.includes(entry.category));
+      const item = safeItems.find((entry) => slot.categories.includes(entry.category));
       if (item) next[slot.key] = item.id;
     });
     return next;
@@ -2830,16 +2978,17 @@ function ClosetPage({ user, setUser }) {
       method: 'PATCH',
       body: JSON.stringify(updates)
     });
-    setState((current) => ({ ...current, items: current.items.map((entry) => (entry.id === item.id ? data.item : entry)) }));
+    setState((current) => ({ ...current, items: (Array.isArray(current.items) ? current.items : []).map((entry) => (entry.id === item.id ? data.item : entry)) }));
   };
 
   const deleteItem = async (item) => {
     await api(`/closet/items/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
     setSelectedIds((current) => current.filter((id) => id !== item.id));
-    setState((current) => ({ ...current, items: current.items.filter((entry) => entry.id !== item.id) }));
+    setState((current) => ({ ...current, items: (Array.isArray(current.items) ? current.items : []).filter((entry) => entry.id !== item.id) }));
   };
 
   const toggleSelected = (item) => {
+    if (!item?.id) return;
     setSelectedIds((current) => {
       if (current.includes(item.id)) return current.filter((id) => id !== item.id);
       return [...current, item.id].slice(-5);
@@ -2857,13 +3006,15 @@ function ClosetPage({ user, setUser }) {
   };
 
   const applyComboItems = (items = []) => {
-    const nextSlots = slotsFromItems(items);
+    const safeItems = Array.isArray(items) ? items.filter((item) => item?.id) : [];
+    const nextSlots = slotsFromItems(safeItems);
     setComboSlots(nextSlots);
-    setSelectedIds(items.map((item) => item.id).filter(Boolean));
+    setSelectedIds(safeItems.map((item) => item.id).filter(Boolean));
   };
 
   const swapSelected = (item) => {
-    const replacement = state.items
+    if (!item?.id) return;
+    const replacement = closetItems
       .filter((candidate) => candidate.id !== item.id && candidate.category === item.category && !selectedIds.includes(candidate.id))
       .sort((a, b) => Number(b.favorite) - Number(a.favorite) || new Date(b.updatedAt) - new Date(a.updatedAt))[0];
     if (!replacement) {
@@ -2885,7 +3036,7 @@ function ClosetPage({ user, setUser }) {
         method: 'PATCH',
         body: JSON.stringify({ plannedFor: date })
       });
-      setState((current) => ({ ...current, outfits: current.outfits.map((entry) => (entry.id === outfit.id ? data.outfit : entry)) }));
+      setState((current) => ({ ...current, outfits: (Array.isArray(current.outfits) ? current.outfits : []).map((entry) => (entry.id === outfit.id ? data.outfit : entry)) }));
       setMessage(`Planned ${outfit.title} for ${formatDate(date)}.`);
     } catch (err) {
       setMessage(err.message);
@@ -2900,7 +3051,7 @@ function ClosetPage({ user, setUser }) {
         method: 'POST',
         body: JSON.stringify({ occasion: nextOccasion, weather, mood })
       });
-      setState((current) => ({ ...current, suggestions: data.suggestions || [] }));
+      setState((current) => ({ ...current, suggestions: Array.isArray(data.suggestions) ? data.suggestions : [] }));
       setMessage('Suggestions ready.');
     } catch (err) {
       setMessage(err.message);
@@ -2931,7 +3082,7 @@ function ClosetPage({ user, setUser }) {
           title: details.title || `Closet look for ${details.occasion || occasion || 'today'}`
         })
       });
-      setState((current) => ({ ...current, outfits: [data.outfit, ...current.outfits] }));
+      setState((current) => ({ ...current, outfits: data.outfit ? [data.outfit, ...(Array.isArray(current.outfits) ? current.outfits : [])] : (Array.isArray(current.outfits) ? current.outfits : []) }));
       setSelectedIds(ids);
       if (data.user) setUser(data.user);
       setStagePreviewMode('outfit');
@@ -2953,7 +3104,7 @@ function ClosetPage({ user, setUser }) {
     try {
       const data = await api('/closet/chat', { method: 'POST', body: JSON.stringify({ message: text }) });
       setChat((current) => [...current, { role: 'assistant', text: data.reply || 'I found a few closet options for you.' }]);
-      if (data.suggestions) setState((current) => ({ ...current, suggestions: data.suggestions }));
+      if (data.suggestions) setState((current) => ({ ...current, suggestions: Array.isArray(data.suggestions) ? data.suggestions : [] }));
     } catch (err) {
       setChat((current) => [...current, { role: 'assistant', text: err.message }]);
     } finally {
@@ -2966,9 +3117,10 @@ function ClosetPage({ user, setUser }) {
     window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
-  const matchedComboSlot = (item) => closetComboSlots.find((slot) => slot.categories.includes(item.category));
+  const matchedComboSlot = (item) => item?.category ? closetComboSlots.find((slot) => slot.categories.includes(item.category)) : null;
 
   const handleWardrobeItemClick = (item) => {
+    if (!item?.id) return;
     const matchedSlot = matchedComboSlot(item);
     if (!matchedSlot) {
       toggleSelected(item);
@@ -2998,15 +3150,16 @@ function ClosetPage({ user, setUser }) {
   };
 
   const undoWardrobeSelection = () => {
-    if (latestOutfit?.items?.length) {
-      applyComboItems(latestOutfit.items);
+    const latestItems = Array.isArray(latestOutfit?.items) ? latestOutfit.items : [];
+    if (latestItems.length) {
+      applyComboItems(latestItems);
       setMessage('Restored the last generated look.');
       return;
     }
     clearWardrobeSelection();
   };
 
-  const sortedClosetItems = [...state.items]
+  const sortedClosetItems = [...closetItems]
     .filter((item) => item?.id && item?.imageUrl)
     .sort((a, b) => Number(b.favorite) - Number(a.favorite) || new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
   const closetItemsForCategories = (categories, offset = 0) => {
@@ -3018,50 +3171,54 @@ function ClosetPage({ user, setUser }) {
     ...dressItems.slice(0, 6).map((dress, index) => ({
       id: `dress-look-${dress.id}-${index}`,
       title: `${categoryLabel(dress.category)} pairing`,
-      items: [
+      items: uniqueClosetItems([
         dress,
         closetItemsForCategories(['shoes'], index),
         closetItemsForCategories(['outerwear', 'suits'], index),
         closetItemsForCategories(['accessories'], index)
-      ].filter((item, itemIndex, items) => item && items.findIndex((entry) => entry.id === item.id) === itemIndex)
+      ])
     })),
     ...Array.from({ length: 6 }).map((_, index) => ({
       id: `wardrobe-look-${index}`,
       title: closetOccasions[index] || `Wardrobe look ${index + 1}`,
-      items: [
+      items: uniqueClosetItems([
         closetItemsForCategories(['tops', 'ethnic'], index),
         closetItemsForCategories(['bottoms'], index),
         closetItemsForCategories(['outerwear', 'suits'], index),
         closetItemsForCategories(['shoes'], index),
         closetItemsForCategories(['accessories'], index)
-      ].filter((item, itemIndex, items) => item && items.findIndex((entry) => entry.id === item.id) === itemIndex)
+      ])
     }))
   ].filter((card) => card.items.length > 0);
-  const recommendationCombos = state.suggestions.length
-    ? state.suggestions
+  const recommendationCombos = closetSuggestions.length
+    ? closetSuggestions
       .slice(0, 6)
-      .map((suggestion, index) => ({ id: suggestion.key || suggestion.title || `suggestion-${index}`, title: suggestion.title || closetOccasions[index] || 'Recommended look', items: (suggestion.items || []).filter((item) => item?.imageUrl) }))
+      .map((suggestion, index) => ({ id: suggestion.key || suggestion.title || `suggestion-${index}`, title: suggestion.title || closetOccasions[index] || 'Recommended look', items: (Array.isArray(suggestion.items) ? suggestion.items : []).filter((item) => item?.imageUrl) }))
       .filter((card) => card.items.length > 0)
     : generatedWardrobeCombos;
   const wardrobeRecommendationCards = recommendationCombos.slice(0, 10);
   const score = Math.min(98, 72 + selectedItems.length * 5 + recommendationCombos.length * 2);
 
   const tryRecommendedLook = (card) => {
-    if (!card.items?.length) {
+    const cardItems = Array.isArray(card?.items) ? card.items.filter((item) => item?.id) : [];
+    if (!cardItems.length) {
       askForSuggestions();
       return;
     }
-    applyComboItems(card.items);
-    generateOutfit(card.items.map((item) => item.id).filter(Boolean), { title: card.title, occasion: card.title });
+    applyComboItems(cardItems);
+    generateOutfit(cardItems.map((item) => item.id).filter(Boolean), { title: card.title, occasion: card.title });
   };
 
   const latestOutfitImage = isWardrobeRoomPreview(latestOutfit?.imageUrl) ? '' : latestOutfit?.imageUrl || '';
-  const bodyPhotoPreview = isWardrobeRoomPreview(user.bodyPhotoUrl) ? '' : user.bodyPhotoUrl || '';
+  const bodyPhotoPreview = isWardrobeRoomPreview(userBodyPhotoUrl) ? DEFAULT_WARDROBE_MODEL_SRC : (userBodyPhotoUrl || DEFAULT_WARDROBE_MODEL_SRC);
   const showingGeneratedOutfit = stagePreviewMode === 'outfit' && Boolean(latestOutfitImage);
   const modelPreview = showingGeneratedOutfit ? latestOutfitImage : bodyPhotoPreview;
   const previewTitle = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Model';
   const previewAlt = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
   const mobileWardrobeSections = wardrobeSections.filter((section) => ['Tops', 'Bottoms'].includes(section.label));
+  const wardrobeFallbackForSection = (section) => (
+    section.label === 'Bottoms' ? asset('category-icons/jeans.png') : asset('category-icons/tops.png')
+  );
   const pickMobileWardrobeSection = (section) => {
     const selectedItem = section.items.find((item) => selectedIds.includes(item.id));
     const nextItem = selectedItem || section.items[0];
@@ -3111,10 +3268,10 @@ function ClosetPage({ user, setUser }) {
           <a className="wardrobe-add-button" href="/closet/add">+ Add New Item</a>
         </aside>
 
-        <section className="wardrobe-model-stage" aria-label="Wardrobe model preview">
+        <section className="wardrobe-model-stage" aria-label="Wardrobe model preview" style={{ background: '#d7d7d5', backgroundImage: 'none' }}>
           <div className="wardrobe-mobile-category-rail" aria-label="Wardrobe quick controls">
-            <button type="button" onClick={() => user.bodyPhotoUrl ? setStagePreviewMode('model') : openRoute('/profile')}>
-              <span>{user.bodyPhotoUrl ? <img src={user.bodyPhotoUrl} alt="" /> : <UserIcon />}</span>
+            <button type="button" onClick={() => setStagePreviewMode('model')}>
+              <span><OptimizedImage src={bodyPhotoPreview} fallbackSrc={DEFAULT_WARDROBE_MODEL_SRC} alt="" /></span>
               <small>Model</small>
             </button>
             {mobileWardrobeSections.map((section) => {
@@ -3122,7 +3279,7 @@ function ClosetPage({ user, setUser }) {
               const previewItem = selectedItem || section.items[0];
               return (
                 <button className={selectedItem ? 'active' : ''} type="button" key={section.label} onClick={() => pickMobileWardrobeSection(section)}>
-                  <span>{previewItem ? <img src={previewItem.imageUrl} alt="" /> : section.icon}</span>
+                  <span>{previewItem ? <OptimizedImage src={previewItem.imageUrl} fallbackSrc={wardrobeFallbackForSection(section)} alt="" /> : section.icon}</span>
                   <small>{section.label}</small>
                 </button>
               );
@@ -3138,8 +3295,8 @@ function ClosetPage({ user, setUser }) {
           </div>
 
           <div className="wardrobe-model-tools left">
-            <button type="button" onClick={() => user.bodyPhotoUrl ? setStagePreviewMode('model') : openRoute('/profile')}>
-              <span>{user.bodyPhotoUrl ? <img src={user.bodyPhotoUrl} alt="" /> : <UserIcon />}</span>
+            <button type="button" onClick={() => setStagePreviewMode('model')}>
+              <span><OptimizedImage src={bodyPhotoPreview} fallbackSrc={DEFAULT_WARDROBE_MODEL_SRC} alt="" /></span>
               <small>Model</small>
             </button>
             <button type="button" onClick={() => applyAccessorySlot('cap', 'Cap')}>
@@ -3169,6 +3326,7 @@ function ClosetPage({ user, setUser }) {
             />
           </div>
 
+          {showingGeneratedOutfit && !generating && <AiPreviewDisclaimer className="wardrobe-ai-disclaimer" />}
           {!generating && message && <p className={`wardrobe-stage-message ${/error|missing|not enough|failed|could not/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
 
           <div className="wardrobe-stage-actions">
@@ -3245,9 +3403,17 @@ function ClosetComboPage({ user, setUser }) {
     api('/closet')
       .then((data) => {
         if (!alive) return;
-        const items = data.items || [];
-        setState({ items, suggestions: data.suggestions || [], loading: false, error: '' });
-        const seededIds = JSON.parse(localStorage.getItem('fitlook_combo_seed') || '[]').filter((id) => items.some((item) => item.id === id));
+        const closetData = normalizeClosetData(data);
+        const items = closetData.items;
+        setState({ items, suggestions: closetData.suggestions, loading: false, error: '' });
+        let storedSeed = [];
+        try {
+          const parsedSeed = JSON.parse(localStorage.getItem('fitlook_combo_seed') || '[]');
+          storedSeed = Array.isArray(parsedSeed) ? parsedSeed : [];
+        } catch {
+          localStorage.removeItem('fitlook_combo_seed');
+        }
+        const seededIds = storedSeed.filter((id) => items.some((item) => item.id === id));
         if (seededIds.length) {
           const seededItems = seededIds.map((id) => items.find((item) => item.id === id)).filter(Boolean);
           setSelectedIds(seededIds);
@@ -3265,20 +3431,23 @@ function ClosetComboPage({ user, setUser }) {
 
   if (!user) return <AuthPage mode="signup" setUser={setUser} />;
 
-  const selectedItems = selectedIds.map((id) => state.items.find((item) => item.id === id)).filter(Boolean);
+  const closetItems = Array.isArray(state.items) ? state.items.filter((item) => item && typeof item === 'object') : [];
+  const closetSuggestions = Array.isArray(state.suggestions) ? state.suggestions.filter((suggestion) => suggestion && typeof suggestion === 'object') : [];
+  const selectedItems = selectedIds.map((id) => closetItems.find((item) => item.id === id)).filter(Boolean);
   const selectedKey = selectedIds.slice().sort().join(':');
-  const comboOptions = state.suggestions.slice(0, 6);
+  const comboOptions = closetSuggestions.slice(0, 6);
   const slotItems = closetComboSlots.map((slot) => ({
     ...slot,
-    selected: state.items.find((item) => item.id === comboSlots[slot.key]) || null,
-    options: state.items.filter((item) => slot.categories.includes(item.category))
+    selected: closetItems.find((item) => item.id === comboSlots[slot.key]) || null,
+    options: closetItems.filter((item) => slot.categories.includes(item.category))
   }));
 
   const selectedIdsFromSlots = (slots) => [...new Set(Object.values(slots).filter(Boolean))];
-  const slotsFromItems = (items) => {
+  const slotsFromItems = (items = []) => {
+    const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
     const next = {};
     closetComboSlots.forEach((slot) => {
-      const item = items.find((entry) => slot.categories.includes(entry.category));
+      const item = safeItems.find((entry) => slot.categories.includes(entry.category));
       if (item) next[slot.key] = item.id;
     });
     return next;
@@ -3295,11 +3464,13 @@ function ClosetComboPage({ user, setUser }) {
   };
 
   const applyComboItems = (items = []) => {
-    setComboSlots(slotsFromItems(items));
-    setSelectedIds(items.map((item) => item.id).filter(Boolean));
+    const safeItems = Array.isArray(items) ? items.filter((item) => item?.id) : [];
+    setComboSlots(slotsFromItems(safeItems));
+    setSelectedIds(safeItems.map((item) => item.id).filter(Boolean));
   };
 
   const toggleSelected = (item) => {
+    if (!item?.id) return;
     setSelectedIds((current) => current.filter((id) => id !== item.id));
     setComboSlots((current) => {
       const next = { ...current };
@@ -3311,7 +3482,8 @@ function ClosetComboPage({ user, setUser }) {
   };
 
   const swapSelected = (item) => {
-    const replacement = state.items
+    if (!item?.id) return;
+    const replacement = closetItems
       .filter((candidate) => candidate.id !== item.id && candidate.category === item.category && !selectedIds.includes(candidate.id))
       .sort((a, b) => Number(b.favorite) - Number(a.favorite) || new Date(b.updatedAt) - new Date(a.updatedAt))[0];
     if (!replacement) {
@@ -3335,7 +3507,7 @@ function ClosetComboPage({ user, setUser }) {
         method: 'POST',
         body: JSON.stringify({ occasion: nextOccasion, weather, mood })
       });
-      setState((current) => ({ ...current, suggestions: data.suggestions || [] }));
+      setState((current) => ({ ...current, suggestions: Array.isArray(data.suggestions) ? data.suggestions : [] }));
       setMessage('Combo ideas ready.');
     } catch (err) {
       setMessage(err.message);
@@ -3394,7 +3566,7 @@ function ClosetComboPage({ user, setUser }) {
             <input value={occasion} onChange={(event) => setOccasion(event.target.value)} placeholder="Occasion" />
             <input value={weather} onChange={(event) => setWeather(event.target.value)} placeholder="Weather" />
             <input value={mood} onChange={(event) => setMood(event.target.value)} placeholder="Mood" />
-            <button type="button" onClick={() => askForSuggestions()} disabled={state.items.length === 0}>Suggest</button>
+            <button type="button" onClick={() => askForSuggestions()} disabled={closetItems.length === 0}>Suggest</button>
           </div>
           <div className="closet-scene-controls">
             <label><span>Plan date</span><input type="date" value={plannedFor} onChange={(event) => setPlannedFor(event.target.value)} /></label>
@@ -3444,13 +3616,14 @@ function ClosetComboPage({ user, setUser }) {
           </div>
           <div className="combo-options">
             {comboOptions.length ? comboOptions.map((combo, index) => {
-              const comboIds = combo.itemIds || [];
+              const comboIds = Array.isArray(combo.itemIds) ? combo.itemIds : [];
               const comboKey = comboIds.slice().sort().join(':');
               const active = comboKey && comboKey === selectedKey;
+              const comboItems = Array.isArray(combo.items) ? combo.items.filter((item) => item?.id) : [];
               return (
-                <button className={active ? 'active' : ''} type="button" key={combo.key || combo.title || index} onClick={() => applyComboItems(combo.items || [])}>
+                <button className={active ? 'active' : ''} type="button" key={combo.key || combo.title || index} onClick={() => applyComboItems(comboItems)}>
                   <span className="combo-number">{String(index + 1).padStart(2, '0')}</span>
-                  <span className="combo-thumbs">{(combo.items || []).slice(0, 4).map((item) => <img src={item.imageUrl} alt="" key={item.id} />)}</span>
+                  <span className="combo-thumbs">{comboItems.slice(0, 4).map((item) => <img src={item.imageUrl} alt="" key={item.id} />)}</span>
                   <span className="combo-copy"><strong>{combo.title || `Combo ${index + 1}`}</strong><small>{combo.reason || 'AI-picked from your closet'}</small></span>
                 </button>
               );
@@ -3478,7 +3651,7 @@ function ClosetItemsPage({ user, setUser }) {
     let alive = true;
     api('/closet')
       .then((data) => {
-        if (alive) setState({ items: data.items || [], loading: false, error: '' });
+        if (alive) setState({ items: normalizeClosetData(data).items, loading: false, error: '' });
       })
       .catch((err) => {
         if (alive) setState({ items: [], loading: false, error: err.message });
@@ -3490,7 +3663,8 @@ function ClosetItemsPage({ user, setUser }) {
 
   if (!user) return <AuthPage mode="signup" setUser={setUser} />;
 
-  const filteredItems = state.items.filter((item) => filter === 'all' || item.category === filter);
+  const closetItems = Array.isArray(state.items) ? state.items.filter((item) => item && typeof item === 'object') : [];
+  const filteredItems = closetItems.filter((item) => filter === 'all' || item.category === filter);
 
   const updateItem = async (item, updates) => {
     try {
@@ -3498,7 +3672,7 @@ function ClosetItemsPage({ user, setUser }) {
         method: 'PATCH',
         body: JSON.stringify(updates)
       });
-      setState((current) => ({ ...current, items: current.items.map((entry) => (entry.id === item.id ? data.item : entry)) }));
+      setState((current) => ({ ...current, items: (Array.isArray(current.items) ? current.items : []).map((entry) => (entry.id === item.id ? data.item : entry)) }));
     } catch (err) {
       setMessage(err.message);
     }
@@ -3508,7 +3682,7 @@ function ClosetItemsPage({ user, setUser }) {
     try {
       await api(`/closet/items/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
       setSelectedIds((current) => current.filter((id) => id !== item.id));
-      setState((current) => ({ ...current, items: current.items.filter((entry) => entry.id !== item.id) }));
+      setState((current) => ({ ...current, items: (Array.isArray(current.items) ? current.items : []).filter((entry) => entry.id !== item.id) }));
     } catch (err) {
       setMessage(err.message);
     }
@@ -4393,6 +4567,7 @@ function CustomClothingTryOn({ user, setUser }) {
   const [loading, setLoading] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [dragActive, setDragActive] = useState(false);
+  const [previewMode, setPreviewMode] = useState('garment');
 
   useEffect(() => () => {
     generationControllerRef.current?.abort();
@@ -4405,6 +4580,7 @@ function CustomClothingTryOn({ user, setUser }) {
   const setGarmentFromFile = (file) => {
     setResult(null);
     setMessage('');
+    setPreviewMode('garment');
     if (!file) {
       setGarmentFile(null);
       setGarmentPreview('');
@@ -4445,6 +4621,7 @@ function CustomClothingTryOn({ user, setUser }) {
       form.append('garment', file);
       const data = await api('/tryons/custom', { method: 'POST', body: form, timeout: AI_IMAGE_TIMEOUT_MS, signal: controller.signal });
       setResult(data.tryOn);
+      setPreviewMode('result');
       recordEvent('custom_tryon');
       if (data.user) {
         setUser((current) => {
@@ -4465,6 +4642,12 @@ function CustomClothingTryOn({ user, setUser }) {
   };
 
   const cancelGeneration = () => generationControllerRef.current?.abort();
+  const showingGeneratedPreview = previewMode === 'result' && Boolean(result?.imageUrl);
+  const selectedPreviewSrc = showingGeneratedPreview ? result.imageUrl : garmentPreview;
+  const selectedPreviewTitle = showingGeneratedPreview ? 'Generated Try-On' : 'Garment Preview';
+  const selectedPreviewTone = showingGeneratedPreview ? 'AI Powered' : 'Original Upload';
+  const mobilePreviewTone = showingGeneratedPreview ? 'AI generated result' : 'Original upload';
+  const selectedPreviewAlt = showingGeneratedPreview ? 'Generated custom try-on' : 'Uploaded garment preview';
 
   return (
     <>
@@ -4485,14 +4668,18 @@ function CustomClothingTryOn({ user, setUser }) {
               <span className="upload-action">Browse files</span>
             </span>
           </label>
-          <div className="custom-preview-grid" aria-label="Custom try-on preview comparison">
+          <div className="custom-tryon-mobile-action">
+            <button className="submit" type="submit" disabled={loading}>{loading ? 'Generating...' : 'Generate Custom Try-On'}</button>
+            <span>{user?.tokens ?? 0} Credits Left</span>
+          </div>
+          <div className="custom-preview-grid custom-preview-grid-desktop" aria-label="Custom try-on preview comparison">
             <article className="custom-preview-card">
               <header className="custom-preview-label">
                 <strong>Garment Preview</strong>
                 <span>Original Upload</span>
               </header>
               <div className={`custom-preview garment ${garmentPreview ? 'has-image' : ''}`}>
-                {garmentPreview ? <ZoomableImage src={garmentPreview} alt="Uploaded garment preview" /> : <span>Garment preview</span>}
+                {garmentPreview ? <ZoomableImage src={garmentPreview} alt="Uploaded garment preview" /> : <span>Preview</span>}
               </div>
             </article>
 
@@ -4507,12 +4694,59 @@ function CustomClothingTryOn({ user, setUser }) {
                 <TryOnGenerating active={loading} text="Rendering try-on" />
                 {result?.imageUrl ? (
                   <>
-                    <ZoomableImage src={result.imageUrl} alt="Generated custom try-on" />
+                    <ZoomableImage
+                      src={result.imageUrl}
+                      alt="Generated custom try-on"
+                      onOpen={() => setFullscreenImage({ src: result.imageUrl, alt: 'Generated custom try-on', title: 'Custom Try-On' })}
+                    />
                     <button className="fullscreen-button" type="button" aria-label="Open generated image full screen" title="Open full screen" onClick={() => setFullscreenImage({ src: result.imageUrl, alt: 'Generated custom try-on', title: 'Custom Try-On' })}><FullscreenIcon /></button>
                   </>
-                ) : <span>Generated try-on</span>}
+                ) : <span>Preview</span>}
                 <span className="custom-result-status">{loading ? 'Rendering preview' : result?.imageUrl ? 'Custom try-on ready' : 'Ready for rendering'}</span>
               </div>
+              {result?.imageUrl && <AiPreviewDisclaimer className="custom-ai-disclaimer" />}
+            </article>
+          </div>
+
+          <div className="custom-preview-grid custom-preview-grid-review custom-preview-grid-mobile" aria-label="Custom try-on preview review">
+            <article className="custom-preview-card custom-preview-review-card">
+              <header className="custom-preview-label">
+                <strong><span className="desktop-preview-label">{selectedPreviewTitle}</span><span className="mobile-preview-label">Preview</span></strong>
+                <span><span className="desktop-preview-label">{selectedPreviewTone}</span><span className="mobile-preview-label">{mobilePreviewTone}</span></span>
+              </header>
+              <div className={`custom-preview custom-review-preview ${showingGeneratedPreview ? 'result' : 'garment'} ${selectedPreviewSrc ? 'has-image' : ''}`}>
+                <TryOnGenerating active={loading && !result?.imageUrl} text="Rendering try-on" />
+                {selectedPreviewSrc ? (
+                  <>
+                    <ZoomableImage
+                      src={selectedPreviewSrc}
+                      alt={selectedPreviewAlt}
+                      onOpen={() => setFullscreenImage({ src: selectedPreviewSrc, alt: selectedPreviewAlt, title: selectedPreviewTitle })}
+                    />
+                    <button className="fullscreen-button" type="button" aria-label="Open preview image full screen" title="Open full screen" onClick={() => setFullscreenImage({ src: selectedPreviewSrc, alt: selectedPreviewAlt, title: selectedPreviewTitle })}><FullscreenIcon /></button>
+                  </>
+                ) : (
+                  <span className="custom-review-empty">
+                    <span className="custom-review-empty-icon"><UploadCloudIcon /></span>
+                    <strong>Preview</strong>
+                    <small>Upload or generate to compare your result</small>
+                  </span>
+                )}
+                {(loading || result?.imageUrl) && <span className="custom-result-status">{loading ? 'Rendering preview' : showingGeneratedPreview ? 'Custom try-on ready' : 'Original upload'}</span>}
+              </div>
+              <div className="custom-preview-chooser" aria-label="Choose preview image">
+                <button className={previewMode === 'garment' ? 'active' : ''} type="button" disabled={!garmentPreview} onClick={() => setPreviewMode('garment')}>
+                  <span>{garmentPreview ? <img src={garmentPreview} alt="" /> : <UploadCloudIcon />}</span>
+                  <strong>Upload</strong>
+                  <small>Original</small>
+                </button>
+                <button className={previewMode === 'result' ? 'active' : ''} type="button" disabled={!result?.imageUrl} onClick={() => setPreviewMode('result')}>
+                  <span>{result?.imageUrl ? <img src={result.imageUrl} alt="" /> : <SparkleLineIcon />}</span>
+                  <strong>Final</strong>
+                  <small>{loading ? 'Rendering' : 'AI result'}</small>
+                </button>
+              </div>
+              {result?.imageUrl && <AiPreviewDisclaimer className="custom-ai-disclaimer" />}
             </article>
           </div>
 
@@ -4567,11 +4801,10 @@ function StyleBotPage({ user, setUser }) {
   const [query, setQuery] = useState('');
   const [runs, setRuns] = useState([]);
   const [busy, setBusy] = useState(false);
-  const [fullscreenImage, setFullscreenImage] = useState(null);
   const conciergeScrollRef = useRef(null);
   const conciergeEndRef = useRef(null);
-  const starterSuggestions = useRecommendedProducts(user, 3);
   const promptIdeas = ['linen shirts under 1500', 'black party dress', 'gold sunglasses', 'oversized denim jacket'];
+  const creditCount = Number(user?.tokens || 0);
 
   useEffect(() => {
     if (!user || runs.length === 0) return undefined;
@@ -4638,32 +4871,7 @@ function StyleBotPage({ user, setUser }) {
       updateRun(id, () => ({
         products,
         loading: false,
-        generating: Object.fromEntries(products.map((product) => [product.id, true]))
-      }));
-
-      await Promise.allSettled(products.map(async (product) => {
-        try {
-          const generated = await api('/tryons/external', {
-            method: 'POST',
-            timeout: AI_IMAGE_TIMEOUT_MS,
-            body: JSON.stringify({ product })
-          });
-          recordEvent('try_on', { query: product.name, metadata: { product } });
-          updateRun(id, (run) => ({
-            tryOns: { ...run.tryOns, [product.id]: generated.tryOn },
-            errors: { ...run.errors, [product.id]: '' }
-          }));
-          if (generated.user) {
-            setUser((current) => {
-              if (!current) return generated.user;
-              return { ...generated.user, tokens: Math.min(current.tokens, generated.user.tokens) };
-            });
-          }
-        } catch (err) {
-          updateRun(id, (run) => ({ errors: { ...run.errors, [product.id]: err.message } }));
-        } finally {
-          updateRun(id, (run) => ({ generating: { ...run.generating, [product.id]: false } }));
-        }
+        generating: {}
       }));
     } catch (err) {
       updateRun(id, () => ({ loading: false, searchError: err.message }));
@@ -4693,12 +4901,11 @@ function StyleBotPage({ user, setUser }) {
       </aside>
 
       <section className="concierge-workspace" aria-label="FitLook Concierge">
-        <div className="concierge-chat-head"><span className="concierge-status-dot" aria-hidden="true" /><strong>FitLook Concierge</strong><small>{user.tokens} credits</small></div>
+        <div className="concierge-chat-head"><span className="concierge-status-dot" aria-hidden="true" /><strong>FitLook Concierge</strong><small>{creditCount} credits</small></div>
         <div className="concierge-scroll" ref={conciergeScrollRef}>
           <div className="concierge-message assistant">
             <p className="concierge-message-label">FitLook Concierge</p>
             <div className="concierge-bubble">Welcome. Share the item, occasion, color, or budget you have in mind and I’ll curate a considered edit for your wardrobe.</div>
-            {!starterSuggestions.loading && starterSuggestions.products?.length > 0 && <div className="concierge-product-grid">{starterSuggestions.products.slice(0, 3).map((product) => <StyleBotProduct key={`starter-${product.id}`} product={product} onFullscreen={setFullscreenImage} />)}</div>}
           </div>
           {runs.map((run) => (
             <div className="concierge-run" key={run.id}>
@@ -4708,7 +4915,7 @@ function StyleBotPage({ user, setUser }) {
                 <div className="concierge-bubble concierge-response">
                   {run.loading && <span className="concierge-loading">Curating your edit...</span>}
                   {run.searchError && <p className="form-message error-message">{run.searchError}</p>}
-                  {!run.loading && !run.searchError && <><p className="concierge-result-copy">A considered selection based on your request.</p><div className="concierge-product-grid">{run.products.map((product) => <StyleBotProduct key={product.id} product={product} tryOn={run.tryOns[product.id]} loading={Boolean(run.generating[product.id])} error={run.errors[product.id]} onFullscreen={setFullscreenImage} />)}</div></>}
+                  {!run.loading && !run.searchError && <div className="concierge-result-summary"><p className="concierge-result-copy">I found {run.products.length} matching piece{run.products.length === 1 ? '' : 's'} for this edit.</p><a href={`/search?q=${encodeURIComponent(run.query)}`}>View matching products</a></div>}
                 </div>
               </div>
             </div>
@@ -4720,7 +4927,6 @@ function StyleBotPage({ user, setUser }) {
           <section aria-label="Prompt ideas">{promptIdeas.slice(0, 3).map((idea) => <button type="button" key={idea} onClick={() => setQuery(idea)}>{idea}</button>)}</section>
         </form>
       </section>
-      {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
     </main>
   );
 }
@@ -4753,6 +4959,7 @@ function StyleBotProduct({ product, tryOn, loading, error, onFullscreen }) {
 
 function ImageLightbox({ image, onClose }) {
   const closeButtonRef = useRef(null);
+  const isVideo = image?.type === 'video';
 
   useEffect(() => {
     const onKey = (event) => {
@@ -4767,10 +4974,14 @@ function ImageLightbox({ image, onClose }) {
   }, []);
 
   return (
-    <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="Generated try-on preview" onClick={onClose}>
+    <div className={`image-lightbox ${isVideo ? 'video-lightbox' : ''}`} role="dialog" aria-modal="true" aria-label={isVideo ? 'Full screen video preview' : 'Full screen image preview'} onClick={onClose}>
       <button className="lightbox-close" ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close full screen preview">×</button>
       <figure onClick={(event) => event.stopPropagation()}>
-        <OptimizedImage src={image.src} alt={image.alt} eager />
+        {isVideo ? (
+          <video className="lightbox-video" src={image.src} poster={image.poster} autoPlay muted loop playsInline controls />
+        ) : (
+          <ZoomableImage className="lightbox-zoom-frame" src={image.src} alt={image.alt} zoom={2.45} />
+        )}
         <figcaption>{image.title}</figcaption>
       </figure>
     </div>
@@ -4933,10 +5144,45 @@ function ProfilePage({ user, setUser }) {
   const [saving, setSaving] = useState(false);
   const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
   const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [creditHistory, setCreditHistory] = useState({
+    loading: false,
+    error: '',
+    items: [],
+    totalPurchased: 0,
+    totalUsed: 0
+  });
 
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
   }, [preview]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let alive = true;
+    setCreditHistory((current) => ({ ...current, loading: true, error: '' }));
+    api('/payments/credits/history')
+      .then((data) => {
+        if (!alive) return;
+        setCreditHistory({
+          loading: false,
+          error: '',
+          items: Array.isArray(data.items) ? data.items : [],
+          totalPurchased: Number(data.totalPurchased || 0),
+          totalUsed: Number(data.totalUsed || 0)
+        });
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setCreditHistory((current) => ({
+          ...current,
+          loading: false,
+          error: err.message || 'Credit history unavailable'
+        }));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user?.id, user?.tokens]);
 
   useEffect(() => {
     if (user?.bodyPhotoStatus !== 'generating') return;
@@ -5018,6 +5264,22 @@ function ProfilePage({ user, setUser }) {
           <div className="profile-reference-section-head"><div><h2>Credit Balance</h2><p>Credits available for virtual try-ons</p></div><span className="profile-credit-mark"><SparkleLineIcon /></span></div>
           <div className="profile-reference-credit-number"><strong>{user.tokens}</strong><span>credits</span></div>
           <div className="profile-reference-progress"><i style={{ width: `${creditProgress}%` }} /></div>
+          <div className="profile-credit-summary" aria-label="Credit summary">
+            <div><span>Purchased</span><strong>+{creditHistory.totalPurchased}</strong></div>
+            <div><span>Used</span><strong>-{creditHistory.totalUsed}</strong></div>
+          </div>
+          <div className="profile-credit-history" aria-label="Credit history">
+            <div className="profile-credit-history-head"><strong>Credit History</strong><span>Recent activity</span></div>
+            {creditHistory.loading && <p className="profile-credit-history-empty">Loading credit history...</p>}
+            {!creditHistory.loading && creditHistory.error && <p className="profile-credit-history-empty">{creditHistory.error}</p>}
+            {!creditHistory.loading && !creditHistory.error && creditHistory.items.length === 0 && <p className="profile-credit-history-empty">No credit purchases or usage yet.</p>}
+            {!creditHistory.loading && !creditHistory.error && creditHistory.items.slice(0, 6).map((item) => (
+              <div className={`profile-credit-history-row ${item.type === 'purchase' ? 'purchase' : 'usage'}`} key={item.id}>
+                <div><strong>{item.title}</strong><span>{item.detail}</span></div>
+                <div><b>{Number(item.credits || 0) > 0 ? '+' : ''}{item.credits}</b><time dateTime={item.date}>{formatDate(item.date)}</time></div>
+              </div>
+            ))}
+          </div>
           <div className="profile-reference-credit-foot"><p>Each new AI try-on uses 1 credit.</p><a href="/tokens">Buy more credits</a></div>
         </section>
 
@@ -5157,6 +5419,110 @@ function FilterPanel({ facets, values, className = '' }) {
   );
 }
 
+function CartPage() {
+  const [items, setItems] = useState(() => readCartItems());
+  const subtotal = cartSubtotal(items);
+
+  useEffect(() => {
+    const sync = (event) => setItems(event.detail?.items || readCartItems());
+    window.addEventListener('fitlook:cart-change', sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('fitlook:cart-change', sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
+  const setQuantity = (item, quantity) => {
+    setItems(updateCartQuantity(item.productId, quantity, item.variant));
+  };
+
+  const removeItem = (item) => {
+    setItems(removeCartItem(item.productId, item.variant));
+    announce(`${item.name} removed from cart.`);
+  };
+
+  const moveToWishlist = (item) => {
+    toggleWishlistProductId({
+      id: item.productId,
+      name: item.name,
+      brand: item.brand,
+      imageUrl: item.imageUrl,
+      price: item.price,
+      compareAtPrice: item.compareAtPrice,
+      currency: item.currency
+    });
+    removeItem(item);
+    announce(`${item.name} moved to wishlist.`);
+  };
+
+  if (items.length === 0) {
+    return (
+      <main className="cart-page">
+        <section className="wrap cart-empty-state">
+          <p className="kicker">Your cart</p>
+          <h1>Your cart is empty.</h1>
+          <p>Explore products and save the pieces you want to compare before checkout.</p>
+          <a className="button" href="/categories">Explore fashion</a>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="cart-page">
+      <section className="wrap cart-shell" aria-labelledby="cart-title">
+        <header className="cart-head">
+          <div>
+            <p className="kicker">Your cart</p>
+            <h1 id="cart-title">Review selected products</h1>
+            <p>{cartItemCount(items)} item{cartItemCount(items) === 1 ? '' : 's'} ready for checkout setup.</p>
+          </div>
+          <a href="/categories">Continue shopping</a>
+        </header>
+
+        <div className="cart-layout">
+          <div className="cart-items" aria-label="Cart items">
+            {items.map((item) => (
+              <article className="cart-item" key={`${item.productId}-${item.variant}`}>
+                <a className="cart-item-media" href={`/product/${encodeURIComponent(item.productId)}`}>
+                  <OptimizedImage src={item.imageUrl || asset('hero2.png')} alt={item.name} />
+                </a>
+                <div className="cart-item-copy">
+                  <p>{item.brand}</p>
+                  <h2><a href={`/product/${encodeURIComponent(item.productId)}`}>{item.name}</a></h2>
+                  <span>{item.variant}</span>
+                  <strong>{formatMoney(item.price, item.currency)}</strong>
+                  {item.compareAtPrice > item.price && <del>{formatMoney(item.compareAtPrice, item.currency)}</del>}
+                  <div className="cart-item-actions">
+                    <label>
+                      <span>Qty</span>
+                      <select value={item.quantity} onChange={(event) => setQuantity(item, event.target.value)} aria-label={`Quantity for ${item.name}`}>
+                        {Array.from({ length: 10 }, (_, index) => index + 1).map((quantity) => <option value={quantity} key={quantity}>{quantity}</option>)}
+                      </select>
+                    </label>
+                    <button type="button" onClick={() => moveToWishlist(item)}>Move to wishlist</button>
+                    <button type="button" onClick={() => removeItem(item)}>Remove</button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <aside className="cart-summary" aria-label="Cart summary">
+            <h2>Order summary</h2>
+            <div><span>Subtotal</span><strong>{formatMoney(subtotal, items[0]?.currency || 'INR')}</strong></div>
+            <div><span>Delivery</span><strong>Calculated at checkout</strong></div>
+            <p>Product checkout needs backend order, address, inventory, and payment confirmation APIs before it can accept payment safely.</p>
+            <button type="button" disabled aria-disabled="true">Checkout coming soon</button>
+            <a href="/support">Contact support</a>
+          </aside>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function ProductPage({ id, user, setUser }) {
   const { product, loading, error } = useProduct(id);
   const related = useSimilarProducts(id, 4);
@@ -5168,6 +5534,7 @@ function ProductPage({ id, user, setUser }) {
   const [tryOnVideoError, setTryOnVideoError] = useState('');
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [detailImageView, setDetailImageView] = useState('tryon');
+  const [sizeRequestOpen, setSizeRequestOpen] = useState(false);
   const productViewStarted = useRef('');
   const relatedProducts = related.products.filter((item) => item.id !== id).slice(0, 4);
 
@@ -5200,6 +5567,10 @@ function ProductPage({ id, user, setUser }) {
     productViewStarted.current = product.id;
     recordEvent('product_view', { productId: product.id });
   }, [user, product?.id]);
+
+  useEffect(() => {
+    if (product) updateProductSeo(product);
+  }, [product]);
 
   if (loading) {
     return <ProductDetailSkeleton />;
@@ -5352,13 +5723,26 @@ function ProductPage({ id, user, setUser }) {
           <div className="product-editorial-gallery">
             <div className={`product-detail-media product-editorial-media ${showingTryOn ? 'showing-tryon' : 'showing-product'}`}>
               {showingTryOnVideo ? (
-                <video className="tryon-video-player" src={tryOn.videoUrl} poster={tryOn.imageUrl} autoPlay muted loop playsInline controls />
+                <button
+                  className="tryon-video-preview-button"
+                  type="button"
+                  aria-label={`Open video try-on for ${product.name} full screen`}
+                  onClick={() => setFullscreenImage({ type: 'video', src: tryOn.videoUrl, poster: tryOn.imageUrl, alt: `Video try-on for ${product.name}`, title: product.name })}
+                >
+                  <video className="tryon-video-player" src={tryOn.videoUrl} poster={tryOn.imageUrl} autoPlay muted loop playsInline />
+                  <span>Tap to preview</span>
+                </button>
               ) : (
                 <ZoomableImage
                   src={image}
                   alt={product.name}
                   zoom={showingTryOn ? 1 : 1.75}
                   disableZoom={showingTryOn}
+                  onOpen={() => setFullscreenImage({
+                    src: image,
+                    alt: showingTryOn ? `AI try-on for ${product.name}` : `${product.name} product photo`,
+                    title: showingTryOn ? product.name : `${product.name} product photo`
+                  })}
                   onError={(event) => {
                     if (hasUsableTryOn) setTryOnImageFailed(true);
                     else if (event.currentTarget.src !== window.location.origin + asset('hero2.png')) event.currentTarget.src = asset('hero2.png');
@@ -5417,7 +5801,6 @@ function ProductPage({ id, user, setUser }) {
             </div>
 
             <div className="product-editorial-actions">
-              {product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop brand</a>}
               {user ? (
                 <button className="product-editorial-tryon" type="button" onClick={generateProductTryOn} disabled={tryOnLoading}>
                   {tryOnLoading ? 'Generating...' : hasUsableTryOn ? 'Refresh try-on' : tryOnImageFailed ? 'Try again' : 'AI try-on'}
@@ -5428,12 +5811,14 @@ function ProductPage({ id, user, setUser }) {
                   {tryOnLoading ? 'Creating try-on...' : tryOnVideoLoading ? 'Making video...' : hasTryOnVideo ? 'Refresh video' : 'Generate video'}
                 </button>
               ) : <a className="product-editorial-video" href="/signup">Generate video</a>}
+              {product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop now</a>}
             </div>
             <div className="product-editorial-ship"><span>Shipping</span><strong>Live catalog item</strong></div>
             <div className="product-editorial-benefits">
               <div><strong>AI fit preview</strong><span>Built from your FitLook profile</span></div>
               <div><strong>Verified catalog</strong><span>Live brand and price details</span></div>
             </div>
+            {showingTryOn && <AiPreviewDisclaimer className="product-ai-disclaimer" />}
             {tryOnError && <p className="form-message error-message">{tryOnError}</p>}
             {tryOnVideoError && <p className="form-message error-message">{tryOnVideoError}</p>}
 
@@ -5446,6 +5831,10 @@ function ProductPage({ id, user, setUser }) {
               <details>
                 <summary>Fit and style</summary>
                 <p>{product.garmentPlacement === 'bottom' ? 'Designed for bottomwear styling.' : 'Designed to pair seamlessly with your wardrobe.'}{product.gender ? ` Suitable for ${product.gender}.` : ''}</p>
+                <div className="product-size-assist">
+                  <strong>Can’t find your size?</strong>
+                  <button type="button" onClick={() => setSizeRequestOpen(true)}>Ask the Seller</button>
+                </div>
                 {productTags.length > 0 && <p className="product-editorial-tags">{productTags.map((tag) => <a href={`/search?tag=${encodeURIComponent(tag)}`} key={tag}>{tag}</a>)}</p>}
               </details>
               <details>
@@ -5472,24 +5861,65 @@ function ProductPage({ id, user, setUser }) {
           <div className="product-editorial-related-grid">{relatedProducts.map((item) => <EditorialRelatedProduct key={item.id} product={item} />)}</div>
         </section>
       )}
+      <div className="product-mobile-action-bar" aria-label="Product actions">
+        <span>{formatMoney(product.price || 0, product.currency)}</span>
+        {user ? <button type="button" onClick={generateProductTryOn} disabled={tryOnLoading}>{tryOnLoading ? 'Generating' : 'Try On'}</button> : <a href="/signup">Try On</a>}
+        {product.affiliateLink && <a className="product-mobile-shop-now" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop now</a>}
+      </div>
+      {sizeRequestOpen && <SizeRequestPanel product={product} onClose={() => setSizeRequestOpen(false)} />}
       {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
     </main>
   );
 }
 
+function SizeRequestPanel({ product, onClose }) {
+  return (
+    <div className="size-request-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="size-request-panel" role="dialog" aria-modal="true" aria-labelledby="size-request-title">
+        <header>
+          <div>
+            <p className="kicker">Seller request</p>
+            <h2 id="size-request-title">Can’t find your size?</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close seller size request"><CloseIcon /></button>
+        </header>
+        <p>FitLook is ready for this form, but product seller requests need a backend endpoint before submissions can be accepted safely.</p>
+        <form className="size-request-form" onSubmit={(event) => event.preventDefault()}>
+          <label><span>Required size</span><input name="requiredSize" placeholder="e.g. XL" disabled /></label>
+          <label><span>Phone number</span><input name="phone" type="tel" autoComplete="tel" placeholder="Mobile number" disabled /></label>
+          <label><span>Message</span><textarea name="message" rows="3" placeholder={`Ask about ${product.name}`} disabled /></label>
+          <small>Required backend: `POST /api/products/{product.id}/size-request` with authentication, validation, consent, and seller/support routing.</small>
+          <button type="button" disabled>Submission backend required</button>
+          <a href="/support">Contact support instead</a>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function EditorialRelatedProduct({ product }) {
+  const [fullscreenPreview, setFullscreenPreview] = useState(null);
   const category = displayCategory(product);
   const brand = displayBrand(product);
+  const openPreview = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setFullscreenPreview({ src: product.imageUrl || asset('hero2.png'), alt: product.name, title: product.name });
+  };
   return (
     <article className="product-editorial-related-card">
       <a href={`/product/${encodeURIComponent(product.id)}`}>
-        <img src={product.imageUrl || asset('hero2.png')} alt={product.name} />
+        <img src={product.imageUrl || asset('hero2.png')} alt={product.name} role="button" tabIndex="0" onClick={openPreview} onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          openPreview(event);
+        }} />
         <p>{brand}</p>
         <h3>{product.name}</h3>
         <strong>{formatMoney(product.price || 0, product.currency)}</strong>
         <span>{category}</span>
       </a>
       <WishlistHeartButton product={product} className="card-wishlist-heart" />
+      {fullscreenPreview && <ImageLightbox image={fullscreenPreview} onClose={() => setFullscreenPreview(null)} />}
     </article>
   );
 }
@@ -6029,20 +6459,21 @@ function AuthPage({ mode, setUser }) {
 
         <section className="auth-login-panel auth-login-reference-panel">
           <div className="auth-login-card">
+            <a className="auth-login-mobile-logo" href="/">FitLook</a>
             <h1 id="login-title">Welcome Back</h1>
             <p className="auth-login-copy">Login with your mobile number and OTP.</p>
             <div className="auth-login-tabs" aria-hidden="true"><span>Mobile OTP</span></div>
             <form className="auth-login-form" onSubmit={(event) => event.preventDefault()} aria-busy={otpLoading}>
               <label className="signup-field">
                 <span>Mobile number</span>
-                <input name="loginPhone" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Enter mobile number" value={phoneValue} onChange={(event) => { setPhoneValue(event.target.value); setOtpSession(''); setOtpValue(''); setDevOtp(''); }} />
+                <input name="loginPhone" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Mobile number" value={phoneValue} onChange={(event) => { setPhoneValue(event.target.value); setOtpSession(''); setOtpValue(''); setDevOtp(''); }} />
               </label>
               <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestLoginOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
               {otpSession && (
                 <div className="auth-signup-reference-fields">
                   <label className="signup-field">
                     <span>OTP</span>
-                    <input name="loginOtp" inputMode="numeric" pattern="[0-9]*" maxLength="6" placeholder="Enter 6-digit OTP" value={otpValue} onChange={(event) => setOtpValue(event.target.value.replace(/\D/g, '').slice(0, 6))} />
+                    <input name="loginOtp" inputMode="numeric" pattern="[0-9]*" maxLength="6" placeholder="6-digit OTP" value={otpValue} onChange={(event) => setOtpValue(event.target.value.replace(/\D/g, '').slice(0, 6))} />
                   </label>
                   {devOtp && <p className="signup-otp-hint">Test OTP: {devOtp}</p>}
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifyLoginOtp}>{otpLoading ? 'Verifying...' : 'Verify & login'}</button>
@@ -6072,7 +6503,7 @@ function AuthPage({ mode, setUser }) {
               <div className="auth-signup-reference-fields">
                 <label className="signup-field">
                   <span>Mobile number</span>
-                  <input name="phoneDisplay" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Enter mobile number" value={phoneValue} onChange={(event) => { setPhoneValue(event.target.value); setOtpSession(''); setOtpValue(''); setDevOtp(''); }} />
+                  <input name="phoneDisplay" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Mobile number" value={phoneValue} onChange={(event) => { setPhoneValue(event.target.value); setOtpSession(''); setOtpValue(''); setDevOtp(''); }} />
                 </label>
               </div>
               <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestSignupOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
@@ -6080,7 +6511,7 @@ function AuthPage({ mode, setUser }) {
                 <div className="auth-signup-reference-fields">
                   <label className="signup-field">
                     <span>OTP</span>
-                    <input name="otpDisplay" inputMode="numeric" pattern="[0-9]*" maxLength="6" placeholder="Enter 6-digit OTP" value={otpValue} onChange={(event) => setOtpValue(event.target.value.replace(/\D/g, '').slice(0, 6))} />
+                    <input name="otpDisplay" inputMode="numeric" pattern="[0-9]*" maxLength="6" placeholder="6-digit OTP" value={otpValue} onChange={(event) => setOtpValue(event.target.value.replace(/\D/g, '').slice(0, 6))} />
                   </label>
                   {devOtp && <p className="signup-otp-hint">Test OTP: {devOtp}</p>}
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifySignupOtp}>{otpLoading ? 'Verifying...' : 'Verify & continue'}</button>
@@ -6301,6 +6732,11 @@ function App() {
   }, []);
 
   useEffect(() => {
+    updateRouteSeo(path, window.location.search);
+    recordEvent('page_view', { path, search: window.location.search });
+  }, [path, routeKey]);
+
+  useEffect(() => {
     if (!user || (path !== '/signup' && path !== '/login')) return;
     const destination = authReturnPath();
     window.history.replaceState({}, '', destination);
@@ -6348,7 +6784,7 @@ function App() {
     const legacyCategory = new URLSearchParams(window.location.search).get('category');
     const hasSearchParameters = window.location.search.length > 1;
     if (path === '/') return <Home user={user} />;
-    if (path === '/home') return <AtelierHome />;
+    if (path === '/home') return <AtelierHome user={user} />;
     if (path === '/search' && legacyCategory) return <CategoryDepartmentPage category={legacyCategory} user={user} />;
     if (path === '/search' && new URLSearchParams(window.location.search).has('newArrival')) return <CategoriesPage user={user} />;
     if (path === '/categories') return <CategoriesPage user={user} />;
@@ -6361,6 +6797,7 @@ function App() {
     if (path === '/closet/combo') return <ClosetComboPage user={user} setUser={setUser} />;
     if (path === '/closet/items') return <ClosetItemsPage user={user} setUser={setUser} />;
     if (path === '/wishlist') return <WishlistPage user={user} />;
+    if (path === '/cart') return <CartPage />;
     if (path === '/custom-try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/style-bot') return <StyleBotPage user={user} setUser={setUser} />;
     if (path === '/tokens') return <TokenPage user={user} setUser={setUser} />;
@@ -6381,7 +6818,7 @@ function App() {
       '.atelier-arrivals',
       '.atelier-lookbook',
       '.atelier-newsletter',
-      '.atelier-quick-links',
+      '.atelier-mixed-feed',
       '.atelier-category-title-section',
       '.atelier-category-hero-section',
       '.atelier-category-quick-section',
@@ -6450,6 +6887,7 @@ function App() {
         </div>
       )}
       {!isStandaloneAuth && !isOpeningPage && !isConciergePage && !isWardrobeWorkspace && <FloatingStylistLauncher user={user} />}
+      {!isStandaloneAuth && <MobileBottomNav user={user} />}
       {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Footer compact={path === '/wishlist' || path === '/profile' || isProductPage} />}
       {shouldShowOnboarding && <OnboardingOverview user={user} onComplete={setUser} />}
       {replayTourOpen && user && <OnboardingOverview user={user} persist={false} onClose={() => setReplayTourOpen(false)} />}
@@ -6499,6 +6937,10 @@ function UserIcon() {
 
 function HeartIcon() {
   return <svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z" /></svg>;
+}
+
+function HomeIcon() {
+  return <svg viewBox="0 0 24 24"><path d="m3 11 9-8 9 8" /><path d="M5 10v10h5v-6h4v6h5V10" /></svg>;
 }
 
 function GridIcon() {

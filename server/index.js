@@ -11,6 +11,7 @@ import productRoutes from './routes/products.js';
 import recommendationRoutes from './routes/recommendations.js';
 import tryOnRoutes from './routes/tryons.js';
 import imageRoutes from './routes/images.js';
+import { validateServerEnv } from './utils/envValidation.js';
 
 dotenv.config();
 
@@ -91,9 +92,8 @@ app.use((error, req, res, _next) => {
 });
 
 async function start() {
-  if (!process.env.MONGODB_URI) {
-    throw new Error('MONGODB_URI is missing. Add it to .env before starting the server.');
-  }
+  const envReport = validateServerEnv();
+  envReport.warnings.forEach((warning) => console.warn(`[env] ${warning}`));
 
   await mongoose.connect(process.env.MONGODB_URI, {
     dbName: process.env.MONGODB_DB || 'fitlook'
