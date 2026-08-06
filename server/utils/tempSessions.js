@@ -27,7 +27,7 @@ function shouldRequireRedis() {
   const explicit = String(process.env.TEMP_SESSION_REQUIRE_REDIS || '').toLowerCase();
   if (['1', 'true', 'yes', 'on'].includes(explicit)) return true;
   if (['0', 'false', 'no', 'off'].includes(explicit)) return false;
-  return process.env.NODE_ENV === 'production';
+  return false;
 }
 
 function createTempSessionStore(name, options = {}) {
