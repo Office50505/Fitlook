@@ -9,6 +9,7 @@ import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { createHybridCache } from '../utils/cache.js';
 import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility, genderedSearchQuery, genderPreferenceForQuery } from '../utils/genderPreference.js';
+import { enqueueJob } from '../utils/jobQueue.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
 import { requireAdmin } from '../utils/adminAccess.js';
 import { saveBuffer, useBunny } from '../utils/storage.js';
@@ -1110,7 +1111,7 @@ router.post('/amazon-search', requireUser, async (req, res) => {
   }
 });
 
-router.post('/recategorize', requireAdmin, async (req, res) => {
+async function runProductRecategorizationJob() {
   const botAmazonRecord = { badge: 'Amazon', $or: [{ sourceUrl: /amazon\.[a-z.]+\/dp\//i }, { affiliateLink: /amazon\.[a-z.]+\/dp\//i }] };
   const products = await Product.find({ isActive: true, $nor: [botAmazonRecord] });
   let updated = 0;
@@ -1130,13 +1131,32 @@ router.post('/recategorize', requireAdmin, async (req, res) => {
   }
 
   if (updated) await clearReadCachesAfterProductWrite();
+  return { updated, checked: products.length, changes };
+}
+
+router.post('/recategorize', requireAdmin, async (req, res) => {
+  if (req.body?.async || req.query.async === '1') {
+    const job = await enqueueJob('maintenance', 'product-recategorize', {}, {
+      jobId: `product-recategorize:${Date.now()}`
+    });
+    if (!job) return res.status(503).json({ message: 'Job queue is not available' });
+    await recordAdminAudit(req, {
+      action: 'categories_rebuild_queued',
+      entityType: 'product',
+      label: 'Product categories',
+      detail: { jobId: job.id }
+    });
+    return res.status(202).json({ queued: true, jobId: job.id });
+  }
+
+  const result = await runProductRecategorizationJob();
   await recordAdminAudit(req, {
     action: 'categories_rebuilt',
     entityType: 'product',
     label: 'Product categories',
-    detail: { updated, checked: products.length }
+    detail: { updated: result.updated, checked: result.checked }
   });
-  res.json({ updated, checked: products.length, changes });
+  res.json(result);
 });
 
 router.get('/:id', async (req, res) => {
@@ -1303,4 +1323,4 @@ router.delete('/:id', requireAdmin, async (req, res) => {
 });
 
 export default router;
-export { buildProductDraft };
+export { buildProductDraft, runProductRecategorizationJob };

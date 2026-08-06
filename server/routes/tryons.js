@@ -14,6 +14,7 @@ import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility } from '../utils/genderPreference.js';
 import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
+import { enqueueJob, enqueueJobAndWait } from '../utils/jobQueue.js';
 import { readStoredFile, saveBuffer, storedFileSignature } from '../utils/storage.js';
 
 const router = express.Router();
@@ -1376,6 +1377,73 @@ async function refundToken(user, timer, cost = tokenCost()) {
   return refundedUser || user;
 }
 
+function tryOnQueueMode() {
+  return String(process.env.TRYON_QUEUE_MODE || 'off').toLowerCase();
+}
+
+async function runProductTryOnJob({ userId, productId, requestedModel = '', forceGenerate = false }) {
+  const timer = createTimer('generate', {
+    userId: userId.toString(),
+    productId,
+    requestedModel,
+    forceGenerate,
+    queued: true
+  });
+  let reserved = false;
+  let user = await User.findById(userId);
+
+  try {
+    if (!user) return { status: 401, body: { message: 'User not found' } };
+    const requested = normalizeTryOnModel(requestedModel);
+    const hasRequestedModel = Boolean(requestedModel);
+    const product = await Product.findOne({ _id: productId, isActive: true });
+    if (!product) return { status: 404, body: { message: 'Product not found' } };
+    const existing = await TryOn.findOne({ user: user._id, product: productId });
+    const selectedModel = hasRequestedModel ? requested : tryOnModelForProduct(product);
+    timer.mark('product loaded', {
+      tryOnModel: selectedModel,
+      existingModel: existing?.model || ''
+    });
+
+    if (existing && !forceGenerate) {
+      timer.end({ reused: true });
+      return { status: 200, body: { tryOn: existing.toClient(), user: user.toClient(), reused: true } };
+    }
+
+    ensureTryOnProfileReady(user);
+    const chargedUser = await reserveToken(user, timer);
+    if (!chargedUser) {
+      timer.end({ error: 'insufficient tokens' });
+      return { status: 402, body: { message: 'Not enough tokens for AI try-on' } };
+    }
+    reserved = true;
+    user = chargedUser;
+
+    const tryOn = forceGenerate
+      ? await replaceGeneratedTryOn({ user, product, tryOnModel: selectedModel, timer })
+      : await saveGeneratedTryOn({ user, product, tryOnModel: selectedModel, timer });
+    timer.end({ reused: false, tokensRemaining: user.tokens });
+
+    return { status: 201, body: { tryOn: tryOn.toClient(), user: user.toClient(), reused: false } };
+  } catch (error) {
+    if (error.code === 11000) {
+      const existing = await TryOn.findOne({ user: user?._id, product: productId });
+      if (existing) {
+        if (reserved) {
+          user = await refundToken(user, timer);
+          reserved = false;
+        }
+        timer.end({ reused: true, duplicate: true });
+        return { status: 200, body: { tryOn: existing.toClient(), user: user.toClient(), reused: true } };
+      }
+    }
+    if (reserved) user = await refundToken(user, timer);
+    const message = readableError(error, 'Could not generate AI try-on');
+    timer.end({ error: message });
+    return { status: 400, body: { message } };
+  }
+}
+
 router.get('/', requireUser, async (req, res) => {
   const ids = String(req.query.productIds || '')
     .split(',')
@@ -1539,68 +1607,55 @@ router.post('/:productId/video', requireUser, async (req, res) => {
 });
 
 router.post('/:productId', requireUser, async (req, res) => {
-  const requestedModel = normalizeTryOnModel(req.body?.tryOnModel);
-  const hasRequestedModel = Boolean(req.body?.tryOnModel);
+  const requestedModel = String(req.body?.tryOnModel || '');
   const forceGenerate = Boolean(req.body?.force || req.body?.refresh);
-  const timer = createTimer('generate', {
-    userId: req.user._id.toString(),
-    productId: req.params.productId,
-    requestedModel: req.body?.tryOnModel || '',
-    forceGenerate
-  });
-  let reserved = false;
 
   try {
-    const product = await Product.findOne({ _id: req.params.productId, isActive: true });
-    if (!product) return res.status(404).json({ message: 'Product not found' });
-    const existing = await TryOn.findOne({ user: req.user._id, product: req.params.productId });
-    const selectedModel = hasRequestedModel
-      ? requestedModel
-      : tryOnModelForProduct(product);
-    timer.mark('product loaded', {
-      tryOnModel: selectedModel,
-      existingModel: existing?.model || ''
+    if (tryOnQueueMode() === 'async') {
+      const job = await enqueueJob('tryon', 'product-generate', {
+        userId: req.user._id.toString(),
+        productId: req.params.productId,
+        requestedModel,
+        forceGenerate
+      }, {
+        jobId: `tryon:${req.user._id}:${req.params.productId}:${forceGenerate ? Date.now() : 'reuse'}`
+      });
+      if (!job) return res.status(503).json({ message: 'Try-on queue is not available' });
+      return res.status(202).json({
+        queued: true,
+        queue: 'tryon',
+        jobId: job.id,
+        statusUrl: `/api/jobs/tryon/${encodeURIComponent(job.id)}`,
+        statusPath: `/jobs/tryon/${encodeURIComponent(job.id)}`
+      });
+    }
+
+    if (tryOnQueueMode() === 'wait') {
+      const queued = await enqueueJobAndWait('tryon', 'product-generate', {
+        userId: req.user._id.toString(),
+        productId: req.params.productId,
+        requestedModel,
+        forceGenerate
+      }, {
+        jobId: `tryon:${req.user._id}:${req.params.productId}:${forceGenerate ? Date.now() : 'reuse'}`,
+        waitTimeoutMs: Number(process.env.TRYON_QUEUE_WAIT_TIMEOUT_MS || 180_000)
+      });
+      if (!queued) return res.status(503).json({ message: 'Try-on queue is not available' });
+      return res.status(queued.result.status || 200).json(queued.result.body);
+    }
+
+    const result = await runProductTryOnJob({
+      userId: req.user._id.toString(),
+      productId: req.params.productId,
+      requestedModel,
+      forceGenerate
     });
-
-    if (existing && !forceGenerate) {
-      timer.end({ reused: true });
-      return res.json({ tryOn: existing.toClient(), user: req.user.toClient(), reused: true });
-    }
-
-    ensureTryOnProfileReady(req.user);
-    const chargedUser = await reserveToken(req.user, timer);
-    if (!chargedUser) {
-      timer.end({ error: 'insufficient tokens' });
-      return res.status(402).json({ message: 'Not enough tokens for AI try-on' });
-    }
-    reserved = true;
-    req.user = chargedUser;
-
-    const tryOn = forceGenerate
-      ? await replaceGeneratedTryOn({ user: req.user, product, tryOnModel: selectedModel, timer })
-      : await saveGeneratedTryOn({ user: req.user, product, tryOnModel: selectedModel, timer });
-    timer.end({ reused: false, tokensRemaining: req.user.tokens });
-
-    res.status(201).json({ tryOn: tryOn.toClient(), user: req.user.toClient(), reused: false });
+    res.status(result.status).json(result.body);
   } catch (error) {
-    if (error.code === 11000) {
-      const existing = await TryOn.findOne({ user: req.user._id, product: req.params.productId });
-      if (existing) {
-        if (reserved) {
-          req.user = await refundToken(req.user, timer);
-          reserved = false;
-        }
-        timer.end({ reused: true, duplicate: true });
-        return res.json({ tryOn: existing.toClient(), user: req.user.toClient(), reused: true });
-      }
-    }
-    if (reserved) {
-      req.user = await refundToken(req.user, timer);
-    }
     const message = readableError(error, 'Could not generate AI try-on');
-    timer.end({ error: message });
     res.status(400).json({ message });
   }
 });
 
 export default router;
+export { runProductTryOnJob };

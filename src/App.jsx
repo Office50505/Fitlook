@@ -713,6 +713,33 @@ async function api(path, options = {}) {
   throw lastError || new Error('Unable to reach FitLook right now.');
 }
 
+async function resolveQueuedJobResponse(data, { timeout = AI_IMAGE_TIMEOUT_MS, intervalMs = 1800 } = {}) {
+  if (!data?.queued || !data.jobId) return data;
+  const statusPath = data.statusPath || String(data.statusUrl || '').replace(/^\/api/, '');
+  if (!statusPath) throw new Error('Try-on job was queued, but no status endpoint was returned.');
+
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    const status = await api(statusPath, { timeout: API_TIMEOUT_MS, retry: 0 });
+    const job = status.job || {};
+    if (job.state === 'completed') {
+      const result = job.result || {};
+      if (result.status && result.status >= 400) throw new Error(readableError(result.body, 'Could not generate AI try-on'));
+      return result.body || result;
+    }
+    if (job.state === 'failed') {
+      throw new Error(job.failedReason || 'Could not generate AI try-on');
+    }
+  }
+  throw new Error('AI rendering is still running. Check this item again in a moment.');
+}
+
+async function generateQueuedTryOn(path, options = {}) {
+  const data = await api(path, options);
+  return resolveQueuedJobResponse(data, { timeout: options.timeout || AI_IMAGE_TIMEOUT_MS });
+}
+
 function recordEvent(type, payload = {}) {
   trackClientEvent(type, payload);
   if (!localStorage.getItem('fitlook_token')) return;
@@ -4021,7 +4048,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
     setTryOnLoading((current) => ({ ...current, [product.id]: true }));
     setTryOnErrors((current) => ({ ...current, [product.id]: '' }));
     try {
-      const data = await api(`/tryons/${product.id}`, {
+      const data = await generateQueuedTryOn(`/tryons/${product.id}`, {
         method: 'POST',
         timeout: AI_IMAGE_TIMEOUT_MS,
         body: options.force ? JSON.stringify({ force: true }) : undefined
@@ -5649,7 +5676,7 @@ function ProductPage({ id, user, setUser }) {
     setTryOnLoading(true);
     setTryOnError('');
     try {
-      const data = await api(`/tryons/${product.id}`, {
+      const data = await generateQueuedTryOn(`/tryons/${product.id}`, {
         method: 'POST',
         timeout: AI_IMAGE_TIMEOUT_MS,
         body: regenerate ? JSON.stringify({ force: true }) : undefined
@@ -5684,7 +5711,7 @@ function ProductPage({ id, user, setUser }) {
       let activeTryOn = tryOn;
 
       if (needsImageTryOn) {
-        const preview = await api(`/tryons/${product.id}`, {
+        const preview = await generateQueuedTryOn(`/tryons/${product.id}`, {
           method: 'POST',
           timeout: AI_IMAGE_TIMEOUT_MS,
           body: tryOn?.imageUrl ? JSON.stringify({ force: true }) : undefined

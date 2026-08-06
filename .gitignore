@@ -42,6 +42,7 @@ pnpm-debug.log*
 *.sqlite3
 *.db
 *.dump
+dump.rdb
 *.bak
 *.backup
 .cache/

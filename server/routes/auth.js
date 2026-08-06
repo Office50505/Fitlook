@@ -4,7 +4,7 @@ import heicConvert from 'heic-convert';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import multer from 'multer';
-import { randomInt, randomUUID } from 'node:crypto';
+import { createHmac, randomInt } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -15,7 +15,9 @@ import User from '../models/User.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
 import { isAllowedAdminEmail, normalizeEmail, requireAdmin, signAdminSession } from '../utils/adminAccess.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
+import { enqueueJob } from '../utils/jobQueue.js';
 import { deleteStoredFile, readStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
+import { createTempSessionStore } from '../utils/tempSessions.js';
 
 const router = express.Router();
 const avifExtensions = new Set(['.avif']);
@@ -23,9 +25,9 @@ const avifMimeTypes = new Set(['image/avif', 'image/x-avif']);
 const heicExtensions = new Set(['.heic', '.heif']);
 const heicMimeTypes = new Set(['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence']);
 const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.env.DEBUG_GENERATION_LOGS || '').toLowerCase());
-const signupOtpSessions = new Map();
-const loginOtpSessions = new Map();
 const signupOtpTtlMs = 5 * 60 * 1000;
+const signupOtpSessions = createTempSessionStore('otp:signup', { ttlMs: signupOtpTtlMs });
+const loginOtpSessions = createTempSessionStore('otp:login', { ttlMs: signupOtpTtlMs });
 
 function profileImageModel() {
   return process.env.FAL_PROFILE_IMAGE_MODEL || process.env.FAL_TRYON_MODEL || 'openai/gpt-image-2/edit';
@@ -50,22 +52,15 @@ function normalizePhone(value = '') {
   return '';
 }
 
-function cleanupSignupOtpSessions() {
-  const now = Date.now();
-  for (const [id, session] of signupOtpSessions.entries()) {
-    if (!session || session.expiresAt <= now) signupOtpSessions.delete(id);
-  }
-}
-
-function cleanupLoginOtpSessions() {
-  const now = Date.now();
-  for (const [id, session] of loginOtpSessions.entries()) {
-    if (!session || session.expiresAt <= now) loginOtpSessions.delete(id);
-  }
-}
-
 function extensionForFile(file) {
   return path.extname(file.originalname || file.filename || '').toLowerCase();
+}
+
+function otpDigest(otpSession, otp) {
+  const secret = process.env.JWT_SECRET || process.env.ADMIN_KEY || 'fitlook-dev-secret';
+  return createHmac('sha256', secret)
+    .update(`${otpSession}:${otp}`)
+    .digest('hex');
 }
 
 function extensionForMimetype(mimetype) {
@@ -319,46 +314,64 @@ async function bodyPhotoFromUpload(file, { generateFullBody = true } = {}) {
   };
 }
 
+async function runProfileFullBodyJob({ userId, sourceBodyPhoto }) {
+  try {
+    if (debugGenerationLogs) console.log('[profile-fullbody] start', { userId: userId.toString(), source: sourceBodyPhoto.path });
+    const generated = await generateFullBodyProfilePhoto(sourceBodyPhoto);
+    const generatedBodyPhoto = {
+      ...await saveBuffer({
+        key: generated.filename,
+        buffer: generated.buffer,
+        mimetype: generated.mimetype,
+        filename: generated.filename
+      }),
+      status: 'ready',
+      source: 'fal-full-body',
+      generatedAt: new Date()
+    };
+
+    const updated = await User.findOneAndUpdate(
+      { _id: userId, 'bodyPhoto.path': sourceBodyPhoto.path },
+      { $set: { bodyPhoto: generatedBodyPhoto } },
+      { new: true }
+    );
+
+    if (updated) {
+      await deleteStoredFile(sourceBodyPhoto).catch(() => {});
+      if (debugGenerationLogs) console.log('[profile-fullbody] done', { userId: userId.toString(), path: generatedBodyPhoto.path });
+      return { updated: true, path: generatedBodyPhoto.path };
+    }
+
+    await deleteStoredFile(generatedBodyPhoto).catch(() => {});
+    if (debugGenerationLogs) console.log('[profile-fullbody] skipped stale result', { userId: userId.toString() });
+    return { updated: false, stale: true };
+  } catch (error) {
+    const message = readableProviderError(error, 'Could not generate full-body profile image');
+    await User.findOneAndUpdate(
+      { _id: userId, 'bodyPhoto.path': sourceBodyPhoto.path },
+      { $set: { 'bodyPhoto.status': 'failed', 'bodyPhoto.error': message } }
+    );
+    console.error('[profile-fullbody] failed', { userId: userId.toString(), error: message });
+    throw error;
+  }
+}
+
 async function generateFullBodyProfileInBackground(userId, sourceBodyPhoto, { enabled = true } = {}) {
   if (!enabled || !shouldGenerateFullBodyProfile()) return;
 
-  setImmediate(async () => {
-    try {
-      if (debugGenerationLogs) console.log('[profile-fullbody] start', { userId: userId.toString(), source: sourceBodyPhoto.path });
-      const generated = await generateFullBodyProfilePhoto(sourceBodyPhoto);
-      const generatedBodyPhoto = {
-        ...await saveBuffer({
-          key: generated.filename,
-          buffer: generated.buffer,
-          mimetype: generated.mimetype,
-          filename: generated.filename
-        }),
-        status: 'ready',
-        source: 'fal-full-body',
-        generatedAt: new Date()
-      };
+  const job = await enqueueJob('profile', 'full-body', {
+    userId: userId.toString(),
+    sourceBodyPhoto
+  }, {
+    jobId: `profile-full-body:${userId}:${sourceBodyPhoto.path}`
+  }).catch((error) => {
+    console.warn('[profile-fullbody] queue unavailable, using local fallback', { error: error.message });
+    return null;
+  });
 
-      const updated = await User.findOneAndUpdate(
-        { _id: userId, 'bodyPhoto.path': sourceBodyPhoto.path },
-        { $set: { bodyPhoto: generatedBodyPhoto } },
-        { new: true }
-      );
-
-      if (updated) {
-        await deleteStoredFile(sourceBodyPhoto).catch(() => {});
-        if (debugGenerationLogs) console.log('[profile-fullbody] done', { userId: userId.toString(), path: generatedBodyPhoto.path });
-      } else {
-        await deleteStoredFile(generatedBodyPhoto).catch(() => {});
-        if (debugGenerationLogs) console.log('[profile-fullbody] skipped stale result', { userId: userId.toString() });
-      }
-    } catch (error) {
-      const message = readableProviderError(error, 'Could not generate full-body profile image');
-      await User.findOneAndUpdate(
-        { _id: userId, 'bodyPhoto.path': sourceBodyPhoto.path },
-        { $set: { 'bodyPhoto.status': 'failed', 'bodyPhoto.error': message } }
-      );
-      console.error('[profile-fullbody] failed', { userId: userId.toString(), error: message });
-    }
+  if (job) return;
+  setImmediate(() => {
+    runProfileFullBodyJob({ userId, sourceBodyPhoto }).catch(() => {});
   });
 }
 
@@ -412,21 +425,26 @@ async function requireUser(req, res, next) {
   }
 }
 
-router.post('/signup/request-otp', async (req, res) => {
-  cleanupSignupOtpSessions();
+function asyncRoute(handler) {
+  return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+}
+
+router.post('/signup/request-otp', asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   if (!phone) return res.status(400).json({ message: 'Enter a valid phone number' });
   const existing = await User.exists({ phone });
   if (existing) return res.status(409).json({ message: 'An account already exists for this phone number' });
 
   const otp = String(randomInt(100000, 999999));
-  const otpSession = randomUUID();
-  signupOtpSessions.set(otpSession, {
+  const { id: otpSession } = await signupOtpSessions.create({
     phone,
-    otp,
+    otpHash: '',
     verified: false,
-    expiresAt: Date.now() + signupOtpTtlMs
   });
+  await signupOtpSessions.update(otpSession, (session) => ({
+    ...session,
+    otpHash: otpDigest(otpSession, otp)
+  }));
 
   res.json({
     otpSession,
@@ -434,32 +452,31 @@ router.post('/signup/request-otp', async (req, res) => {
     message: 'OTP sent',
     devOtp: otp
   });
-});
+}));
 
-router.post('/signup/verify-otp', async (req, res) => {
-  cleanupSignupOtpSessions();
+router.post('/signup/verify-otp', asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const otp = String(req.body?.otp || '').replace(/\D/g, '');
   const otpSession = String(req.body?.otpSession || '');
-  const session = signupOtpSessions.get(otpSession);
+  const session = await signupOtpSessions.get(otpSession);
   if (!phone || !otpSession || !session || session.phone !== phone) return res.status(400).json({ message: 'Request a new OTP' });
   if (session.expiresAt <= Date.now()) {
-    signupOtpSessions.delete(otpSession);
+    await signupOtpSessions.remove(otpSession);
     return res.status(400).json({ message: 'OTP expired. Request a new code' });
   }
-  if (session.otp !== otp) return res.status(400).json({ message: 'Incorrect OTP' });
+  if (session.otpHash !== otpDigest(otpSession, otp)) return res.status(400).json({ message: 'Incorrect OTP' });
   session.verified = true;
-  signupOtpSessions.set(otpSession, session);
+  await signupOtpSessions.set(otpSession, session);
   res.json({ verified: true, otpSession, phone });
-});
+}));
 
-router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
+router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) => {
   const { name, email, password } = req.body;
   const phone = normalizePhone(req.body.phone);
   const otpSession = String(req.body.otpSession || '');
   const username = normalizeUsername(req.body.username) || await uniqueUsername(name);
   const genderPreference = normalizeGenderPreference(req.body.genderPreference);
-  const phoneSession = signupOtpSessions.get(otpSession);
+  const phoneSession = await signupOtpSessions.get(otpSession);
   if (!phone || !phoneSession || phoneSession.phone !== phone || !phoneSession.verified || phoneSession.expiresAt <= Date.now()) return res.status(400).json({ message: 'Verify your phone number first' });
   if (!name || !email || !password || !username || !genderPreference) return res.status(400).json({ message: 'Name, username, email, gender preference, and password are required' });
   if (username.length < 3) return res.status(400).json({ message: 'Username must be at least 3 characters' });
@@ -491,8 +508,8 @@ router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
       bodyPhoto
     });
 
-    generateFullBodyProfileInBackground(user._id, bodyPhoto, { enabled: generateFullBody });
-    signupOtpSessions.delete(otpSession);
+    await generateFullBodyProfileInBackground(user._id, bodyPhoto, { enabled: generateFullBody });
+    await signupOtpSessions.remove(otpSession);
     res.status(201).json({ token: sign(user), user: user.toClient() });
   } catch (error) {
     if (isBodyPhotoPreparationError(error)) return res.status(400).json({ message: error.message });
@@ -501,7 +518,7 @@ router.post('/signup', upload.single('bodyPhoto'), async (req, res) => {
     if (error.code === 11000 && error.keyPattern?.phone) return res.status(409).json({ message: 'An account already exists for this phone number' });
     throw error;
   }
-});
+}));
 
 router.get('/username-suggestions', async (req, res) => {
   const base = usernameFromName(req.query.name) || 'fitlook_user';
@@ -530,21 +547,22 @@ router.post('/login', async (req, res) => {
   res.json({ token: sign(user), user: user.toClient() });
 });
 
-router.post('/login/request-otp', async (req, res) => {
-  cleanupLoginOtpSessions();
+router.post('/login/request-otp', asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   if (!phone) return res.status(400).json({ message: 'Enter a valid phone number' });
   const user = await User.findOne({ phone });
   if (!user) return res.status(404).json({ message: 'No FitLook account found for this phone number' });
 
   const otp = String(randomInt(100000, 999999));
-  const otpSession = randomUUID();
-  loginOtpSessions.set(otpSession, {
+  const { id: otpSession } = await loginOtpSessions.create({
     phone,
     userId: user._id.toString(),
-    otp,
-    expiresAt: Date.now() + signupOtpTtlMs
+    otpHash: ''
   });
+  await loginOtpSessions.update(otpSession, (session) => ({
+    ...session,
+    otpHash: otpDigest(otpSession, otp)
+  }));
 
   res.json({
     otpSession,
@@ -552,26 +570,25 @@ router.post('/login/request-otp', async (req, res) => {
     message: 'OTP sent',
     devOtp: otp
   });
-});
+}));
 
-router.post('/login/verify-otp', async (req, res) => {
-  cleanupLoginOtpSessions();
+router.post('/login/verify-otp', asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const otp = String(req.body?.otp || '').replace(/\D/g, '');
   const otpSession = String(req.body?.otpSession || '');
-  const session = loginOtpSessions.get(otpSession);
+  const session = await loginOtpSessions.get(otpSession);
   if (!phone || !otpSession || !session || session.phone !== phone) return res.status(400).json({ message: 'Request a new OTP' });
   if (session.expiresAt <= Date.now()) {
-    loginOtpSessions.delete(otpSession);
+    await loginOtpSessions.remove(otpSession);
     return res.status(400).json({ message: 'OTP expired. Request a new code' });
   }
-  if (session.otp !== otp) return res.status(400).json({ message: 'Incorrect OTP' });
+  if (session.otpHash !== otpDigest(otpSession, otp)) return res.status(400).json({ message: 'Incorrect OTP' });
 
   const user = await User.findById(session.userId);
-  loginOtpSessions.delete(otpSession);
+  await loginOtpSessions.remove(otpSession);
   if (!user) return res.status(401).json({ message: 'Account not found. Please sign up again.' });
   res.json({ token: sign(user), user: user.toClient() });
-});
+}));
 
 router.post('/admin-login', async (req, res) => {
   const email = normalizeEmail(req.body?.email);
@@ -810,7 +827,7 @@ router.post('/body-photo', requireUser, upload.single('bodyPhoto'), async (req, 
     const bodyPhoto = await bodyPhotoFromUpload(req.file, { generateFullBody });
     req.user.bodyPhoto = bodyPhoto;
     await req.user.save();
-    generateFullBodyProfileInBackground(req.user._id, bodyPhoto, { enabled: generateFullBody });
+    await generateFullBodyProfileInBackground(req.user._id, bodyPhoto, { enabled: generateFullBody });
     res.json({ user: req.user.toClient() });
   } catch (error) {
     if (isBodyPhotoPreparationError(error)) return res.status(400).json({ message: error.message });
@@ -819,4 +836,4 @@ router.post('/body-photo', requireUser, upload.single('bodyPhoto'), async (req, 
 });
 
 export default router;
-export { requireUser };
+export { requireUser, runProfileFullBodyJob };

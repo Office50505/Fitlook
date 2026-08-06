@@ -76,6 +76,12 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
   }
 
+  location = /nginx_status {
+    stub_status;
+    allow 127.0.0.1;
+    deny all;
+  }
+
   location ^~ /uploads/ {
     proxy_pass http://fitlook_api;
     proxy_http_version 1.1;

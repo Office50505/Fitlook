@@ -60,6 +60,21 @@ async function getRedisClient() {
   return redisConnectPromise;
 }
 
+async function closeRedisClient() {
+  const client = redisClient;
+  redisConnectPromise = null;
+  redisDisabledUntil = 0;
+  redisClient = null;
+  redisClientUrl = null;
+  if (!client) return;
+  try {
+    if (client.isOpen) await client.quit();
+    else client.destroy?.();
+  } catch {
+    client.destroy?.();
+  }
+}
+
 function stableHash(value) {
   return createHash('sha256').update(String(value)).digest('hex').slice(0, 32);
 }
@@ -183,4 +198,4 @@ function createHybridCache(name, options = {}) {
   return { get, set, remember, clear };
 }
 
-export { createHybridCache };
+export { closeRedisClient, createHybridCache, getRedisClient, keyPrefix, ttlSeconds, withTimeout };

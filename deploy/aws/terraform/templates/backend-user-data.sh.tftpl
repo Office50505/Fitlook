@@ -56,7 +56,29 @@ User=fitlook
 Group=fitlook
 WorkingDirectory=/opt/fitlook
 EnvironmentFile=/etc/fitlook/backend.env
+Environment=APP_ROLE=api
 ExecStart=/usr/bin/npm run server
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+cat >/etc/systemd/system/fitlook-worker.service <<'SERVICE'
+[Unit]
+Description=FitLook background worker
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=fitlook
+Group=fitlook
+WorkingDirectory=/opt/fitlook
+EnvironmentFile=/etc/fitlook/backend.env
+Environment=APP_ROLE=worker
+ExecStart=/usr/bin/npm run worker
 Restart=always
 RestartSec=5
 
@@ -83,6 +105,12 @@ server {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
   }
+
+  location = /nginx_status {
+    stub_status;
+    allow 127.0.0.1;
+    deny all;
+  }
 }
 NGINX
 
@@ -93,5 +121,12 @@ nginx -t
 systemctl daemon-reload
 systemctl enable fitlook-backend
 systemctl restart fitlook-backend
+if grep -Eq '^RUN_WORKER_ON_API=(1|true|yes|on)$' /etc/fitlook/backend.env; then
+  systemctl enable fitlook-worker
+  systemctl restart fitlook-worker
+else
+  systemctl disable fitlook-worker || true
+  systemctl stop fitlook-worker || true
+fi
 systemctl enable nginx
 systemctl restart nginx
