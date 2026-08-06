@@ -72,6 +72,9 @@ function chargedVideoTokenCost(user) {
 }
 
 function ensureTryOnProfileReady(user) {
+  if (!user?.bodyPhoto?.path && !user?.bodyPhoto?.url && !user?.bodyPhoto?.remoteUrl) {
+    throw new Error('Upload a profile photo before starting an AI try-on.');
+  }
   const status = user?.bodyPhoto?.status || 'ready';
   if (status === 'generating') {
     throw new Error('Your full-body try-on profile is still being prepared. You can keep browsing and try again in a minute.');
@@ -413,7 +416,7 @@ async function cachedDataUri({ cache, key, timer, label, load }) {
 }
 
 async function dataUriFromUpload(image, label, timer, options = {}) {
-  if (!image?.path) throw new Error(`${label} image is missing`);
+  if (!image?.path && !image?.url && !image?.remoteUrl) throw new Error(`${label} image is missing`);
   const mimetype = image.mimetype || 'image/jpeg';
   const minWidth = Number(options.minWidth || 0);
   const minHeight = Number(options.minHeight || 0);
@@ -489,7 +492,7 @@ async function dataUriFromProduct(product, timer, options = {}) {
 }
 
 async function filePartFromUpload(image, label, timer) {
-  if (!image?.path) throw new Error(`${label} image is missing`);
+  if (!image?.path && !image?.url && !image?.remoteUrl) throw new Error(`${label} image is missing`);
   const { buffer: bytes } = await readStoredFile(image, label);
   const mimetype = image.mimetype || 'image/jpeg';
   const normalized = await normalizeAvifImage({
@@ -960,7 +963,7 @@ function readableVideoError(value, fallback = 'Could not generate video try-on')
 }
 
 async function videoFirstFrameDataUri(image, label, timer) {
-  if (!image?.path) throw new Error(`${label} image is missing`);
+  if (!image?.path && !image?.url && !image?.remoteUrl) throw new Error(`${label} image is missing`);
   const { buffer: bytes } = await readStoredFile(image, label);
   const normalized = await normalizeAvifImage({
     bytes,

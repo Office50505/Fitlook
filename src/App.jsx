@@ -657,6 +657,13 @@ function usableBrands(brands = []) {
   return brands.map((brand) => cleanDisplayText(brand, '')).filter(Boolean);
 }
 
+function compactCount(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number) || number <= 0) return '0';
+  if (number >= 1000) return `${Math.floor(number / 1000)}K+`;
+  return String(number);
+}
+
 async function api(path, options = {}) {
   const {
     timeout = API_TIMEOUT_MS,
@@ -753,6 +760,14 @@ function recordEvent(type, payload = {}) {
     method: 'POST',
     body: JSON.stringify({ type, ...payload })
   }).catch(() => {});
+}
+
+function tryOnProfileBlockMessage(user) {
+  const status = user?.bodyPhotoStatus || 'uploaded';
+  if (!user?.bodyPhotoUrl && !user?.bodyPhotoOriginalUrl) return 'Upload a profile photo before starting an AI try-on.';
+  if (status === 'generating') return 'Your full-body try-on profile is still preparing. Try again in a minute.';
+  if (status === 'failed') return 'Could not prepare your full-body try-on profile. Upload a clearer photo from your profile page.';
+  return '';
 }
 
 function announce(message, tone = 'success') {
@@ -1160,7 +1175,7 @@ function Header({ user, setUser }) {
             </nav>
           </div>
           <div className="header-search" role="search">
-            <form className="search-form" action="/search" onSubmit={rememberSearch}>
+            <form className="search-form" action="/categories" onSubmit={rememberSearch}>
               <button className="search-submit" type="submit" aria-label="Search"><SearchIcon /></button>
               <input ref={desktopSearchRef} name="q" type="search" list="fitlook-recent-searches" placeholder="Search curated collections..." defaultValue={currentSearchValue()} aria-label="Search products" aria-keyshortcuts="Control+K Meta+K" title="Search (Ctrl+K)" />
               <button className="search-clear" type="button" aria-label="Clear search" onClick={() => clearSearch('desktop')}><CloseIcon /></button>
@@ -1184,7 +1199,7 @@ function Header({ user, setUser }) {
             from both while preserving the slide animation. */}
         <div className={`mobile-menu ${menuOpen ? 'open' : ''}`} id="mobile-navigation" role="dialog" aria-modal={menuOpen ? 'true' : undefined} aria-label="Mobile navigation" inert={!menuOpen}>
           <div className="wrap mobile-menu-inner">
-            <form className="mobile-search-form" action="/search" role="search" onSubmit={rememberSearch}>
+            <form className="mobile-search-form" action="/categories" role="search" onSubmit={rememberSearch}>
               <button className="search-submit" type="submit" aria-label="Search"><SearchIcon /></button>
               <input ref={mobileSearchRef} name="q" type="search" list="fitlook-recent-searches" placeholder="Search curated collections..." defaultValue={currentSearchValue()} aria-label="Search products" />
               <button className="search-clear" type="button" aria-label="Clear search" onClick={() => clearSearch('mobile')}><CloseIcon /></button>
@@ -1213,7 +1228,7 @@ function Footer({ compact = false }) {
         <div className="wrap wishlist-compact-footer-inner">
           <div className="wishlist-compact-footer-grid">
             <div className="wishlist-compact-brand"><a href="/">FitLook</a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div><a href="https://instagram.com/" target="_blank" rel="noreferrer">IG</a><a href="https://tiktok.com/" target="_blank" rel="noreferrer">TK</a><a href="https://x.com/" target="_blank" rel="noreferrer">X</a></div></div>
-            <div><h2>Shop</h2><a href="/categories">New in</a><a href="/search?gender=women">Women</a><a href="/search?gender=men">Men</a><a href="/sale">Sale</a></div>
+            <div><h2>Shop</h2><a href="/categories">New in</a><a href="/categories?gender=women">Women</a><a href="/categories?gender=men">Men</a><a href="/categories?discounted=true">Sale</a></div>
             <div><h2>Help</h2><a href="/support">Track order</a><a href="/support">Returns</a><a href="/support">Contact us</a><a href="/support">Shipping</a></div>
             <div><h2>Download our App</h2><p>Get the FitLook app for your daily fashion edit.</p><a className="wishlist-app-link" href="/support">App Store</a><a className="wishlist-app-link" href="/support">Google Play</a></div>
           </div>
@@ -1240,7 +1255,7 @@ function Footer({ compact = false }) {
               {socialLinks.map(([label, href]) => <a href={href} key={label} target="_blank" rel="noreferrer" aria-label={label}>{label.slice(0, 2)}</a>)}
             </div>
           </div>
-          <FooterCol title="Collections" links={[['New Arrivals', '/categories'], ["Men's Edit", '/search?gender=men'], ["Women's Edit", '/search?gender=women'], ['Accessories', '/search?category=accessories'], ['Seasonal Sale', '/sale']]} />
+          <FooterCol title="Collections" links={[['New Arrivals', '/categories'], ["Men's Edit", '/categories?gender=men'], ["Women's Edit", '/categories?gender=women'], ['Accessories', '/categories/accessories'], ['Seasonal Sale', '/categories?discounted=true']]} />
           <FooterCol title="Company" links={[['Journal', '/blog'], ['Sustainability', '/about'], ['Virtual Atelier', '/custom-try-on'], ['Contact', '/contact'], ['Shipping', '/support']]} />
           <FooterCol title="Assurance" links={[['100% Secure Payment', '/support'], ['24/7 Dedicated Support', '/support'], ['30-Day Effortless Returns', '/support']]} />
           <div className="newsletter"><h3>Newsletter</h3><p>Early access to seasonal drops, private invitations, and high-fashion insights.</p><form className="newsletter-form" onSubmit={(event) => event.preventDefault()}><input type="email" placeholder="Your email address" aria-label="Email address" /><button type="submit">Subscribe</button></form></div>
@@ -1385,10 +1400,15 @@ const atelierHeroSlides = [
 ];
 
 function AtelierProductRailCard({ product }) {
+  const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
+  const discount = hasDiscount ? Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100) : 0;
+  const rating = Number(product.rating || 0);
+  const ratingCount = Number(product.ratingCount || product.reviewsCount || product.reviewCount || 0);
+
   return (
     <article className="atelier-product">
       <a className="atelier-product-image" href={`/product/${encodeURIComponent(product.id)}`} aria-label={`Open ${product.name}`}>
-        {product.badge && <span className="atelier-best-seller">{product.badge}</span>}
+        {(product.badge || discount > 0) && <span className="atelier-best-seller">{product.badge || `${discount}% off`}</span>}
         <OptimizedImage src={product.imageUrl} alt={product.name} />
         <span className="atelier-product-quick-link">View Product</span>
       </a>
@@ -1397,8 +1417,14 @@ function AtelierProductRailCard({ product }) {
       <h3>{product.name}</h3>
       <div className="atelier-price">
         <strong>{formatMoney(product.price || 0, product.currency)}</strong>
-        {product.compareAtPrice && product.compareAtPrice > product.price && <del>{formatMoney(product.compareAtPrice, product.currency)}</del>}
+        {hasDiscount && <del>{formatMoney(product.compareAtPrice, product.currency)}</del>}
       </div>
+      {(rating > 0 || product.tryOnAvailable || product.aiTryOnAvailable) && (
+        <div className="atelier-product-meta">
+          {rating > 0 && <span>★ {rating.toFixed(1)}{ratingCount > 0 ? ` (${ratingCount})` : ''}</span>}
+          {(product.tryOnAvailable || product.aiTryOnAvailable) && <span>AI Try-On</span>}
+        </div>
+      )}
     </article>
   );
 }
@@ -1440,8 +1466,261 @@ function AtelierProductStrip({ title, railId, label, products, viewHref = '/cate
   );
 }
 
+function productDiscountPercent(product) {
+  const price = Number(product?.price || 0);
+  const compareAtPrice = Number(product?.compareAtPrice || 0);
+  if (!price || !compareAtPrice || compareAtPrice <= price) return 0;
+  return Math.round(((compareAtPrice - price) / compareAtPrice) * 100);
+}
+
+function productMetric(product, keys = []) {
+  return keys.reduce((best, key) => Math.max(best, Number(product?.[key] || 0)), 0);
+}
+
+function uniqueProducts(products = []) {
+  const seen = new Set();
+  return products.filter((product) => {
+    if (!product?.id || !product?.imageUrl || seen.has(product.id)) return false;
+    seen.add(product.id);
+    return true;
+  });
+}
+
+function productMatchesAnyCategory(product, words = []) {
+  const text = [product?.category, product?.name, product?.tags?.join?.(' ') || product?.tags]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return words.some((word) => text.includes(word));
+}
+
+function stableExploreProducts(products = []) {
+  return [...products]
+    .sort((a, b) => String(a.id || a.name || '').localeCompare(String(b.id || b.name || '')))
+    .sort((a, b) => ((String(a.id || '').charCodeAt(0) || 0) % 7) - ((String(b.id || '').charCodeAt(0) || 0) % 7));
+}
+
+function fillProductRailProducts(products = [], fallbackProducts = [], minimum = 8) {
+  const primary = uniqueProducts(products);
+  if (primary.length >= minimum) return primary;
+  const seen = new Set(primary.map((product) => product.id));
+  const fillers = stableExploreProducts(fallbackProducts).filter((product) => product?.id && product?.imageUrl && !seen.has(product.id));
+  return uniqueProducts([...primary, ...fillers]).slice(0, minimum);
+}
+
+function AtelierCommerceStrip({ id, title, subtitle, products, viewHref = '/categories' }) {
+  const railRef = useRef(null);
+  const visibleProducts = uniqueProducts(products).slice(0, 18);
+  if (!visibleProducts.length) return null;
+
+  const scrollRail = (direction) => {
+    const rail = railRef.current;
+    if (!rail) return;
+    rail.scrollBy({ left: direction * Math.max(rail.clientWidth * .86, 320), behavior: 'smooth' });
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    scrollRail(event.key === 'ArrowRight' ? 1 : -1);
+  };
+
+  return (
+    <section className="atelier-arrivals atelier-product-strip atelier-commerce-strip">
+      <div className="atelier-wide">
+        <div className="atelier-section-heading atelier-commerce-heading">
+          <div>
+            <h2>{title}</h2>
+            {subtitle && <p>{subtitle}</p>}
+          </div>
+          <div className="atelier-product-arrows">
+            <a className="atelier-text-link" href={viewHref}>View All <span>→</span></a>
+            <button type="button" aria-label={`Previous ${title}`} aria-controls={id} onClick={() => scrollRail(-1)}><AtelierIcon name="arrowLeft" /></button>
+            <button type="button" aria-label={`Next ${title}`} aria-controls={id} onClick={() => scrollRail(1)}><AtelierIcon name="arrowRight" /></button>
+          </div>
+        </div>
+        <div className="atelier-product-grid atelier-arrivals-rail" id={id} ref={railRef} tabIndex="0" aria-label={title} onKeyDown={handleKeyDown}>
+          {visibleProducts.map((product) => <AtelierProductRailCard product={product} key={`${id}-${product.id}`} />)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function buildOfferCards({ catalogProducts = [], arrivalProducts = [], tryOnPickProducts = [], feedGender = '' }) {
+  const pricedProducts = catalogProducts.filter((product) => Number(product.price || 0) > 0);
+  const discountedProducts = uniqueProducts(catalogProducts)
+    .filter((product) => productDiscountPercent(product) > 0)
+    .sort((a, b) => productDiscountPercent(b) - productDiscountPercent(a));
+  const under499Products = pricedProducts.filter((product) => Number(product.price || 0) < 499);
+  const under999Products = pricedProducts.filter((product) => Number(product.price || 0) < 999);
+  const genderProducts = feedGender
+    ? catalogProducts.filter((product) => String(product.gender || '').toLowerCase() === feedGender)
+    : [];
+
+  return [
+    discountedProducts.length > 0 && {
+      id: 'deal-drop',
+      kicker: 'Top Deals',
+      title: `Up to ${productDiscountPercent(discountedProducts[0])}% off`,
+      copy: `${discountedProducts.length} live markdowns`,
+      cta: 'Shop now',
+      href: '/categories?discounted=true',
+      image: discountedProducts[0].imageUrl
+    },
+    under499Products.length > 0 && {
+      id: 'under-499-offer',
+      kicker: 'Budget Edit',
+      title: 'Under ₹499',
+      copy: `${under499Products.length} catalog picks`,
+      cta: 'Explore',
+      href: '/categories?maxPrice=499',
+      image: under499Products[0].imageUrl
+    },
+    under999Products.length > 0 && {
+      id: 'under-999-offer',
+      kicker: 'Easy Prices',
+      title: 'Under ₹999',
+      copy: `${under999Products.length} styles available`,
+      cta: 'View picks',
+      href: '/categories?maxPrice=999',
+      image: under999Products[0].imageUrl
+    },
+    arrivalProducts.length > 0 && {
+      id: 'new-arrivals-offer',
+      kicker: 'Fresh Drop',
+      title: 'New arrivals',
+      copy: `${arrivalProducts.length} recent styles`,
+      cta: 'Shop new',
+      href: '/categories',
+      image: arrivalProducts[0].imageUrl
+    },
+    tryOnPickProducts.length > 0 && {
+      id: 'ai-tryon-offer',
+      kicker: 'AI Try-On',
+      title: 'See it on you',
+      copy: `${tryOnPickProducts.length} preview-ready picks`,
+      cta: 'Try now',
+      href: '/custom-try-on',
+      image: tryOnPickProducts[0].imageUrl
+    },
+    genderProducts.length > 0 && {
+      id: 'gender-feed-offer',
+      kicker: feedGender === 'women' ? "Women's edit" : "Men's edit",
+      title: feedGender === 'women' ? 'Curated for women' : 'Curated for men',
+      copy: `${genderProducts.length} matching styles`,
+      cta: 'Open edit',
+      href: `/categories?gender=${feedGender}`,
+      image: genderProducts[0].imageUrl
+    }
+  ].filter(Boolean).slice(0, 6);
+}
+
+function AtelierOfferCards({ offers = [] }) {
+  if (!offers.length) return null;
+  return (
+    <section className="atelier-offer-card-section atelier-wide" aria-label="FitLook offers">
+      <div className="atelier-offer-card-grid">
+        {offers.map((offer) => (
+          <a className="atelier-offer-card" href={offer.href} key={offer.id}>
+            <span className="atelier-offer-card-copy">
+              <small>{offer.kicker}</small>
+              <strong>{offer.title}</strong>
+              <em>{offer.copy}</em>
+              <b>{offer.cta}</b>
+            </span>
+            <OptimizedImage src={offer.image} alt="" />
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function buildCampaignCards({ catalogProducts = [], tryOnPickProducts = [] }) {
+  const discountedProducts = uniqueProducts(catalogProducts)
+    .filter((product) => productDiscountPercent(product) > 0)
+    .sort((a, b) => productDiscountPercent(b) - productDiscountPercent(a));
+  const tryOnProduct = tryOnPickProducts[0] || catalogProducts.find((product) => product.tryOnAvailable || product.aiTryOnAvailable) || catalogProducts[0];
+  const dealProduct = discountedProducts[0] || catalogProducts[1] || tryOnProduct;
+  const campusProduct = catalogProducts.find((product) => productMatchesAnyCategory(product, ['shirt', 'bag', 't-shirt', 'sneaker', 'jeans'])) || catalogProducts[2] || tryOnProduct;
+
+  return [
+    tryOnProduct && {
+      id: 'campaign-ai-tryon',
+      tone: 'violet',
+      title: 'AI Try-On',
+      copy: 'See it on yourself',
+      cta: 'Try now',
+      href: '/custom-try-on',
+      image: tryOnProduct.imageUrl
+    },
+    dealProduct && {
+      id: 'campaign-extra-offer',
+      tone: 'rose',
+      title: discountedProducts.length ? `Extra ${Math.min(productDiscountPercent(dealProduct), 70)}% Off` : 'Extra Savings',
+      copy: discountedProducts.length ? 'On live markdowns' : 'On selected styles',
+      cta: 'Shop now',
+      href: discountedProducts.length ? '/categories?discounted=true' : '/categories',
+      image: dealProduct.imageUrl
+    },
+    campusProduct && {
+      id: 'campaign-student-edit',
+      tone: 'mint',
+      title: 'Student Edit',
+      copy: 'Fresh everyday picks',
+      cta: 'Explore',
+      href: '/categories',
+      image: campusProduct.imageUrl
+    }
+  ].filter(Boolean);
+}
+
+function AtelierCampaignCards({ cards = [] }) {
+  if (!cards.length) return null;
+  return (
+    <section className="atelier-campaign-section atelier-wide" aria-label="Featured FitLook campaigns">
+      <div className="atelier-campaign-grid">
+        {cards.map((card) => (
+          <a className={`atelier-campaign-card ${card.tone ? `tone-${card.tone}` : ''}`} href={card.href} key={card.id}>
+            <span className="atelier-campaign-copy">
+              <strong>{card.title}</strong>
+              <em>{card.copy}</em>
+              <b>{card.cta}</b>
+            </span>
+            <OptimizedImage src={card.image} alt="" />
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AtelierBestCategories({ categories = [] }) {
+  const visibleCategories = categories.slice(0, 8);
+  if (!visibleCategories.length) return null;
+  return (
+    <section className="atelier-best-category-section atelier-wide">
+      <div className="atelier-dense-heading">
+        <h2>Best of Categories</h2>
+        <a href="/categories">View All <span>›</span></a>
+      </div>
+      <div className="atelier-best-category-grid">
+        {visibleCategories.map(({ category, count, slug, collectionVisual }) => (
+          <a className="atelier-best-category-card" href={categoryPageHref(category)} key={`best-${slug}`}>
+            <OptimizedImage src={asset(collectionVisual.image)} alt="" style={{ objectPosition: collectionVisual.position }} />
+            <strong>{displayCategory({ category })}</strong>
+            <small>{compactCount(count)} styles</small>
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function AtelierHome({ user }) {
   const state = useProducts({ limit: 96, sort: 'newest' });
+  const recommendedState = useRecommendedProducts(user, 16);
   const arrivalsRailRef = useRef(null);
   const tryOnRailRef = useRef(null);
   const essentialsRailRef = useRef(null);
@@ -1460,6 +1739,7 @@ function AtelierHome({ user }) {
     && !tryOnPickProducts.some((item) => item.id === product.id)
   ));
   const dailyEssentialProducts = (productsAfterTryOnPicks.length ? productsAfterTryOnPicks : [...catalogProducts].reverse()).slice(0, 12);
+  const recommendedProducts = uniqueProducts(recommendedState.products || []);
   const feedGender = productGenderForPreference(user?.genderPreference || '');
   const genderedFeedPool = useMemo(() => {
     if (!feedGender) return catalogProducts;
@@ -1471,15 +1751,45 @@ function AtelierHome({ user }) {
     });
   }, [catalogProducts, feedGender]);
   const mixedFeedProducts = useMemo(() => {
-    const shuffled = [...genderedFeedPool];
-    for (let index = shuffled.length - 1; index > 0; index -= 1) {
-      const swapIndex = Math.floor(Math.random() * (index + 1));
-      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
-    }
-    return shuffled.slice(0, 36);
+    return stableExploreProducts(genderedFeedPool).slice(0, 48);
   }, [genderedFeedPool]);
   const mixedFeedLabel = feedGender ? `${feedGender === 'women' ? "Women's" : "Men's"} picks from every department` : 'Mixed picks from every department';
   const promoProducts = catalogProducts.slice(4, 6);
+  const offerCards = useMemo(() => buildOfferCards({ catalogProducts, arrivalProducts, tryOnPickProducts, feedGender }), [arrivalProducts, catalogProducts, feedGender, tryOnPickProducts]);
+  const campaignCards = useMemo(() => buildCampaignCards({ catalogProducts, tryOnPickProducts }), [catalogProducts, tryOnPickProducts]);
+  const commerceSections = useMemo(() => {
+    const pricedProducts = catalogProducts.filter((product) => Number(product.price || 0) > 0);
+    const byRating = uniqueProducts(catalogProducts)
+      .filter((product) => Number(product.rating || 0) > 0)
+      .sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
+    const byDiscount = uniqueProducts(catalogProducts)
+      .filter((product) => productDiscountPercent(product) > 0)
+      .sort((a, b) => productDiscountPercent(b) - productDiscountPercent(a));
+    const bestSellers = uniqueProducts(catalogProducts)
+      .filter((product) => productMetric(product, ['soldCount', 'salesCount', 'orderCount', 'orders']) > 0)
+      .sort((a, b) => productMetric(b, ['soldCount', 'salesCount', 'orderCount', 'orders']) - productMetric(a, ['soldCount', 'salesCount', 'orderCount', 'orders']));
+    const mostViewed = uniqueProducts(catalogProducts)
+      .filter((product) => productMetric(product, ['viewCount', 'views', 'impressions']) > 0)
+      .sort((a, b) => productMetric(b, ['viewCount', 'views', 'impressions']) - productMetric(a, ['viewCount', 'views', 'impressions']));
+    const mostWishlisted = uniqueProducts(catalogProducts)
+      .filter((product) => productMetric(product, ['wishlistCount', 'wishlistedCount', 'saves']) > 0)
+      .sort((a, b) => productMetric(b, ['wishlistCount', 'wishlistedCount', 'saves']) - productMetric(a, ['wishlistCount', 'wishlistedCount', 'saves']));
+    const sections = [
+      { id: 'recommended-for-you', title: 'Recommended for You', subtitle: 'Built from your FitLook profile', products: fillProductRailProducts(recommendedProducts, catalogProducts), viewHref: '/categories' },
+      { id: 'top-deals', title: 'Top Deals', subtitle: 'Live markdowns from the catalog', products: fillProductRailProducts(byDiscount, catalogProducts), viewHref: '/categories?discounted=true' },
+      { id: 'under-499', title: 'Under ₹499', subtitle: 'Budget-friendly finds', products: fillProductRailProducts(pricedProducts.filter((product) => Number(product.price || 0) < 499), catalogProducts), viewHref: '/categories?maxPrice=499' },
+      { id: 'under-999', title: 'Under ₹999', subtitle: 'More styles at easy prices', products: fillProductRailProducts(pricedProducts.filter((product) => Number(product.price || 0) < 999), catalogProducts), viewHref: '/categories?maxPrice=999' },
+      { id: 'women-fashion', title: "Women's Fashion", subtitle: 'Fresh pieces for women', products: fillProductRailProducts(catalogProducts.filter((product) => String(product.gender || '').toLowerCase() === 'women'), catalogProducts), viewHref: '/categories?gender=women' },
+      { id: 'men-fashion', title: "Men's Fashion", subtitle: 'Everyday men’s edits', products: fillProductRailProducts(catalogProducts.filter((product) => String(product.gender || '').toLowerCase() === 'men'), catalogProducts), viewHref: '/categories?gender=men' },
+      { id: 'footwear', title: 'Footwear', subtitle: 'Shoes and easy pairings', products: fillProductRailProducts(catalogProducts.filter((product) => productMatchesAnyCategory(product, ['shoe', 'footwear', 'sneaker', 'sandal', 'slipper', 'heel'])), catalogProducts), viewHref: '/categories/footwear' },
+      { id: 'accessories', title: 'Accessories', subtitle: 'Finishing pieces from the catalog', products: fillProductRailProducts(catalogProducts.filter((product) => productMatchesAnyCategory(product, ['accessor', 'bag', 'watch', 'cap', 'sunglass', 'wallet', 'belt'])), catalogProducts), viewHref: '/categories/accessories' },
+      { id: 'best-sellers', title: 'Best Sellers', subtitle: 'Ranked from available sales data', products: fillProductRailProducts(bestSellers, catalogProducts), viewHref: '/categories' },
+      { id: 'most-viewed', title: 'Most Viewed', subtitle: 'Products shoppers are opening', products: fillProductRailProducts(mostViewed, catalogProducts), viewHref: '/categories' },
+      { id: 'most-wishlisted', title: 'Most Wishlisted', subtitle: 'Saved most often', products: mostWishlisted, viewHref: '/wishlist' },
+      { id: 'top-rated', title: 'Top Rated', subtitle: 'Highest rated catalog products', products: fillProductRailProducts(byRating, catalogProducts), viewHref: '/categories' }
+    ];
+    return sections.filter((section) => uniqueProducts(section.products).length >= 4);
+  }, [catalogProducts, recommendedProducts]);
   const categoryCards = useMemo(() => {
     const counts = state.facets?.categoryCounts || [];
     return counts
@@ -1489,7 +1799,7 @@ function AtelierHome({ user }) {
         return product ? { category, count, product, slug, collectionVisual: collectionVisualForCategory(category) } : null;
       })
       .filter(Boolean)
-      .slice(0, 7);
+      .slice(0, 16);
   }, [catalogProducts, state.facets]);
   const heroSlide = atelierHeroSlides[heroSlideIndex] || atelierHeroSlides[0];
 
@@ -1576,8 +1886,15 @@ function AtelierHome({ user }) {
         </section>}
 
         <AtelierProductStrip title="Curated New Arrivals" railId="new-arrivals-rail" label="Curated new arrivals" products={arrivalProducts} railRef={arrivalsRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
+        <AtelierOfferCards offers={offerCards.slice(0, 4)} />
+        {commerceSections.slice(0, 4).map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
         <AtelierProductStrip title="AI Try-On Picks" railId="ai-tryon-picks-rail" label="AI try-on picks" products={tryOnPickProducts} viewHref="/categories" railRef={tryOnRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
+        <AtelierOfferCards offers={offerCards.slice(4)} />
+        <AtelierCampaignCards cards={campaignCards} />
+        <AtelierBestCategories categories={categoryCards} />
+        {commerceSections.slice(4, 8).map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
         <AtelierProductStrip title="Daily Essentials" railId="daily-essentials-rail" label="Daily essentials" products={dailyEssentialProducts} viewHref="/categories" railRef={essentialsRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
+        {commerceSections.slice(8).map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
         {mixedFeedProducts.length > 0 && (
           <section className="atelier-mixed-feed">
             <div className="atelier-wide">
@@ -1614,9 +1931,9 @@ function Home() {
         <a className="opening-page-brand" href="/" id="opening-title">FitLook</a>
         <p>Personal style, considered.</p>
         <nav className="opening-page-actions" aria-label="Start exploring FitLook">
-          <a href="/search?gender=women">Women's edit</a>
-          <a className="opening-page-shop" href="/search">Shop FitLook</a>
-          <a href="/search?gender=men">Men's edit</a>
+          <a href="/categories?gender=women">Women's edit</a>
+          <a className="opening-page-shop" href="/categories">Shop FitLook</a>
+          <a href="/categories?gender=men">Men's edit</a>
         </nav>
         <a className="opening-page-enter" href="/custom-try-on">AI Try-On</a>
       </section>
@@ -1645,7 +1962,7 @@ function HomePromoBand() {
   return (
     <section className="home-promo-band" aria-label="FitLook offers">
       <div className="wrap home-promo-grid">
-        <a className="home-promo-card dark" href="/sale">
+        <a className="home-promo-card dark" href="/categories?discounted=true">
           <span className="home-promo-icon" aria-hidden="true"><TagIcon /></span>
           <span>
             <small>Limited Time Offer</small>
@@ -1678,7 +1995,7 @@ const categoryHeroSlides = [
     title: 'Modern Essentials',
     copy: 'Build polished everyday looks from categories already connected to your store.',
     image: 'hero1.png',
-    href: '/search?featured=true',
+    href: '/categories?featured=true',
     cta: 'Explore Edit'
   },
   {
@@ -1686,7 +2003,7 @@ const categoryHeroSlides = [
     title: 'Curated Occasionwear',
     copy: 'Discover sharper silhouettes, premium separates, and AI-ready outfit ideas.',
     image: 'arrival-4.jpg',
-    href: '/search?category=dresses',
+    href: '/categories/dresses',
     cta: 'View Styles'
   },
   {
@@ -1766,7 +2083,7 @@ function CategoryPromoTiles() {
   return (
     <section className="category-promo-section" aria-label="Category offers">
       <div className="wrap category-promo-grid">
-        <a className="category-promo-card sale" href="/sale">
+        <a className="category-promo-card sale" href="/categories?discounted=true">
           <OptimizedImage src={asset('category-6.jpg')} alt="" />
           <span>
             <small>Big Summer</small>
@@ -1799,7 +2116,7 @@ function CategoryCollections({ categories: categoryGroups = [], user }) {
             <p className="category-kicker dark">All Collections</p>
             <h2 id="category-collections-title">Shop category wise</h2>
           </div>
-          <a className="category-view-all" href="/search">View full catalog →</a>
+          <a className="category-view-all" href="/categories">View full catalog →</a>
         </div>
 
         <div className="category-collection-list">
@@ -1815,7 +2132,7 @@ function CategoryCollections({ categories: categoryGroups = [], user }) {
                       <h3>{category.label}</h3>
                     </div>
                   </div>
-                  <a href={`/search?category=${encodeURIComponent(category.slug)}`}>View Collection →</a>
+                  <a href={`/categories/${encodeURIComponent(category.slug)}`}>View Collection →</a>
                 </div>
                 <div className="category-collection-row" aria-label={`${category.label} products`}>
                   {category.products.map((product) => (
@@ -1875,13 +2192,35 @@ function categoryPageHref(category, gender = '') {
 }
 
 function AtelierCategoriesPage() {
-  const [activeAudience, setActiveAudience] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [brandFilter, setBrandFilter] = useState('all');
+  const initialParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const initialGender = productGenderForPreference(initialParams.get('gender') || '');
+  const initialCategoryFilter = initialParams.get('category') ? categorySlug(initialParams.get('category')) : 'all';
+  const initialBrandFilter = initialParams.get('brand') || 'all';
+  const queryFilters = useMemo(() => ({
+    q: initialParams.get('q') || '',
+    tag: initialParams.get('tag') || '',
+    category: initialParams.get('category') || '',
+    brand: initialParams.get('brand') || '',
+    gender: initialParams.get('gender') || '',
+    featured: initialParams.get('featured') || '',
+    newArrival: initialParams.get('newArrival') || '',
+    minPrice: initialParams.get('minPrice') || '',
+    maxPrice: initialParams.get('maxPrice') || '',
+    discounted: initialParams.get('discounted') || initialParams.get('sale') || ''
+  }), [initialParams]);
+  const [activeAudience, setActiveAudience] = useState(initialGender || 'all');
+  const [categoryFilter, setCategoryFilter] = useState(initialCategoryFilter);
+  const [brandFilter, setBrandFilter] = useState(initialBrandFilter);
   const [sortFilter, setSortFilter] = useState('newest');
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const quickCategoryRailRef = useRef(null);
-  const state = useProducts({ limit: 96, sort: 'newest' });
+  const audienceRailRef = useRef(null);
+  const audienceInitialized = useRef(false);
+  const state = useProducts({
+    ...queryFilters,
+    limit: 96,
+    sort: sortFilter === 'price-low' ? 'price-asc' : sortFilter === 'price-high' ? 'price-desc' : 'newest'
+  });
 
   const catalog = useMemo(() => {
     const fashionProducts = (state.products || []).filter((product) => (
@@ -1968,6 +2307,10 @@ function AtelierCategoriesPage() {
   }, [activeAudience, brandFilter, categoryFilter, sortFilter, state.products]);
 
   useEffect(() => {
+    if (!audienceInitialized.current) {
+      audienceInitialized.current = true;
+      return;
+    }
     setCategoryFilter('all');
     setBrandFilter('all');
     setSortFilter('newest');
@@ -1979,7 +2322,8 @@ function AtelierCategoriesPage() {
     setBrandFilter('all');
     setSortFilter('newest');
   };
-  const filtersActive = categoryFilter !== 'all' || brandFilter !== 'all' || sortFilter !== 'newest';
+  const urlFilterCount = Object.values(queryFilters).filter(Boolean).length;
+  const filtersActive = categoryFilter !== 'all' || brandFilter !== 'all' || sortFilter !== 'newest' || urlFilterCount > 0;
   const selectedCategoryLabel = catalog.filterCategories.find((category) => category.value === categoryFilter)?.label || 'All categories';
   const selectedBrandLabel = catalog.filterBrands.find((brand) => brand.value === brandFilter)?.label || 'All brands';
   const sortOptions = [
@@ -2003,6 +2347,11 @@ function AtelierCategoriesPage() {
     if (!rail) return;
     rail.scrollBy({ left: direction * Math.max(rail.clientWidth * .76, 260), behavior: 'smooth' });
   };
+  const scrollAudienceRail = (direction) => {
+    const rail = audienceRailRef.current;
+    if (!rail) return;
+    rail.scrollBy({ left: direction * Math.max(rail.clientWidth * .72, 220), behavior: 'smooth' });
+  };
   const handleQuickCategoryKeyDown = (event) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
@@ -2012,7 +2361,7 @@ function AtelierCategoriesPage() {
     ? {
       imageUrl: asset('category-all-hero.png'),
       alt: 'A woman and a man in modern everyday looks',
-      href: '/search',
+      href: '/categories',
       category: 'All fashion',
       title: 'Style for Every Day',
       cta: 'Explore All Fashion',
@@ -2022,7 +2371,7 @@ function AtelierCategoriesPage() {
       ? {
       imageUrl: asset('category-women-hero.png'),
       alt: 'Two women in tailored neutral looks',
-      href: '/search?gender=women',
+      href: '/categories?gender=women',
       category: "Women's edit",
       title: 'Tailored for Every Day',
       cta: "Shop Women's Fashion",
@@ -2032,7 +2381,7 @@ function AtelierCategoriesPage() {
       ? {
         imageUrl: asset('category-men-hero.png'),
         alt: 'Two men in modern tailored looks',
-        href: '/search?gender=men',
+        href: '/categories?gender=men',
         category: "Men's edit",
         title: 'Modern Essentials',
         cta: "Shop Men's Fashion",
@@ -2042,7 +2391,7 @@ function AtelierCategoriesPage() {
         ? {
           imageUrl: asset('category-unisex-hero.png'),
           alt: 'A woman and a man in coordinated modern looks',
-          href: '/search?gender=unisex',
+          href: '/categories?gender=unisex',
           category: 'Unisex edit',
           title: 'Style Without Limits',
           cta: 'Shop Unisex Fashion',
@@ -2089,16 +2438,23 @@ function AtelierCategoriesPage() {
         </section>}
 
         {catalog.audienceCards.length > 0 && <section className="atelier-category-wide atelier-category-audience-section" aria-labelledby="category-audience-title">
-          <div className="atelier-category-audience-heading"><p id="category-audience-title">Shop by audience</p><span>Fashion from the live catalog</span></div>
-          <div className="atelier-category-audience-rail" role="tablist" aria-label="Shop fashion by audience">
-            <button className={activeAudience === 'all' ? 'active' : ''} type="button" role="tab" aria-selected={activeAudience === 'all'} onClick={() => setActiveAudience('all')}>
-              <span className="atelier-category-audience-all" aria-hidden="true">All</span><strong>All fashion</strong><small>{catalog.fashionProductCount} items</small>
-            </button>
-            {catalog.audienceCards.map((audience) => (
-              <button className={activeAudience === audience.value ? 'active' : ''} type="button" role="tab" aria-selected={activeAudience === audience.value} key={audience.value} onClick={() => setActiveAudience(audience.value)}>
-                <span className="atelier-category-audience-image"><OptimizedImage src={audience.image ? asset(audience.image) : audience.product.imageUrl} alt="" /></span><strong>{audience.label}</strong><small>{audience.count} items</small>
+          <div className="atelier-category-audience-heading">
+            <p id="category-audience-title">Shop by audience</p>
+            <span>Fashion from the live catalog</span>
+          </div>
+          <div className="atelier-category-audience-rail-wrap">
+            <button className="atelier-category-scroll-button prev" type="button" aria-label="Previous audience" onClick={() => scrollAudienceRail(-1)}><AtelierIcon name="arrowLeft" /></button>
+            <div className="atelier-category-audience-rail" role="tablist" aria-label="Shop fashion by audience" ref={audienceRailRef}>
+              <button className={activeAudience === 'all' ? 'active' : ''} type="button" role="tab" aria-selected={activeAudience === 'all'} onClick={() => setActiveAudience('all')}>
+                <span className="atelier-category-audience-all" aria-hidden="true">All</span><strong>All fashion</strong><small>{catalog.fashionProductCount} items</small>
               </button>
-            ))}
+              {catalog.audienceCards.map((audience) => (
+                <button className={activeAudience === audience.value ? 'active' : ''} type="button" role="tab" aria-selected={activeAudience === audience.value} key={audience.value} onClick={() => setActiveAudience(audience.value)}>
+                  <span className="atelier-category-audience-image"><OptimizedImage src={audience.image ? asset(audience.image) : audience.product.imageUrl} alt="" /></span><strong>{audience.label}</strong><small>{audience.count} items</small>
+                </button>
+              ))}
+            </div>
+            <button className="atelier-category-scroll-button next" type="button" aria-label="Next audience" onClick={() => scrollAudienceRail(1)}><AtelierIcon name="arrowRight" /></button>
           </div>
         </section>}
 
@@ -2866,6 +3222,7 @@ function ClosetPage({ user, setUser }) {
     { role: 'assistant', text: 'Ask what to wear today, for an occasion, or which pants fit a shirt from your closet.' }
   ]);
   const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [mobileWardrobePicker, setMobileWardrobePicker] = useState(null);
 
   const loadCloset = () => {
     if (!user) return;
@@ -3266,19 +3623,17 @@ function ClosetPage({ user, setUser }) {
   const previewAlt = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
   const visibleWardrobeStageError = /error|missing|not enough|failed|could not|select closet|generate a look first|no other/i.test(message) ? message : '';
   const mobileWardrobeSections = wardrobeSections.filter((section) => ['Tops', 'Bottoms'].includes(section.label));
+  const activeMobileWardrobeSection = mobileWardrobeSections.find((section) => section.label === mobileWardrobePicker) || null;
   const wardrobeFallbackForSection = (section) => (
     section.label === 'Bottoms' ? asset('category-icons/jeans.png') : asset('category-icons/tops.png')
   );
   const pickMobileWardrobeSection = (section) => {
-    const selectedItem = section.items.find((item) => selectedIds.includes(item.id));
-    const nextItem = selectedItem || section.items[0];
     setFilter(section.categories[0]);
-    if (!nextItem) {
-      setMessage(`Add ${section.label.toLowerCase()} to use them in your look.`);
-      openRoute('/closet/add');
-      return;
-    }
-    if (!selectedIds.includes(nextItem.id)) handleWardrobeItemClick(nextItem);
+    setMobileWardrobePicker(section.label);
+  };
+  const chooseMobileWardrobeItem = (item) => {
+    handleWardrobeItemClick(item);
+    setMobileWardrobePicker(null);
   };
   const modelSource = {
     imageUrl: modelPreview,
@@ -3343,6 +3698,44 @@ function ClosetPage({ user, setUser }) {
               <small>Glasses</small>
             </button>
           </div>
+          <a className="wardrobe-mobile-add-item" href="/closet/add">+ Add Item</a>
+          {activeMobileWardrobeSection && (
+            <div className="wardrobe-mobile-picker-backdrop" role="presentation" onClick={() => setMobileWardrobePicker(null)}>
+              <section className="wardrobe-mobile-picker" aria-label={`Choose ${activeMobileWardrobeSection.label}`} onClick={(event) => event.stopPropagation()}>
+                <header>
+                  <div>
+                    <small>Choose item</small>
+                    <strong>{activeMobileWardrobeSection.label}</strong>
+                  </div>
+                  <a href="/closet/add">+ Add</a>
+                  <button type="button" aria-label="Close picker" onClick={() => setMobileWardrobePicker(null)}>×</button>
+                </header>
+                {activeMobileWardrobeSection.items.length ? (
+                  <div className="wardrobe-mobile-picker-list">
+                    {activeMobileWardrobeSection.items.map((item) => {
+                      const isSelected = selectedIds.includes(item.id);
+                      return (
+                        <button className={isSelected ? 'active' : ''} type="button" key={item.id} onClick={() => chooseMobileWardrobeItem(item)}>
+                          <span><OptimizedImage src={item.imageUrl} fallbackSrc={wardrobeFallbackForSection(activeMobileWardrobeSection)} alt="" /></span>
+                          <div>
+                            <strong>{item.name || activeMobileWardrobeSection.label}</strong>
+                            <small>{[item.color, item.formality, item.season].filter(Boolean).join(' · ') || item.category}</small>
+                          </div>
+                          <em>{isSelected ? 'Selected' : 'Pick'}</em>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="wardrobe-mobile-picker-empty">
+                    <strong>No {activeMobileWardrobeSection.label.toLowerCase()} added yet</strong>
+                    <p>Add one item first, then come back to build your look.</p>
+                    <a href="/closet/add">Add {activeMobileWardrobeSection.label}</a>
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
 
           <div className="wardrobe-model-tools left">
             <button type="button" onClick={() => setStagePreviewMode('model')}>
@@ -4069,6 +4462,11 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
   const listingMode = tryOnMode ? 'AI Try-On Studio' : hasSearchIntent ? 'Search Results' : category ? 'Category View' : 'Product Listing';
 
   const generateTryOn = async (product, options = {}) => {
+    const profileBlockMessage = tryOnProfileBlockMessage(user);
+    if (profileBlockMessage) {
+      setTryOnErrors((current) => ({ ...current, [product.id]: profileBlockMessage }));
+      return;
+    }
     setTryOnLoading((current) => ({ ...current, [product.id]: true }));
     setTryOnErrors((current) => ({ ...current, [product.id]: '' }));
     try {
@@ -4155,7 +4553,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
 
       <section className="wrap listing-toolbar" aria-label="Product listing tools">
         <ListingCategoryChips facets={state.facets} values={filterValues} />
-        <form className="listing-sort-form" action="/search">
+        <form className="listing-sort-form" action="/categories">
           {q && <input type="hidden" name="q" value={q} />}
           {tag && <input type="hidden" name="tag" value={tag} />}
           {category && <input type="hidden" name="category" value={category} />}
@@ -4190,7 +4588,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
                   {user ? (
                     <div className="locked-content"><div><div className="lock-icon">▢</div><p className="locked-title">More AI try-ons are token gated</p><p className="locked-copy">Use the first row for trial previews, buy more tokens, or continue browsing regular product photos.</p><div className="locked-actions"><a className="buy" href="/tokens">Buy More Tokens</a><button className="browse" type="button" onClick={() => setContinueWithoutTryOn(true)}>Continue Without Try-On</button></div></div></div>
                   ) : (
-                    <div className="locked-content"><div><div className="lock-icon">▢</div><p className="locked-title">AI try-on previews are locked</p><p className="locked-copy">Create a profile to see more products and generate try-on previews.</p><div className="locked-actions"><a className="buy" href="/signup">Create Profile</a><a className="browse" href="/search">Browse Without Try-On</a></div></div></div>
+                    <div className="locked-content"><div><div className="lock-icon">▢</div><p className="locked-title">AI try-on previews are locked</p><p className="locked-copy">Create a profile to see more products and generate try-on previews.</p><div className="locked-actions"><a className="buy" href="/signup">Create Profile</a><a className="browse" href="/categories">Browse Without Try-On</a></div></div></div>
                   )}
                 </div>
               )}
@@ -4540,7 +4938,7 @@ function WishlistPage({ user }) {
           {!isLoadingWishlist && !wishlistState.error && wishlistIds.length === 0 && (
             <section className="wishlist-reference-empty" aria-label="Empty wishlist">
               <div><h2>Your wishlist is waiting.</h2><p>Save pieces from the catalog and they will appear here.</p></div>
-              <a href="/search">Explore products</a>
+              <a href="/categories">Explore products</a>
             </section>
           )}
           {!isLoadingWishlist && !wishlistState.error && wishlistIds.length > 0 && wishlistProducts.length === 0 && (
@@ -4963,7 +5361,7 @@ function StyleBotPage({ user, setUser }) {
                 <div className="concierge-bubble concierge-response">
                   {run.loading && <span className="concierge-loading">Curating your edit...</span>}
                   {run.searchError && <p className="form-message error-message">{run.searchError}</p>}
-                  {!run.loading && !run.searchError && <div className="concierge-result-summary"><p className="concierge-result-copy">I found {run.products.length} matching piece{run.products.length === 1 ? '' : 's'} for this edit.</p><a href={`/search?q=${encodeURIComponent(run.query)}`}>View matching products</a></div>}
+                  {!run.loading && !run.searchError && <div className="concierge-result-summary"><p className="concierge-result-copy">I found {run.products.length} matching piece{run.products.length === 1 ? '' : 's'} for this edit.</p><a href={`/categories?q=${encodeURIComponent(run.query)}`}>View matching products</a></div>}
                 </div>
               </div>
             </div>
@@ -5425,7 +5823,7 @@ function ActiveFilterChips({ values }) {
   return (
     <div className="active-filters" aria-label="Active filters">
       {active.map(([key, , label]) => <a href={searchHref(values, { [key]: '' })} key={key}>{label}<span>×</span></a>)}
-      <a className="clear" href="/search">Clear all</a>
+      <a className="clear" href="/categories">Clear all</a>
     </div>
   );
 }
@@ -5468,7 +5866,7 @@ function FilterPanel({ facets, values, className = '' }) {
   return (
     <aside className={`filters ${className}`}>
       <div className="filter-head"><div><h2>Filters</h2><p>Refine the live catalog</p></div><a href={resetHref}>Reset</a></div>
-      <form className="filter-form" action="/search">
+      <form className="filter-form" action="/categories">
         <label><span>Search</span><input name="q" defaultValue={values.q} placeholder="Search keyword" /></label>
         <label><span>Category</span><select name="category" defaultValue={values.category}>
             <option value="">All categories</option>
@@ -5661,7 +6059,7 @@ function ProductPage({ id, user, setUser }) {
         <div className="empty-products">
           <h3>Product not found.</h3>
           <p>This item may have been removed from the catalog.</p>
-          <a className="button" href="/search">Back to Shop</a>
+          <a className="button" href="/categories">Back to Shop</a>
         </div>
       </main>
     );
@@ -5714,6 +6112,11 @@ function ProductPage({ id, user, setUser }) {
 
   const generateProductTryOn = async () => {
     if (!product || tryOnLoading) return;
+    const profileBlockMessage = tryOnProfileBlockMessage(user);
+    if (profileBlockMessage) {
+      setTryOnError(profileBlockMessage);
+      return;
+    }
     const regenerate = Boolean(tryOn?.imageUrl);
     setTryOnLoading(true);
     setTryOnError('');
@@ -5797,7 +6200,7 @@ function ProductPage({ id, user, setUser }) {
   return (
     <main className="product-page product-editorial-page">
       <section className="wrap product-editorial-detail">
-        <div className="product-editorial-breadcrumb"><a href="/search">New arrivals</a><span>/</span><a href={`/search?category=${encodeURIComponent(product.category || '')}`}>{category}</a></div>
+        <div className="product-editorial-breadcrumb"><a href="/categories">New arrivals</a><span>/</span><a href={`/categories/${encodeURIComponent(categorySlug(product.category || ''))}`}>{category}</a></div>
         <div className="product-editorial-grid">
           <div className="product-editorial-gallery">
             <div className={`product-detail-media product-editorial-media ${showingTryOn ? 'showing-tryon' : 'showing-product'}`}>
@@ -5914,7 +6317,7 @@ function ProductPage({ id, user, setUser }) {
                   <strong>Can’t find your size?</strong>
                   <button type="button" onClick={() => setSizeRequestOpen(true)}>Ask the Seller</button>
                 </div>
-                {productTags.length > 0 && <p className="product-editorial-tags">{productTags.map((tag) => <a href={`/search?tag=${encodeURIComponent(tag)}`} key={tag}>{tag}</a>)}</p>}
+                {productTags.length > 0 && <p className="product-editorial-tags">{productTags.map((tag) => <a href={`/categories?tag=${encodeURIComponent(tag)}`} key={tag}>{tag}</a>)}</p>}
               </details>
               <details>
                 <summary>Delivery and returns</summary>
@@ -5936,7 +6339,7 @@ function ProductPage({ id, user, setUser }) {
 
       {relatedProducts.length > 0 && (
         <section className="wrap product-editorial-related">
-          <div className="product-editorial-related-head"><div><p>Curated for you</p><h2>Complete the look</h2></div><a href={`/search?category=${encodeURIComponent(product.category || '')}`}>View all in {category}</a></div>
+          <div className="product-editorial-related-head"><div><p>Curated for you</p><h2>Complete the look</h2></div><a href={`/categories/${encodeURIComponent(categorySlug(product.category || ''))}`}>View all in {category}</a></div>
           <div className="product-editorial-related-grid">{relatedProducts.map((item) => <EditorialRelatedProduct key={item.id} product={item} />)}</div>
         </section>
       )}
@@ -5987,7 +6390,7 @@ function SizeRequestPanel({ product, onClose }) {
         <p>Size requests for {product.name} aren’t open yet. Our team can check availability with the brand, or you can explore pieces we have in stock now.</p>
         <div className="size-request-form">
           <a className="primary" href="/support">Contact support</a>
-          <a href={`/search?category=${encodeURIComponent(product.category || '')}`}>Browse similar pieces</a>
+          <a href={`/categories/${encodeURIComponent(categorySlug(product.category || ''))}`}>Browse similar pieces</a>
         </div>
       </section>
     </div>
@@ -6030,7 +6433,7 @@ function EmptyProducts({ search }) {
     <div className="empty-products">
       <h3>No real products yet.</h3>
       <p>{search ? `Nothing matched "${search}". Try a different search or browse the latest products.` : 'Products will appear here as soon as the catalog is available.'}</p>
-      <a className="button" href="/search">Browse Products</a>
+      <a className="button" href="/categories">Browse Products</a>
     </div>
   );
 }
@@ -6845,10 +7248,9 @@ function App() {
 
   useEffect(() => {
     if (path !== '/search') return;
-    const params = new URLSearchParams(window.location.search);
-    if (!params.has('newArrival')) return;
-    window.history.replaceState({}, '', '/categories');
-    setPath(normalizePath());
+    const next = `/categories${window.location.search}${window.location.hash}`;
+    window.history.replaceState({}, '', next);
+    syncRoute();
   }, [path, routeKey]);
 
   useEffect(() => {
@@ -6881,16 +7283,11 @@ function App() {
   const page = useMemo(() => {
     const productMatch = path.match(/^\/product\/([^/]+)$/);
     const categoryMatch = path.match(/^\/categories\/([^/]+)$/);
-    const legacyCategory = new URLSearchParams(window.location.search).get('category');
-    const hasSearchParameters = window.location.search.length > 1;
     if (path === '/') return <Home user={user} />;
     if (path === '/home') return <AtelierHome user={user} />;
-    if (path === '/search' && legacyCategory) return <CategoryDepartmentPage category={legacyCategory} user={user} />;
-    if (path === '/search' && new URLSearchParams(window.location.search).has('newArrival')) return <CategoriesPage user={user} />;
-    if (path === '/categories') return <CategoriesPage user={user} />;
+    if (path === '/categories') return <CategoriesPage key={routeKey} user={user} />;
     if (categoryMatch) return <CategoryDepartmentPage category={decodeURIComponent(categoryMatch[1])} user={user} />;
-    if (path === '/search' && !hasSearchParameters) return <CategoriesPage user={user} />;
-    if (path === '/search') return <SearchPage user={user} setUser={setUser} />;
+    if (path === '/search') return <CategoriesPage key={routeKey} user={user} />;
     if (path === '/try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/closet') return <ClosetPage user={user} setUser={setUser} />;
     if (path === '/closet/add') return <ClosetAddPage user={user} setUser={setUser} />;

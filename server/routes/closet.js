@@ -199,7 +199,7 @@ function ensureTryOnProfileReady(user) {
   const status = user?.bodyPhoto?.status || 'ready';
   if (status === 'generating') throw new Error('Your full-body try-on profile is still preparing. Try again in a minute.');
   if (status === 'failed') throw new Error('Your full-body try-on profile failed. Upload a clearer profile photo first.');
-  if (!user?.bodyPhoto?.path) throw new Error('Upload a try-on profile photo before generating closet looks.');
+  if (!user?.bodyPhoto?.path && !user?.bodyPhoto?.url && !user?.bodyPhoto?.remoteUrl) throw new Error('Upload a try-on profile photo before generating closet looks.');
 }
 
 async function normalizeUpload(file, label, timer) {
@@ -417,7 +417,7 @@ async function greyStudioOutfitFromTransparent(transparentImage, user, timer) {
 }
 
 async function filePartFromStoredImage(image, label, timer) {
-  if (!image?.path) throw new Error(`${label} image is missing`);
+  if (!image?.path && !image?.url && !image?.remoteUrl) throw new Error(`${label} image is missing`);
   const { buffer: bytes } = await readStoredFile(image, label);
   const normalized = await sharp(bytes).rotate().jpeg({ quality: 90 }).toBuffer();
   timer?.mark(`${label} file prepared`, { kb: Math.round(normalized.length / 1024) });

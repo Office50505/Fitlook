@@ -5,7 +5,7 @@ const userEventSchema = new mongoose.Schema(
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     type: {
       type: String,
-      enum: ['search', 'product_view', 'product_click', 'try_on', 'shop_click', 'style_bot_query', 'custom_tryon', 'filter'],
+      enum: ['page_view', 'search', 'product_view', 'product_click', 'try_on', 'shop_click', 'style_bot_query', 'custom_tryon', 'filter'],
       required: true,
       index: true
     },
