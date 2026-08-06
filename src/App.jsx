@@ -1066,6 +1066,7 @@ function Header({ user, setUser }) {
   useEffect(() => {
     if (!menuOpen) return undefined;
     const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement;
     document.body.style.overflow = 'hidden';
     const closeOnEscape = (event) => {
       if (event.key === 'Escape') setMenuOpen(false);
@@ -1079,6 +1080,11 @@ function Header({ user, setUser }) {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', closeOnEscape);
       document.removeEventListener('pointerdown', closeOnOutsidePress);
+      // Return focus to whatever opened the drawer, so keyboard users are not
+      // dropped back at the top of the document.
+      if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) {
+        previouslyFocused.focus();
+      }
     };
   }, [menuOpen]);
 
@@ -1172,7 +1178,11 @@ function Header({ user, setUser }) {
           </div>
         </div>
         <button className={`mobile-menu-overlay ${menuOpen ? 'open' : ''}`} type="button" aria-label="Close menu" tabIndex={menuOpen ? 0 : -1} onClick={() => setMenuOpen(false)} />
-        <div className={`mobile-menu ${menuOpen ? 'open' : ''}`} id="mobile-navigation" role="dialog" aria-modal={menuOpen ? 'true' : undefined} aria-label="Mobile navigation">
+        {/* The closed drawer is not display:none — a later rule slides it off-canvas
+            with translateX while leaving it visible, so its 10 controls stayed in
+            the tab order and were announced by screen readers. `inert` removes it
+            from both while preserving the slide animation. */}
+        <div className={`mobile-menu ${menuOpen ? 'open' : ''}`} id="mobile-navigation" role="dialog" aria-modal={menuOpen ? 'true' : undefined} aria-label="Mobile navigation" inert={!menuOpen}>
           <div className="wrap mobile-menu-inner">
             <form className="mobile-search-form" action="/search" role="search" onSubmit={rememberSearch}>
               <button className="search-submit" type="submit" aria-label="Search"><SearchIcon /></button>
@@ -5942,6 +5952,28 @@ function ProductPage({ id, user, setUser }) {
 }
 
 function SizeRequestPanel({ product, onClose }) {
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   return (
     <div className="size-request-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="size-request-panel" role="dialog" aria-modal="true" aria-labelledby="size-request-title">
@@ -5950,17 +5982,13 @@ function SizeRequestPanel({ product, onClose }) {
             <p className="kicker">Seller request</p>
             <h2 id="size-request-title">Can’t find your size?</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close seller size request"><CloseIcon /></button>
+          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close seller size request"><CloseIcon /></button>
         </header>
-        <p>FitLook is ready for this form, but product seller requests need a backend endpoint before submissions can be accepted safely.</p>
-        <form className="size-request-form" onSubmit={(event) => event.preventDefault()}>
-          <label><span>Required size</span><input name="requiredSize" placeholder="e.g. XL" disabled /></label>
-          <label><span>Phone number</span><input name="phone" type="tel" autoComplete="tel" placeholder="Mobile number" disabled /></label>
-          <label><span>Message</span><textarea name="message" rows="3" placeholder={`Ask about ${product.name}`} disabled /></label>
-          <small>Required backend: `POST /api/products/{product.id}/size-request` with authentication, validation, consent, and seller/support routing.</small>
-          <button type="button" disabled>Submission backend required</button>
-          <a href="/support">Contact support instead</a>
-        </form>
+        <p>Size requests for {product.name} aren’t open yet. Our team can check availability with the brand, or you can explore pieces we have in stock now.</p>
+        <div className="size-request-form">
+          <a className="primary" href="/support">Contact support</a>
+          <a href={`/search?category=${encodeURIComponent(product.category || '')}`}>Browse similar pieces</a>
+        </div>
       </section>
     </div>
   );
@@ -6941,23 +6969,16 @@ function App() {
   const isConciergePage = path === '/style-bot' && Boolean(user);
   const isProductPage = /^\/product\/[^/]+$/.test(path);
   const isOpeningPage = path === '/';
-  const isReferencePage = isOpeningPage || path === '/categories' || path === '/wishlist' || path === '/tokens' || path === '/profile' || isProductPage || isConciergePage;
   const isWardrobeWorkspace = path === '/closet' || path === '/closet/add';
   const shouldShowOnboarding = Boolean(user && !user.hasCompletedOnboarding && !isStandaloneAuth);
 
   return (
     <>
-      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Header user={user} setUser={setUser} />}
       {!isStandaloneAuth && !isOpeningPage && <a className="skip-link" href="#main-content">Skip to main content</a>}
+      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Header user={user} setUser={setUser} />}
       <div id="main-content" className="app-page-transition" tabIndex="-1" key={routeKey}>{page}</div>
       {!isOnline && <div className="network-status" role="status" aria-live="polite">You are offline. Changes will resume when you reconnect.</div>}
       {toast && <Toast toast={toast} onDismiss={dismissToast} />}
-      {!isStandaloneAuth && !isReferencePage && (
-        <div className="floating-actions" aria-label="Quick actions">
-          <a className="floating-action closet" href="/closet"><span>CL</span><div><small>Your wardrobe</small><strong>AI Closet</strong></div></a>
-          <a className="floating-action custom" href="/custom-try-on"><span>AI</span><div><small>Upload clothing</small><strong>Custom Try-On</strong></div></a>
-        </div>
-      )}
       {!isStandaloneAuth && !isOpeningPage && !isConciergePage && !isWardrobeWorkspace && <FloatingStylistLauncher user={user} />}
       {!isStandaloneAuth && <MobileBottomNav user={user} />}
       {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Footer compact={path === '/wishlist' || path === '/profile' || isProductPage} />}

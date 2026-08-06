@@ -81,13 +81,101 @@ a { color: inherit; text-decoration: none; }
 img { display: block; max-width: 100%; }
 button, input, select, textarea { font: inherit; }
 button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
-.hero-cta, .button, .submit, .secondary-button, .tryon-disabled, .icon-button, .search-submit, .text-button, .token-pill, .product-card-actions button, .product-card-actions a, .category, .view-all, .mobile-menu a, .mobile-menu button, .footer a, .footer button, .floating-action, .chat-composer button, .fullscreen-button, .lightbox-close, .apply, .username-suggestions button, .token-pack button, .product-meta a, .product-meta span, .product-tags a, .active-filters a, .category-showcase-info a, .locked-actions a, .locked-actions button {
+.hero-cta,
+.button,
+.submit,
+.secondary-button,
+.tryon-disabled,
+.icon-button,
+.search-submit,
+.text-button,
+.token-pill,
+.product-card-actions button,
+.product-card-actions a,
+.category,
+.view-all,
+.mobile-menu a,
+.mobile-menu button,
+.footer a,
+.footer button,
+.chat-composer button,
+.fullscreen-button,
+.lightbox-close,
+.apply,
+.username-suggestions button,
+.token-pack button,
+.product-meta a,
+.product-meta span,
+.product-tags a,
+.active-filters a,
+.category-showcase-info a,
+.locked-actions a,
+.locked-actions button {
   touch-action: manipulation;
 }
-.hero-cta, .button, .submit, .secondary-button, .icon-button, .search-submit, .text-button, .token-pill, .product-card-actions button, .product-card-actions a, .category, .view-all, .mobile-menu a, .mobile-menu button, .footer a, .footer button, .floating-action, .chat-composer button, .fullscreen-button, .lightbox-close, .apply, .username-suggestions button, .token-pack button, .product-meta a, .product-tags a, .active-filters a, .category-showcase-info a, .locked-actions a, .locked-actions button {
-  transition: transform .18s ease, opacity .18s ease, background-color .18s ease, border-color .18s ease, box-shadow .18s ease, color .18s ease;
+.hero-cta,
+.button,
+.submit,
+.secondary-button,
+.icon-button,
+.search-submit,
+.text-button,
+.token-pill,
+.product-card-actions button,
+.product-card-actions a,
+.category,
+.view-all,
+.mobile-menu a,
+.mobile-menu button,
+.footer a,
+.footer button,
+.chat-composer button,
+.fullscreen-button,
+.lightbox-close,
+.apply,
+.username-suggestions button,
+.token-pack button,
+.product-meta a,
+.product-tags a,
+.active-filters a,
+.category-showcase-info a,
+.locked-actions a,
+.locked-actions button {
+  transition: transform .18s ease,
+opacity .18s ease,
+background-color .18s ease,
+border-color .18s ease,
+box-shadow .18s ease,
+color .18s ease;
 }
-.hero-cta:active, .button:active, .submit:active, .secondary-button:active, .icon-button:active, .search-submit:active, .text-button:active, .token-pill:active, .product-card-actions button:active, .product-card-actions a:active, .category:active, .view-all:active, .mobile-menu a:active, .mobile-menu button:active, .footer a:active, .footer button:active, .floating-action:active, .chat-composer button:active, .fullscreen-button:active, .lightbox-close:active, .apply:active, .username-suggestions button:active, .token-pack button:active, .product-meta a:active, .product-tags a:active, .active-filters a:active, .category-showcase-info a:active, .locked-actions a:active, .locked-actions button:active {
+.hero-cta:active,
+.button:active,
+.submit:active,
+.secondary-button:active,
+.icon-button:active,
+.search-submit:active,
+.text-button:active,
+.token-pill:active,
+.product-card-actions button:active,
+.product-card-actions a:active,
+.category:active,
+.view-all:active,
+.mobile-menu a:active,
+.mobile-menu button:active,
+.footer a:active,
+.footer button:active,
+.chat-composer button:active,
+.fullscreen-button:active,
+.lightbox-close:active,
+.apply:active,
+.username-suggestions button:active,
+.token-pack button:active,
+.product-meta a:active,
+.product-tags a:active,
+.active-filters a:active,
+.category-showcase-info a:active,
+.locked-actions a:active,
+.locked-actions button:active {
   transform: scale(.97);
 }
 .wrap { width: min(calc(100% - var(--gutter)), var(--container)); margin: 0 auto; }
@@ -295,7 +383,7 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .atelier-arrivals-more::before { display: block; width: 100%; aspect-ratio: 3 / 4; margin-bottom: 14px; border: 1px solid rgba(28, 27, 27, .12); border-radius: 8px; background: linear-gradient(145deg, rgba(255, 255, 255, .68), rgba(255, 255, 255, .28)), radial-gradient(circle at 72% 18%, rgba(255, 255, 255, .82), transparent 30%), radial-gradient(circle at 18% 82%, rgba(28, 27, 27, .06), transparent 34%); box-shadow: inset 0 0 0 3px rgba(255, 253, 252, .74), 0 8px 20px rgba(28, 27, 27, .05); backdrop-filter: blur(16px) saturate(1.08); -webkit-backdrop-filter: blur(16px) saturate(1.08); content: ''; transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease; }
 .atelier-arrivals-more:hover { border-color: rgba(28, 27, 27, .22); background: transparent; box-shadow: 0 22px 48px rgba(28, 27, 27, .09); transform: translateY(-4px); }
 .atelier-arrivals-more:hover::before { border-color: rgba(28, 27, 27, .26); background-color: rgba(255, 255, 255, .64); box-shadow: inset 0 0 0 3px rgba(255, 253, 252, .84), 0 12px 24px rgba(28, 27, 27, .09); }
-.atelier-arrivals-more > span { display: block; overflow: hidden; margin-bottom: 6px; color: #9b918c; font-family: var(--font-interface); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.atelier-arrivals-more > span { display: block; overflow: hidden; margin-bottom: 6px; color: #9b918c; font-family: var(--font-interface); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .atelier-arrivals-more strong { display: block; margin-bottom: 7px; color: var(--atelier-primary); font-family: var(--font-interface); font-size: 17px; font-weight: 600; line-height: 1.25; }
 .atelier-arrivals-more small { color: #5c5652; font-family: var(--font-interface); font-size: 12px; line-height: 1.4; }
 .atelier-arrivals-more b { margin-left: 4px; font-size: 14px; font-weight: 500; }
@@ -497,7 +585,7 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   --category-ink: #1c1b1b;
   --category-muted: #444748;
   --category-line: rgba(28, 27, 27, .1);
-  min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
   background: var(--category-surface);
   color: var(--category-ink);
@@ -687,7 +775,7 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   font-weight: 700;
   line-height: 1;
 }
-.brand { flex: 0 0 auto; font-size: 27px; }
+.brand { flex: 0 0 auto; }
 .nav {
   gap: clamp(13px, 1.35vw, 22px);
   margin-left: clamp(18px, 2.7vw, 34px);
@@ -2715,7 +2803,7 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
   top: 96px;
   display: grid;
   gap: 16px;
-  max-height: calc(100vh - 116px);
+  max-height: calc(100dvh - 116px);
   overflow: auto;
   padding-right: 2px;
 }
@@ -3592,99 +3680,6 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
   object-fit: contain;
   background: #f8f1e8;
 }
-.floating-actions {
-  position: fixed;
-  right: clamp(14px, 2vw, 24px);
-  bottom: clamp(14px, 2vw, 24px);
-  z-index: 40;
-  display: grid;
-  gap: 9px;
-  justify-items: end;
-}
-.floating-action {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 52px;
-  padding: 8px 14px 8px 8px;
-  border: 1px solid #d7c8b7;
-  border-radius: 999px;
-  background: rgba(255, 253, 248, .96);
-  color: var(--green);
-  box-shadow: 0 16px 38px rgba(74, 53, 31, .15);
-  backdrop-filter: blur(12px);
-  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
-}
-.floating-action:hover {
-  transform: translateY(-2px);
-  border-color: #c5b39f;
-  box-shadow: 0 20px 44px rgba(74, 53, 31, .2);
-}
-.floating-action.style {
-  min-width: 178px;
-  min-height: 58px;
-  padding: 9px 17px 9px 9px;
-  border-color: #cbb8a1;
-  background:
-    linear-gradient(135deg, #fffaf2, rgba(234, 216, 194, .94) 58%, #dfc6aa),
-    var(--warm);
-  color: #2f2418;
-  box-shadow: 0 18px 42px rgba(74, 53, 31, .18), 0 4px 0 rgba(126, 93, 57, .1);
-}
-.floating-action.style::after {
-  content: "";
-  position: absolute;
-  top: 9px;
-  right: 11px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #9a6a3a;
-  box-shadow: 0 0 0 4px rgba(154, 106, 58, .14);
-}
-.floating-action span {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border-radius: 50%;
-  background: #efe3d4;
-  color: var(--green);
-  font-size: 11px;
-  font-weight: 700;
-}
-.floating-action.style span {
-  width: 40px;
-  height: 40px;
-  background: rgba(255, 253, 248, .72);
-  color: #3b2817;
-  box-shadow: inset 0 0 0 1px rgba(126, 93, 57, .16);
-}
-.floating-action.style svg {
-  width: 18px;
-  height: 18px;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.floating-action strong {
-  display: grid;
-  gap: 3px;
-  padding-right: 2px;
-  font-size: 13px;
-  line-height: 1;
-}
-.floating-action small {
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-}
-.floating-action.style small {
-  color: #7a6856;
-}
 .locked-row { position: relative; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: inherit; }
 .locked-row::after { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: 6px; background: rgba(42, 36, 30, .46); }
 .locked-product { pointer-events: none; opacity: .58; user-select: none; }
@@ -3699,7 +3694,7 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
 .filters {
   position: sticky;
   top: 96px;
-  max-height: calc(100vh - 116px);
+  max-height: calc(100dvh - 116px);
   overflow-y: auto;
   align-self: start;
   border: 1px solid var(--line);
@@ -4110,7 +4105,7 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
 }
 .product-listing-page .filters {
   top: 112px;
-  max-height: calc(100vh - 132px);
+  max-height: calc(100dvh - 132px);
   border: 1px solid rgba(17, 16, 14, .11);
   border-radius: 22px;
   padding: 18px;
@@ -6041,7 +6036,6 @@ h2 {
 }
 .site-header .brand {
   color: #fff;
-  font-size: clamp(30px, 2.8vw, 42px);
   font-weight: 600;
   letter-spacing: -.01em;
   text-shadow: 0 8px 24px rgba(0, 0, 0, .28);
@@ -8046,7 +8040,6 @@ h2 {
     gap: 8px;
   }
   .header-left { flex: 1 1 auto; }
-  .brand { font-size: 25px; }
   .mobile-menu.open {
     display: block;
     animation: mobile-menu-in .2s ease both;
@@ -8208,7 +8201,6 @@ h2 {
     height: 58px;
     gap: 4px;
   }
-  .brand { font-size: 24px; }
   .brand {
     display: inline-flex;
     min-height: 44px;
@@ -8595,35 +8587,6 @@ h2 {
   .tryon-model-select { grid-template-columns: 1fr; }
   .custom-preview-grid { grid-template-columns: 1fr; }
   .custom-preview { min-height: 220px; }
-  .floating-actions {
-    right: max(10px, env(safe-area-inset-right));
-    bottom: max(10px, env(safe-area-inset-bottom));
-    gap: 8px;
-  }
-  .floating-action,
-  .floating-action.style {
-    min-width: 0;
-    min-height: 52px;
-    min-width: 52px;
-    padding: 6px;
-  }
-  .floating-action span,
-  .floating-action.style span {
-    width: 40px;
-    height: 40px;
-  }
-  .floating-action.style span {
-    width: 40px;
-    height: 40px;
-  }
-  .floating-action.style::after {
-    top: 5px;
-    right: 5px;
-    width: 6px;
-    height: 6px;
-    box-shadow: 0 0 0 3px rgba(216, 241, 198, .16);
-  }
-  .floating-action strong { display: none; }
   .product-card-actions { grid-template-columns: 1fr; }
   .product-card-actions .shop-action { min-width: 0; }
   .active-filters a {
@@ -8768,9 +8731,6 @@ h2 {
     padding: 0 6px 0 16px;
     gap: 6px;
   }
-  .site-header .brand {
-    font-size: 28px;
-  }
   .site-header .header-search {
     flex: 0 0 44px;
     min-width: 44px;
@@ -8809,9 +8769,6 @@ h2 {
     height: 56px;
     padding-left: 14px;
     border-radius: 28px;
-  }
-  .site-header .brand {
-    font-size: 26px;
   }
   .site-header .icon-button,
   .site-header .search-form,
@@ -9006,7 +8963,6 @@ h2 {
 
 .site-header .brand {
   color: #080806;
-  font-size: clamp(42px, 4.15vw, 58px);
   font-weight: 700;
   letter-spacing: 0;
   text-shadow: none;
@@ -9246,10 +9202,6 @@ h2 {
     gap: 8px;
   }
 
-  .site-header .brand {
-    font-size: 36px;
-  }
-
   .site-header .header-left {
     flex: 1 1 auto;
   }
@@ -9298,10 +9250,6 @@ h2 {
   .site-header .header-inner {
     width: calc(100% - 20px);
     height: 64px;
-  }
-
-  .site-header .brand {
-    font-size: 31px;
   }
 
   .site-header .icon-button,
@@ -10730,10 +10678,6 @@ body {
   border-radius: var(--fit-radius);
 }
 
-.floating-actions {
-  display: none;
-}
-
 @media (max-width: 1180px) {
   .hero-title {
     font-size: 64px;
@@ -11005,7 +10949,6 @@ textarea:focus-visible {
 
 .site-header .brand {
   color: #080806;
-  font-size: clamp(39px, 4vw, 58px);
   font-weight: 700;
   line-height: 1;
   text-shadow: none;
@@ -12295,10 +12238,6 @@ textarea:focus-visible {
   border-radius: 999px;
 }
 
-.floating-actions {
-  display: none;
-}
-
 @keyframes fl-fade-in {
   from {
     opacity: 0;
@@ -12361,10 +12300,6 @@ textarea:focus-visible {
     width: calc(100% - 28px);
     height: 72px;
     gap: 8px;
-  }
-
-  .site-header .brand {
-    font-size: 36px;
   }
 
   .site-header .header-left {
@@ -12461,10 +12396,6 @@ textarea:focus-visible {
     height: 64px;
   }
 
-  .site-header .brand {
-    font-size: 31px;
-  }
-
   .site-header .icon-button,
   .site-header .search-form,
   .site-header .search-submit {
@@ -12545,10 +12476,6 @@ textarea:focus-visible {
 
 .site-header .header-left {
   gap: clamp(24px, 3vw, 44px);
-}
-
-.site-header .brand {
-  font-size: clamp(34px, 3.2vw, 48px);
 }
 
 .site-header .nav {
@@ -12971,7 +12898,6 @@ textarea:focus-visible {
 
 .site-header .brand {
   flex: 0 0 auto;
-  font-size: clamp(40px, 3.8vw, 58px);
   font-weight: 700;
   line-height: .95;
 }
@@ -13046,10 +12972,6 @@ textarea:focus-visible {
     gap: 24px;
   }
 
-  .site-header .brand {
-    font-size: 38px;
-  }
-
   .site-header .nav {
     display: none;
   }
@@ -13064,10 +12986,6 @@ textarea:focus-visible {
     width: calc(100% - 28px);
     height: 66px;
     gap: 6px;
-  }
-
-  .site-header .brand {
-    font-size: 32px;
   }
 
   .site-header .header-search {
@@ -13108,10 +13026,6 @@ textarea:focus-visible {
   .site-header .header-inner {
     width: calc(100% - 20px);
     height: 62px;
-  }
-
-  .site-header .brand {
-    font-size: 29px;
   }
 
   .site-header .header-actions {
@@ -13237,7 +13151,6 @@ main > section.wrap {
 
 .site-header .brand {
   flex: 0 0 auto !important;
-  font-size: clamp(40px, 3.7vw, 56px) !important;
 }
 
 .site-header .nav {
@@ -13498,10 +13411,6 @@ main > section.wrap {
     gap: 6px !important;
   }
 
-  .site-header .brand {
-    font-size: 32px !important;
-  }
-
   .site-header .header-search {
     width: 42px !important;
     min-width: 42px !important;
@@ -13605,7 +13514,6 @@ main > section.wrap {
 }
 
 .site-header .brand {
-  font-size: clamp(38px, 4vw, 50px) !important;
   letter-spacing: 0 !important;
 }
 
@@ -14472,10 +14380,6 @@ main > section.wrap {
     gap: 8px !important;
   }
 
-  .site-header .brand {
-    font-size: 32px !important;
-  }
-
   .site-header .header-search {
     width: 42px !important;
     min-width: 42px !important;
@@ -14545,10 +14449,6 @@ main > section.wrap {
   .site-header .header-inner {
     width: calc(100% - 20px) !important;
     height: 62px !important;
-  }
-
-  .site-header .brand {
-    font-size: 29px !important;
   }
 
   .site-header .header-actions {
@@ -15698,8 +15598,6 @@ main > section.wrap {
   background: var(--wardrobe-bg) !important;
   color: var(--wardrobe-ink) !important;
 }
-
-.wardrobe-studio-page ~ .floating-actions,
 .wardrobe-studio-page ~ .footer {
   display: none !important;
 }
@@ -16491,14 +16389,10 @@ main > section.wrap {
 
 /* Custom try-on atelier layout */
 .custom-tryon-page {
-  min-height: 100vh !important;
+  min-height: 100dvh !important;
   overflow: hidden !important;
   background: #fbf6f4 !important;
   padding: clamp(58px, 7vw, 104px) 0 0 !important;
-}
-
-.custom-tryon-page ~ .floating-actions {
-  display: none !important;
 }
 
 .custom-tryon-page .custom-tryon-hero {
@@ -17282,7 +17176,7 @@ main > section.wrap {
 
 /* Backend-driven category departments */
 .department-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: #fbf7f5;
   color: #1d1a18;
 }
@@ -17381,7 +17275,7 @@ main > section.wrap {
 
 /* Wardrobe archive entry */
 .atelier-closet-add-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: #fdf9f8;
   padding: clamp(58px, 7vw, 106px) 0 clamp(84px, 10vw, 144px);
 }
@@ -17753,7 +17647,7 @@ main > section.wrap {
 
 /* Compact wishlist catalog */
 .wishlist-reference-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: #fffafa;
   color: #211e1c;
   padding: clamp(38px, 5vw, 76px) 0 clamp(56px, 7vw, 104px);
@@ -18510,7 +18404,7 @@ main > section.wrap {
 .header-credit-button:hover strong { background: #fff; color: #211e1c; }
 
 .credit-purchase-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: #fbf7f7;
   color: #282320;
   padding: clamp(34px, 6vw, 82px) 0 clamp(56px, 8vw, 112px);
@@ -18755,7 +18649,7 @@ main > section.wrap {
 .credit-section-heading span,
 .credit-summary-heading span {
   color: #9b514d !important;
-  font-size: 9px !important;
+  font-size: 11px !important;
 }
 
 .credit-payment-choice {
@@ -19332,7 +19226,7 @@ main > section.wrap {
 
 /* Flat profile dashboard */
 .profile-reference-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: #fbf7f7;
   color: #292421;
   padding: clamp(34px, 5vw, 72px) 0 clamp(58px, 8vw, 108px);
@@ -21292,7 +21186,7 @@ a.atelier-hero-editorial-orbit.wardrobe:hover { color: #fff; transform: translat
   .atelier-hero-editorial-content { width: calc(100% - 40px); align-items: end; padding-bottom: 66px; }
   .atelier-hero-editorial-copy h1 { font-size: clamp(48px, 14vw, 63px); }
   .atelier-hero-editorial-copy p { max-width: 330px; margin-top: 19px; font-size: 14px; }
-  .atelier-hero-editorial-copy > span { margin-bottom: 15px; font-size: 9px; }
+  .atelier-hero-editorial-copy > span { margin-bottom: 15px; font-size: 11px; }
   .atelier-hero-editorial-copy > div { gap: 10px; margin-top: 24px; }
   .atelier-hero-editorial-primary,
   .atelier-hero-editorial-secondary { min-height: 42px; padding: 0 15px; font-size: 11px; }
@@ -21579,7 +21473,9 @@ textarea { font: inherit; }
 .product-mobile-action-bar {
   position: fixed;
   right: max(14px, env(safe-area-inset-right));
-  bottom: calc(76px + env(safe-area-inset-bottom));
+  /* Sits directly above the fixed mobile bottom nav. Derive the offset from the
+     nav height instead of hardcoding 76px, so the two stay in sync. */
+  bottom: calc(var(--mobile-bottom-nav-height, 68px) + env(safe-area-inset-bottom) + 8px);
   left: max(14px, env(safe-area-inset-left));
   z-index: 70;
   display: none;
@@ -21711,15 +21607,15 @@ textarea { font: inherit; }
   font-weight: 900;
 }
 
-.size-request-form button {
-  border: 0;
-  background: #8f8984;
-  color: #fff;
-  cursor: not-allowed;
-}
-
 .size-request-form a {
   border: 1px solid #211e1c;
+  color: #211e1c;
+  text-decoration: none;
+}
+
+.size-request-form a.primary {
+  background: #211e1c;
+  color: #fff;
 }
 
 .cart-page {
@@ -22298,8 +22194,8 @@ textarea { font: inherit; }
   .atelier-category-audience-heading p { font-size: 26px; }
   .atelier-category-quick-rail { grid-template-columns: repeat(auto-fit, minmax(70px, 88px)); gap: 14px 9px; }
   .atelier-category-quick-rail > a { gap: 5px; }
-  .atelier-category-quick-rail strong { font-size: 9px; }
-  .atelier-category-quick-rail small { font-size: 7px; }
+  .atelier-category-quick-rail strong { font-size: 11px; }
+  .atelier-category-quick-rail small { font-size: 10px; }
   .atelier-category-audience-rail { gap: 15px; margin-right: -16px; padding-bottom: 11px; }
   .atelier-category-audience-rail > button { width: 88px; flex-basis: 88px; gap: 6px; }
   .atelier-category-audience-image,
@@ -22861,10 +22757,6 @@ textarea:focus-visible,
   .site-header .header-inner {
     grid-template-columns: max-content minmax(0, 1fr) max-content !important;
     min-height: 64px !important;
-  }
-
-  .site-header .brand {
-    font-size: clamp(30px, 10vw, 42px) !important;
   }
 
   .site-header .header-search {
@@ -24203,7 +24095,7 @@ a.atelier-hero-orbit-wardrobe:hover {
 
 .ai-stylist-launcher small {
   color: rgba(255, 255, 255, .72) !important;
-  font-size: 8px !important;
+  font-size: 10px !important;
   font-weight: 700 !important;
 }
 
@@ -25164,7 +25056,7 @@ a.atelier-hero-orbit-wardrobe:hover {
 
 .atelier-category-section .atelier-category > span small {
   color: #746a63 !important;
-  font-size: 9px !important;
+  font-size: 10px !important;
   font-weight: 700 !important;
   letter-spacing: .08em !important;
   text-transform: uppercase !important;
@@ -25918,7 +25810,7 @@ a.atelier-hero-orbit-wardrobe:hover {
 .atelier-promo .atelier-text-link {
   width: max-content !important;
   max-width: 100% !important;
-  font-size: 9px !important;
+  font-size: 11px !important;
   white-space: nowrap !important;
 }
 
@@ -26261,7 +26153,6 @@ a.atelier-hero-orbit-wardrobe:hover {
   .site-header .brand {
     max-width: 100% !important;
     overflow: hidden !important;
-    font-size: clamp(32px, 12vw, 43px) !important;
     text-overflow: ellipsis !important;
   }
 
@@ -27298,10 +27189,6 @@ main,
     grid-template-columns: 1fr !important;
   }
 
-  .site-header .brand {
-    font-size: clamp(30px, 11vw, 38px) !important;
-  }
-
   .wardrobe-studio-page .wardrobe-stage-actions {
     width: min(300px, calc(100% - 20px)) !important;
     grid-template-columns: minmax(0, 1fr) 46px !important;
@@ -27784,8 +27671,16 @@ main,
     padding-block: 9px 10px !important;
   }
 
+  /* Authoritative wordmark size for every width <= 700px.
+     There are 27 competing `.site-header .brand` font-size rules in this file,
+     10 of them !important (L13236, L13499, L13605, L14473, L14548, L22491,
+     L22774, L22864, L26259, L27299). This rule is the last one in source
+     order, so !important is required for it to win — without it the <=380px
+     block at L27299 takes over and renders the wordmark at 38px.
+     The previous 11vw value put it at 41px on a 375px phone, colliding with
+     the search field and action buttons inside the 58px header. */
   .site-header .brand {
-    font-size: clamp(34px, 11vw, 44px) !important;
+    font-size: clamp(28px, 6vw, 34px) !important;
   }
 
   .site-header .search-form {
@@ -27850,7 +27745,7 @@ main,
     min-height: 34px !important;
     align-items: center !important;
     justify-content: flex-end !important;
-    font-size: 9px !important;
+    font-size: 11px !important;
     line-height: 1.35 !important;
   }
 
@@ -28074,7 +27969,7 @@ main,
   }
 
   .atelier-category-page .atelier-category-quick-rail small {
-    font-size: 8px !important;
+    font-size: 10px !important;
     line-height: 1 !important;
   }
 }
@@ -28129,7 +28024,7 @@ main,
   margin-top: 2px !important;
   color: #7c746f !important;
   font-family: var(--font-interface) !important;
-  font-size: 9px !important;
+  font-size: 11px !important;
   font-weight: 700 !important;
   letter-spacing: .08em !important;
   line-height: 1.1 !important;
@@ -28146,7 +28041,7 @@ main,
   padding: 0 12px !important;
   background: #fff !important;
   color: #211e1c !important;
-  font-size: 9px !important;
+  font-size: 11px !important;
   font-weight: 800 !important;
   letter-spacing: .08em !important;
   text-transform: uppercase !important;
@@ -29472,5 +29367,158 @@ main,
   .lightbox-video {
     max-width: calc(100vw - 24px) !important;
     max-height: calc(100dvh - 92px) !important;
+  }
+}
+
+/* ── Bottom-right overlay stack ───────────────────────────────────────────
+   Six elements are anchored to the bottom-right corner: the mobile bottom nav
+   (z 120), the stylist launcher (z 130), and three transient message layers.
+   The message layers previously sat at z 99-110 with bottom: 10-16px, which
+   put them underneath the 68px nav on phones — the offline banner and every
+   toast were invisible, and the wishlist Undo button could not be tapped.
+
+   --overlay-base is the floor those three sit above; it grows to clear the
+   nav on phones and the launcher on desktop. --overlay-step stacks them when
+   more than one is on screen at once. */
+:root {
+  --overlay-base: 16px;
+  --overlay-step: 52px;
+}
+
+@media (max-width: 700px) {
+  :root {
+    --overlay-base: calc(var(--mobile-bottom-nav-height, 68px) + env(safe-area-inset-bottom) + 12px);
+  }
+}
+
+@media (min-width: 701px) {
+  body:has(.ai-stylist-launcher) {
+    --overlay-base: 130px;
+  }
+}
+
+.wishlist-undo-toast {
+  z-index: 138;
+  bottom: var(--overlay-base) !important;
+}
+
+.network-status {
+  z-index: 139;
+  bottom: var(--overlay-base) !important;
+}
+
+.app-toast {
+  z-index: 140;
+  bottom: var(--overlay-base) !important;
+}
+
+body:has(.network-status) .app-toast,
+body:has(.network-status) .wishlist-undo-toast {
+  bottom: calc(var(--overlay-base) + var(--overlay-step)) !important;
+}
+
+body:has(.network-status):has(.app-toast) .wishlist-undo-toast {
+  bottom: calc(var(--overlay-base) + (2 * var(--overlay-step))) !important;
+}
+
+/* .atelier-category-nav is a 1px fixed strip at z 50 with a border and
+   backdrop-filter; the sticky site header is z 20, so the strip drew a
+   hairline across the top of the header on category pages. */
+.atelier-category-nav {
+  z-index: 15;
+}
+
+/* ── Typography floor ─────────────────────────────────────────────────────
+   Text was rendering as small as 7px. These are the selectors that measured
+   below 12px in the browser (not the ~448 declared rules, most of which are
+   dead). The floor is tiered rather than flat, because a single minimum
+   either breaks tight containers or leaves real copy unreadable:
+
+     10px  labels inside fixed-width tiles (tab bar, icon rail) and badges
+           overlaid on imagery — 6 tab items cannot fit 12px at 320px, and
+           10px matches the iOS/Android tab-bar convention
+     11px  uppercase eyebrows carrying >=1px tracking, which read larger than
+           their nominal size
+     12px  everything else: links, body copy, product metadata, footer
+     13px  primary calls to action
+
+   !important is required here only because these selectors are already
+   overridden by !important rules earlier in this file. */
+
+/* 10px tier — fixed-width tiles and image-overlay badges */
+.mobile-bottom-nav a span,
+.atelier-category-quick-rail a small,
+.atelier-category > span > small,
+.atelier-category-audience-rail button small,
+.atelier-product-quick-link,
+.atelier-best-seller {
+  font-size: 10px !important;
+}
+
+/* 11px tier — tracked uppercase eyebrows and dense metadata */
+.atelier-product-category,
+.atelier-text-link,
+.atelier-category-filter-toggle,
+.atelier-eyebrow,
+.credit-pack-option small,
+.credit-pack-option span,
+.credit-pack-badge,
+.wishlist-app-link,
+.wishlist-compact-brand > div > a {
+  font-size: 11px !important;
+}
+
+/* 12px tier — links, body copy, metadata, footer */
+.atelier-category-product-brand,
+.atelier-category-products-head a,
+.atelier-mixed-feed-heading p,
+.atelier-category-products-head div p,
+.footer-social a,
+.footer-bottom .legal a,
+.footer-bottom > div,
+.footer-col-toggle h3,
+.newsletter h3,
+.credit-pack-option i,
+.credit-payment-choice small,
+.credit-payment-choice b,
+.credit-order-summary small,
+.credit-summary-row span,
+.credit-summary-row strong,
+.credit-summary-total span,
+.credit-purchase-head p,
+.wishlist-compact-footer-grid div a,
+.wishlist-compact-footer-grid div h2,
+.wishlist-compact-footer-grid div p,
+.wishlist-compact-footer-bottom span,
+.wishlist-compact-footer-bottom div a,
+.wishlist-reference-empty a,
+.wishlist-reference-upgrade a,
+.wishlist-reference-upgrade div p {
+  font-size: 12px !important;
+}
+
+/* 13px tier — primary calls to action */
+.atelier-hero-editorial-primary,
+.atelier-hero-editorial-secondary,
+.credit-order-summary > button {
+  font-size: 13px !important;
+}
+
+/* ── Header search spilling out of the header ─────────────────────────────
+   At <=700px `.header-inner` resolves to a 2-column grid, so its third child
+   wraps onto a second row (measured: columns "165px 176px", rows "44px 42px"
+   = 86px of content inside a 67px header). `.site-header` is
+   `overflow: clip visible`, so the second row was not clipped vertically — the
+   collapsed 42px search circle painted ~38px below the header, on top of the
+   page heading.
+
+   `.mobile-search-trigger` is already display:grid at this exact breakpoint and
+   opens the drawer's own search field, so the desktop search form is also a
+   duplicate control here. Hiding it removes the collision and collapses the
+   grid back to a single row. Above 700px the grid is 3-column/1-row and
+   correct, so this is scoped to <=700px only. */
+@media (max-width: 700px) {
+  .site-header .header-search {
+    display: none !important;
   }
 }
