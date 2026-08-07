@@ -10,7 +10,7 @@ import { createHybridCache } from '../utils/cache.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility, genderedSearchQuery, genderPreferenceForQuery } from '../utils/genderPreference.js';
-import { enqueueJob } from '../utils/jobQueue.js';
+import { enqueueJob, safeJobId } from '../utils/jobQueue.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
 import { requireAdmin } from '../utils/adminAccess.js';
 import { saveBuffer, useBunny } from '../utils/storage.js';
@@ -1159,7 +1159,7 @@ async function runProductRecategorizationJob() {
 router.post('/recategorize', requireAdmin, adminProductWriteLimiter, async (req, res) => {
   if (req.body?.async || req.query.async === '1') {
     const job = await enqueueJob('maintenance', 'product-recategorize', {}, {
-      jobId: `product-recategorize:${Date.now()}`
+      jobId: safeJobId('product-recategorize', Date.now())
     });
     if (!job) return res.status(503).json({ message: 'Job queue is not available' });
     await recordAdminAudit(req, {

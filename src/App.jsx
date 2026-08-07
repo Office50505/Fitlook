@@ -5264,9 +5264,12 @@ function ProfilePage({ user, setUser }) {
 
   if (!user) return <AuthPage mode="signup" setUser={setUser} />;
 
-  const photoSrc = preview || user.bodyPhotoOriginalUrl || user.bodyPhotoUrl;
   const hasUploadedPhoto = Boolean(user.bodyPhotoOriginalUrl || user.bodyPhotoUrl);
   const hasAiProfile = user.bodyPhotoSource === 'fal-full-body' && Boolean(user.bodyPhotoUrl);
+  const generatedProfilePhotoUrl = hasAiProfile ? user.bodyPhotoUrl : '';
+  const uploadedProfilePhotoUrl = user.bodyPhotoOriginalUrl || user.bodyPhotoUrl;
+  const photoSrc = preview || generatedProfilePhotoUrl || uploadedProfilePhotoUrl;
+  const photoFrameClass = hasAiProfile && !preview ? 'ai-full-body-ready' : '';
   const selectPhoto = (event) => {
     const file = event.currentTarget.files?.[0];
     setPhotoFile(file || null);
@@ -5331,7 +5334,7 @@ function ProfilePage({ user, setUser }) {
         <header className="profile-reference-head"><h1>My Profile</h1><p>Manage your account preferences</p></header>
 
         <section className="profile-reference-panel profile-reference-account" aria-label="Account overview">
-          <div className="profile-reference-avatar">{photoSrc ? <img src={photoSrc} alt="" /> : <span>{initials}</span>}</div>
+          <div className={`profile-reference-avatar ${photoFrameClass}`.trim()}>{photoSrc ? <img src={photoSrc} alt="" /> : <span>{initials}</span>}</div>
           <div className="profile-reference-account-copy"><div><h2>{user.name}</h2><span>@{user.username}</span></div><p>{user.email}</p><small>{genderPreferenceLabel(user.genderPreference)} preference · Member since {formatDate(user.joinedAt)}</small></div>
           <a href="#tryon-photo">Update photo</a>
         </section>
@@ -5362,7 +5365,7 @@ function ProfilePage({ user, setUser }) {
         <section className="profile-reference-panel profile-reference-photo" id="tryon-photo" aria-label="Try-on photo">
           <div className="profile-reference-section-head"><div><h2>Try-On Portrait</h2><p>Manage the photo used for your virtual try-on previews.</p></div></div>
           <div className="profile-reference-photo-layout">
-            <div className="profile-reference-photo-preview">
+            <div className={`profile-reference-photo-preview ${photoFrameClass}`.trim()}>
               {photoSrc ? <img src={photoSrc} alt="Current model profile" /> : <span>{initials}</span>}
               {photoSrc && <button className="fullscreen-button" type="button" aria-label="Open try-on photo full screen" title="Open full screen" onClick={() => setFullscreenImage({ src: photoSrc, alt: 'Current try-on profile', title: 'Try-on Photo' })}><FullscreenIcon /></button>}
             </div>

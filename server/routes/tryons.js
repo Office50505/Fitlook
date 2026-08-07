@@ -14,7 +14,7 @@ import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility } from '../utils/genderPreference.js';
 import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
-import { enqueueJob, enqueueJobAndWait } from '../utils/jobQueue.js';
+import { enqueueJob, enqueueJobAndWait, safeJobId } from '../utils/jobQueue.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { readStoredFile, saveBuffer, storedFileSignature } from '../utils/storage.js';
 
@@ -940,6 +940,7 @@ function pixverseTryOnVideoPrompt(product, user) {
     'Preserve the same person, face, hairstyle, outfit, fabric, garment colors, skin tone, lighting, floor, shadows, and background exactly as shown in the input image.',
     'The original light ecommerce background is locked for the entire video. Keep it bright, neutral, off-white or light gray as in the input image. The video must not become darker than the input frame. Do not darken the image, lower exposure, increase contrast, add vignette, add spotlight lighting, add cinematic color grading, or create a black/dark studio backdrop.',
     'If any area of the input background is plain or transparent-looking, fill it with the same soft off-white ecommerce background, never black.',
+    'Use a full-frame vertical 9:16 ecommerce video composition. No letterboxing, no pillarboxing, no black bars, no black border, and no empty dark margins around the person.',
     'Keep the video flat-lit like a product page, with normal daylight ecommerce exposure and no dramatic mood lighting.',
     `Keep a ${expression}.`,
     'Full body remains visible head to toe with clear space above the full hair outline and below the feet.',
@@ -957,6 +958,7 @@ function pixverseTryOnVideoNegativePrompt() {
     'close-up, medium shot, upper body only, portrait shot, detail shot, zoom in, camera push in, camera dolly, camera orbit, camera tracking, camera shake, reframing',
     'walking toward camera, approaching camera, static pose, no rotation, partial turn only, cropped hair, cropped head, cut off hair, cut off top of head, cropped feet, cropped body, cropped legs, cut off outfit, cut off hands',
     'dark background, black background, black studio, dark studio, dark room, black void, black floor, black wall, dramatic lighting, cinematic lighting, moody lighting, spotlight, low key lighting, underexposed, darker exposure, dim exposure, increased contrast, vignette, shadowy scene, color grading, darkened video',
+    'letterbox, letterboxing, pillarbox, pillarboxing, black bars, black border, dark border, empty black margins, framed video, inset video',
     'clothing change, outfit change, color change, body deformation, extra arms, extra legs, extra fingers, missing fingers, distorted anatomy, flickering, blur, ghosting, warping, melting, AI artifacts, background change, background replacement, studio background, changed floor, changed shadows, scene change, low quality'
   ].join(', ');
 }
@@ -1654,7 +1656,7 @@ router.post('/:productId', requireUser, tryOnImageBurstLimiter, tryOnImageHourly
         requestedModel,
         forceGenerate
       }, {
-        jobId: `tryon:${req.user._id}:${req.params.productId}:${forceGenerate ? Date.now() : 'reuse'}`
+        jobId: safeJobId('tryon', req.user._id, req.params.productId, forceGenerate ? Date.now() : 'reuse')
       });
       if (!job) return res.status(503).json({ message: 'Try-on queue is not available' });
       return res.status(202).json({
@@ -1673,7 +1675,7 @@ router.post('/:productId', requireUser, tryOnImageBurstLimiter, tryOnImageHourly
         requestedModel,
         forceGenerate
       }, {
-        jobId: `tryon:${req.user._id}:${req.params.productId}:${forceGenerate ? Date.now() : 'reuse'}`,
+        jobId: safeJobId('tryon', req.user._id, req.params.productId, forceGenerate ? Date.now() : 'reuse'),
         waitTimeoutMs: Number(process.env.TRYON_QUEUE_WAIT_TIMEOUT_MS || 180_000)
       });
       if (!queued) return res.status(503).json({ message: 'Try-on queue is not available' });

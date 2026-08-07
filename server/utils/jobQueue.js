@@ -36,6 +36,18 @@ function queuePrefix() {
   return process.env.QUEUE_PREFIX || process.env.REDIS_KEY_PREFIX || 'fitlook';
 }
 
+function safeJobId(...parts) {
+  return parts
+    .flat()
+    .map((part) => String(part ?? '')
+      .trim()
+      .replace(/[^a-zA-Z0-9_.-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 120))
+    .filter(Boolean)
+    .join('-') || `job-${Date.now()}`;
+}
+
 function getQueue(name) {
   if (!enabled()) return null;
   if (!queues.has(name)) {
@@ -153,4 +165,4 @@ async function closeJobQueues() {
   await Promise.allSettled(closers);
 }
 
-export { closeJobQueues, enabled as queueEnabled, enqueueJob, enqueueJobAndWait, getJobStatus, getQueue, getQueueEvents, startWorker };
+export { closeJobQueues, enabled as queueEnabled, enqueueJob, enqueueJobAndWait, getJobStatus, getQueue, getQueueEvents, safeJobId, startWorker };

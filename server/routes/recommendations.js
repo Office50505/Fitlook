@@ -35,8 +35,10 @@ async function clearRecommendationCaches() {
 }
 
 const EVENT_WEIGHTS = {
+  page_view: 1,
   search: 1,
   filter: 1,
+  wishlist: 1,
   product_view: 2,
   product_click: 2,
   style_bot_query: 2,
@@ -149,25 +151,30 @@ function similarScore(base, product) {
 }
 
 router.post('/events', requireUser, recommendationEventLimiter, async (req, res) => {
-  const type = String(req.body?.type || '').trim();
-  if (!EVENT_WEIGHTS[type]) return res.status(400).json({ message: 'Unknown recommendation event type' });
+  try {
+    const type = String(req.body?.type || '').trim();
+    if (!EVENT_WEIGHTS[type]) return res.json({ ok: false, ignored: true });
 
-  const productId = String(req.body?.productId || '').trim();
-  const query = String(req.body?.query || '').trim();
-  const product = mongoose.Types.ObjectId.isValid(productId)
-    ? await Product.findOne({ _id: productId, isActive: true }).lean()
-    : null;
+    const productId = String(req.body?.productId || '').trim();
+    const query = String(req.body?.query || '').trim();
+    const product = mongoose.Types.ObjectId.isValid(productId)
+      ? await Product.findOne({ _id: productId, isActive: true }).lean()
+      : null;
 
-  await UserEvent.create({
-    user: req.user._id,
-    type,
-    product: product?._id,
-    query,
-    weight: eventWeight(type),
-    metadata: req.body?.metadata || {}
-  });
-  await updatePreference({ userId: req.user._id, type, product, query, metadata: req.body?.metadata || {} });
-  res.status(201).json({ ok: true });
+    await UserEvent.create({
+      user: req.user._id,
+      type,
+      product: product?._id,
+      query,
+      weight: eventWeight(type),
+      metadata: req.body?.metadata || {}
+    });
+    await updatePreference({ userId: req.user._id, type, product, query, metadata: req.body?.metadata || {} });
+    res.status(201).json({ ok: true });
+  } catch (error) {
+    console.warn('[recommendations:events] ignored event', error.message);
+    res.json({ ok: false, ignored: true });
+  }
 });
 
 router.get('/admin/stats', requireAdmin, async (_req, res) => {

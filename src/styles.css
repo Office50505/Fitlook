@@ -29474,3 +29474,55 @@ main,
     max-height: calc(100dvh - 92px) !important;
   }
 }
+
+/* Keep generated full-body profile photos and try-on videos in their real portrait frame. */
+.profile-reference-avatar.ai-full-body-ready img,
+.profile-reference-photo-preview.ai-full-body-ready img {
+  object-fit: contain !important;
+  background: #f6f1ee !important;
+}
+
+.profile-reference-avatar.ai-full-body-ready {
+  background: #f6f1ee !important;
+}
+
+.profile-reference-photo-preview.ai-full-body-ready {
+  aspect-ratio: 9 / 16 !important;
+  background: #f6f1ee !important;
+}
+
+.product-editorial-page .product-editorial-media.showing-tryon {
+  width: min(100%, 430px) !important;
+  aspect-ratio: 9 / 16 !important;
+  justify-self: center !important;
+  background: #f6f1ee !important;
+}
+
+.product-editorial-page .product-editorial-media.showing-tryon > .zoomable-image,
+.product-editorial-page .product-editorial-media.showing-tryon > .tryon-video-preview-button {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: inherit !important;
+  background: #f6f1ee !important;
+}
+
+.product-editorial-page .product-editorial-media.showing-tryon .zoomable-image img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  background: #f6f1ee !important;
+}
+
+.product-editorial-page .product-editorial-media.showing-tryon .tryon-video-player,
+.product-editorial-page .product-editorial-media.showing-tryon .tryon-video-preview-button video {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  background: #f6f1ee !important;
+}

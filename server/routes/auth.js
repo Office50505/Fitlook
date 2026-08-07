@@ -15,7 +15,7 @@ import User from '../models/User.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
 import { isAllowedAdminEmail, normalizeEmail, requireAdmin, signAdminSession } from '../utils/adminAccess.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
-import { enqueueJob } from '../utils/jobQueue.js';
+import { enqueueJob, safeJobId } from '../utils/jobQueue.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { deleteStoredFile, readStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
 import { createTempSessionStore } from '../utils/tempSessions.js';
@@ -448,11 +448,19 @@ async function runProfileFullBodyJob({ userId, sourceBodyPhoto }) {
 async function generateFullBodyProfileInBackground(userId, sourceBodyPhoto, { enabled = true } = {}) {
   if (!enabled || !shouldGenerateFullBodyProfile()) return;
 
+  const queueMode = String(process.env.PROFILE_FULL_BODY_QUEUE_MODE || 'queue').toLowerCase();
+  if (['inline', 'local', 'api', 'off'].includes(queueMode)) {
+    setImmediate(() => {
+      runProfileFullBodyJob({ userId, sourceBodyPhoto }).catch(() => {});
+    });
+    return;
+  }
+
   const job = await enqueueJob('profile', 'full-body', {
     userId: userId.toString(),
     sourceBodyPhoto
   }, {
-    jobId: `profile-full-body:${userId}:${sourceBodyPhoto.path}`
+    jobId: safeJobId('profile-full-body', userId, sourceBodyPhoto.path || sourceBodyPhoto.url || Date.now())
   }).catch((error) => {
     console.warn('[profile-fullbody] queue unavailable, using local fallback', { error: error.message });
     return null;
