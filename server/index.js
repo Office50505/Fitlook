@@ -16,6 +16,7 @@ import { requireAdmin } from './utils/adminAccess.js';
 import { closeRedisClient, getRedisClient } from './utils/cache.js';
 import { closeJobQueues } from './utils/jobQueue.js';
 import { configureMongoSlowQueryLogging, observabilitySnapshot, requestLogger } from './utils/observability.js';
+import { createRateLimiter, rateLimitKeys } from './utils/rateLimit.js';
 import { appRole, mongoConnectOptions, serviceMetadata } from './utils/runtime.js';
 import { validateServerEnv } from './utils/envValidation.js';
 
@@ -33,6 +34,30 @@ const rootDir = path.resolve(__dirname, '..');
 const service = serviceMetadata('api');
 let server = null;
 let shuttingDown = false;
+
+function trustProxySetting() {
+  const value = String(process.env.TRUST_PROXY || 'true').toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(value)) return true;
+  if (['0', 'false', 'no', 'off'].includes(value)) return false;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : value;
+}
+
+const globalApiLimiter = createRateLimiter({
+  name: 'api:global',
+  windowMs: Number(process.env.RATE_LIMIT_GLOBAL_WINDOW_MS || 5 * 60 * 1000),
+  max: Number(process.env.RATE_LIMIT_GLOBAL_MAX || 300),
+  keyGenerator: rateLimitKeys.clientIp,
+  message: 'Too many requests from this network. Please pause for a few minutes and try again.',
+  skip: (req) => req.path.startsWith('/health')
+});
+const adminMetricsLimiter = createRateLimiter({
+  name: 'admin:metrics',
+  windowMs: 5 * 60 * 1000,
+  max: 60,
+  keyGenerator: rateLimitKeys.userOrIp,
+  message: 'Admin metrics are temporarily limited. Please try again shortly.'
+});
 
 function allowedOrigins() {
   return [
@@ -69,6 +94,7 @@ function isLocalDevOrigin(origin) {
   }
 }
 
+app.set('trust proxy', trustProxySetting());
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins().includes(origin) || isLocalDevOrigin(origin)) return callback(null, true);
@@ -79,6 +105,7 @@ app.use(cors({
 app.use(express.json());
 app.use(requestLogger);
 app.use('/uploads', express.static(path.join(rootDir, 'uploads')));
+app.use('/api', globalApiLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/closet', closetRoutes);
 app.use('/api/payments', paymentRoutes);
@@ -106,7 +133,7 @@ app.get('/api/health/ready', async (_req, res) => {
   res.status(ready ? 200 : 503).json({ ok: ready, ready, mongo, redis, shuttingDown, ...service });
 });
 
-app.get('/api/admin/metrics', requireAdmin, async (_req, res, next) => {
+app.get('/api/admin/metrics', requireAdmin, adminMetricsLimiter, async (_req, res, next) => {
   try {
     res.json(await observabilitySnapshot({ mongoose }));
   } catch (error) {

@@ -16,6 +16,7 @@ import { recordAdminAudit } from '../utils/adminAudit.js';
 import { isAllowedAdminEmail, normalizeEmail, requireAdmin, signAdminSession } from '../utils/adminAccess.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
 import { enqueueJob } from '../utils/jobQueue.js';
+import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { deleteStoredFile, readStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
 import { createTempSessionStore } from '../utils/tempSessions.js';
 
@@ -28,6 +29,83 @@ const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.e
 const signupOtpTtlMs = 5 * 60 * 1000;
 const signupOtpSessions = createTempSessionStore('otp:signup', { ttlMs: signupOtpTtlMs });
 const loginOtpSessions = createTempSessionStore('otp:login', { ttlMs: signupOtpTtlMs });
+const authIpLimiter = createRateLimiter({
+  name: 'auth:ip',
+  windowMs: 15 * 60 * 1000,
+  max: 80,
+  keyGenerator: rateLimitKeys.clientIp,
+  message: 'Too many auth requests from this network. Please wait a few minutes and try again.'
+});
+const otpRequestIpLimiter = createRateLimiter({
+  name: 'auth:otp-request-ip',
+  windowMs: 10 * 60 * 1000,
+  max: 12,
+  keyGenerator: rateLimitKeys.clientIp,
+  message: 'Too many OTP requests from this network. Please wait before requesting another code.'
+});
+const otpRequestPhoneLimiter = createRateLimiter({
+  name: 'auth:otp-request-phone',
+  windowMs: 10 * 60 * 1000,
+  max: 3,
+  keyGenerator: rateLimitKeys.bodyPhone,
+  message: 'Too many OTP requests for this phone number. Please wait before requesting another code.'
+});
+const otpRequestPhoneHourlyLimiter = createRateLimiter({
+  name: 'auth:otp-request-phone-hour',
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: rateLimitKeys.bodyPhone,
+  message: 'OTP requests are temporarily limited for this phone number. Please try again later.'
+});
+const otpVerifyLimiter = createRateLimiter({
+  name: 'auth:otp-verify-session',
+  windowMs: signupOtpTtlMs,
+  max: 5,
+  keyGenerator: rateLimitKeys.otpSession,
+  message: 'Too many OTP attempts. Please request a new code and try again.'
+});
+const loginAttemptLimiter = createRateLimiter({
+  name: 'auth:login-identifier',
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: rateLimitKeys.bodyIdentifier,
+  message: 'Too many login attempts. Please wait before trying again.'
+});
+const adminLoginLimiter = createRateLimiter({
+  name: 'auth:admin-login',
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: rateLimitKeys.bodyIdentifier,
+  message: 'Too many admin login attempts. Please wait before trying again.'
+});
+const usernameSuggestionLimiter = createRateLimiter({
+  name: 'auth:username-suggestions',
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  keyGenerator: rateLimitKeys.clientIp,
+  message: 'Username suggestions are temporarily limited. Please try again shortly.'
+});
+const profilePhotoLimiter = createRateLimiter({
+  name: 'auth:profile-photo',
+  windowMs: 30 * 60 * 1000,
+  max: 5,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Profile photo generation is temporarily limited. Please wait before trying again.'
+});
+const adminReadLimiter = createRateLimiter({
+  name: 'auth:admin-read',
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  keyGenerator: rateLimitKeys.userOrIp,
+  message: 'Admin data requests are temporarily limited. Please try again shortly.'
+});
+const adminWriteLimiter = createRateLimiter({
+  name: 'auth:admin-write',
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  keyGenerator: rateLimitKeys.userOrIp,
+  message: 'Too many admin changes. Please pause briefly and try again.'
+});
 
 function profileImageModel() {
   return process.env.FAL_PROFILE_IMAGE_MODEL || process.env.FAL_TRYON_MODEL || 'openai/gpt-image-2/edit';
@@ -440,7 +518,7 @@ function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
 
-router.post('/signup/request-otp', asyncRoute(async (req, res) => {
+router.post('/signup/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, otpRequestPhoneHourlyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   if (!phone) return res.status(400).json({ message: 'Enter a valid phone number' });
   const existing = await User.exists({ phone });
@@ -465,7 +543,7 @@ router.post('/signup/request-otp', asyncRoute(async (req, res) => {
   });
 }));
 
-router.post('/signup/verify-otp', asyncRoute(async (req, res) => {
+router.post('/signup/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const otp = String(req.body?.otp || '').replace(/\D/g, '');
   const otpSession = String(req.body?.otpSession || '');
@@ -531,7 +609,7 @@ router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) =
   }
 }));
 
-router.get('/username-suggestions', async (req, res) => {
+router.get('/username-suggestions', usernameSuggestionLimiter, async (req, res) => {
   const base = usernameFromName(req.query.name) || 'fitlook_user';
   const suggestions = [];
   for (let index = 0; suggestions.length < 4 && index < 20; index += 1) {
@@ -542,7 +620,7 @@ router.get('/username-suggestions', async (req, res) => {
   res.json({ suggestions });
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', authIpLimiter, loginAttemptLimiter, async (req, res) => {
   const identifier = String(req.body.email || req.body.username || '').trim().toLowerCase();
   const { password } = req.body;
   if (!identifier || !password) return res.status(400).json({ message: 'Email or username and password are required' });
@@ -558,7 +636,7 @@ router.post('/login', async (req, res) => {
   res.json({ token: sign(user), user: user.toClient() });
 });
 
-router.post('/login/request-otp', asyncRoute(async (req, res) => {
+router.post('/login/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, otpRequestPhoneHourlyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   if (!phone) return res.status(400).json({ message: 'Enter a valid phone number' });
   const user = await User.findOne({ phone });
@@ -583,7 +661,7 @@ router.post('/login/request-otp', asyncRoute(async (req, res) => {
   });
 }));
 
-router.post('/login/verify-otp', asyncRoute(async (req, res) => {
+router.post('/login/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const otp = String(req.body?.otp || '').replace(/\D/g, '');
   const otpSession = String(req.body?.otpSession || '');
@@ -601,7 +679,7 @@ router.post('/login/verify-otp', asyncRoute(async (req, res) => {
   res.json({ token: sign(user), user: user.toClient() });
 }));
 
-router.post('/admin-login', async (req, res) => {
+router.post('/admin-login', authIpLimiter, adminLoginLimiter, async (req, res) => {
   const email = normalizeEmail(req.body?.email);
   const adminKey = String(req.body?.adminKey || '');
   if (!email || !adminKey) return res.status(400).json({ message: 'Gmail and admin key are required' });
@@ -611,7 +689,7 @@ router.post('/admin-login', async (req, res) => {
   res.json({ token, admin: { email } });
 });
 
-router.get('/admin/users', requireAdmin, async (req, res) => {
+router.get('/admin/users', requireAdmin, adminReadLimiter, async (req, res) => {
   const q = String(req.query.q || '').trim();
   const limit = Math.min(Math.max(Number(req.query.limit) || 80, 1), 150);
   const filter = q ? {
@@ -674,7 +752,7 @@ router.get('/admin/users', requireAdmin, async (req, res) => {
   });
 });
 
-router.get('/admin/operations', requireAdmin, async (_req, res) => {
+router.get('/admin/operations', requireAdmin, adminReadLimiter, async (_req, res) => {
   const [orders, orderTotals, auditLogs] = await Promise.all([
     TokenOrder.find({}).sort({ createdAt: -1 }).limit(12).populate('user', 'name email username').lean(),
     TokenOrder.aggregate([{ $group: { _id: '$status', count: { $sum: 1 }, tokens: { $sum: '$tokens' }, amount: { $sum: '$amount' } } }]),
@@ -716,7 +794,7 @@ router.get('/admin/operations', requireAdmin, async (_req, res) => {
   });
 });
 
-router.patch('/admin/users/:id/tokens', requireAdmin, async (req, res) => {
+router.patch('/admin/users/:id/tokens', requireAdmin, adminWriteLimiter, async (req, res) => {
   const mode = String(req.body?.mode || 'set').toLowerCase();
   const amount = Number(req.body?.amount);
   if (!['set', 'add'].includes(mode)) return res.status(400).json({ message: 'Token mode must be set or add' });
@@ -831,7 +909,7 @@ router.patch('/dev-mode', requireUser, async (req, res) => {
   res.json({ user: req.user.toClient() });
 });
 
-router.post('/body-photo', requireUser, upload.single('bodyPhoto'), async (req, res) => {
+router.post('/body-photo', requireUser, profilePhotoLimiter, upload.single('bodyPhoto'), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Upload a profile photo first' });
   try {
     const generateFullBody = shouldGenerateFullBodyProfileForRequest(req);
@@ -846,7 +924,7 @@ router.post('/body-photo', requireUser, upload.single('bodyPhoto'), async (req, 
   }
 });
 
-router.post('/body-photo/generate-full-body', requireUser, asyncRoute(async (req, res) => {
+router.post('/body-photo/generate-full-body', requireUser, profilePhotoLimiter, asyncRoute(async (req, res) => {
   if (!shouldGenerateFullBodyProfile()) return res.status(400).json({ message: 'AI full-body profile generation is disabled' });
   const currentBodyPhoto = req.user.bodyPhoto?.toObject ? req.user.bodyPhoto.toObject() : req.user.bodyPhoto;
   const sourceBodyPhoto = currentBodyPhoto?.original || currentBodyPhoto;

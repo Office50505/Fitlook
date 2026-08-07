@@ -3,12 +3,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { requireUser } from './auth.js';
 import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
+import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '../..');
 const debugSubjectIsolation = ['1', 'true', 'yes', 'on'].includes(String(process.env.DEBUG_SUBJECT_ISOLATION || '').toLowerCase());
+const subjectIsolationLimiter = createRateLimiter({
+  name: 'images:subject-isolation',
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Image processing is temporarily limited. Please wait before processing more images.'
+});
 
 function logSubjectIsolation(step, meta = {}) {
   if (!debugSubjectIsolation) return;
@@ -39,7 +47,7 @@ function userScopedUploadUrl(user, imageUrl = '') {
   return pathname;
 }
 
-router.post('/subject-isolation', requireUser, async (req, res) => {
+router.post('/subject-isolation', requireUser, subjectIsolationLimiter, async (req, res) => {
   try {
     const imageUrl = userScopedUploadUrl(req.user, req.body?.imageUrl);
     logSubjectIsolation('request received', {

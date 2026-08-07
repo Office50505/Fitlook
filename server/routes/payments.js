@@ -5,8 +5,23 @@ import TokenOrder from '../models/TokenOrder.js';
 import TryOn from '../models/TryOn.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
+import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 
 const router = express.Router();
+const paymentCreateLimiter = createRateLimiter({
+  name: 'payments:create',
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Too many checkout attempts. Please wait a few minutes before trying again.'
+});
+const paymentStatusLimiter = createRateLimiter({
+  name: 'payments:status',
+  windowMs: 5 * 60 * 1000,
+  max: 30,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Payment status checks are temporarily limited. Please try again shortly.'
+});
 
 const MONTHLY_PLAN = {
   id: 'monthly_100_tokens',
@@ -404,7 +419,7 @@ router.get('/credits/history', requireUser, async (req, res) => {
   });
 });
 
-router.post('/phonepe/subscription', requireUser, async (req, res) => {
+router.post('/phonepe/subscription', requireUser, paymentCreateLimiter, async (req, res) => {
   try {
     const order = await createPhonePePayment({ req, user: req.user });
     res.status(201).json({ order: order.toClient(), redirectUrl: order.redirectUrl });
@@ -413,7 +428,7 @@ router.post('/phonepe/subscription', requireUser, async (req, res) => {
   }
 });
 
-router.get('/orders/:merchantOrderId/status', requireUser, async (req, res) => {
+router.get('/orders/:merchantOrderId/status', requireUser, paymentStatusLimiter, async (req, res) => {
   const order = await TokenOrder.findOne({
     merchantOrderId: req.params.merchantOrderId,
     user: req.user._id

@@ -657,6 +657,14 @@ function usableBrands(brands = []) {
   return brands.map((brand) => cleanDisplayText(brand, '')).filter(Boolean);
 }
 
+function rateLimitMessage(data, fallback) {
+  const base = readableError(data, fallback);
+  const seconds = Number(data?.retryAfterSeconds || 0);
+  if (!Number.isFinite(seconds) || seconds <= 0) return base;
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  return `${base} Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+}
+
 async function api(path, options = {}) {
   const {
     timeout = API_TIMEOUT_MS,
@@ -691,7 +699,7 @@ async function api(path, options = {}) {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        const error = new Error(readableError(data, `Request failed (${res.status})`));
+        const error = new Error(res.status === 429 ? rateLimitMessage(data, `Request failed (${res.status})`) : readableError(data, `Request failed (${res.status})`));
         error.status = res.status;
         throw error;
       }

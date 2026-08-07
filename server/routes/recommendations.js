@@ -5,12 +5,27 @@ import UserEvent from '../models/UserEvent.js';
 import UserPreference from '../models/UserPreference.js';
 import { requireUser } from './auth.js';
 import { createHybridCache } from '../utils/cache.js';
+import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { requireAdmin } from '../utils/adminAccess.js';
 
 const router = express.Router();
 const recommendationCacheTtlMs = Number(process.env.RECOMMENDATION_READ_CACHE_TTL_MS || 5 * 60 * 1000);
 const productPoolCache = createHybridCache('recommendations:product-pool', { ttlMs: recommendationCacheTtlMs, maxItems: 20 });
 const similarProductsCache = createHybridCache('recommendations:similar', { ttlMs: recommendationCacheTtlMs, maxItems: 300 });
+const recommendationEventLimiter = createRateLimiter({
+  name: 'recommendations:events',
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Too many recommendation events. Please slow down and keep browsing.'
+});
+const recommendationReadLimiter = createRateLimiter({
+  name: 'recommendations:read',
+  windowMs: 5 * 60 * 1000,
+  max: 300,
+  keyGenerator: rateLimitKeys.userOrIp,
+  message: 'Recommendations are temporarily limited. Please try again shortly.'
+});
 
 async function clearRecommendationCaches() {
   await Promise.all([
@@ -133,7 +148,7 @@ function similarScore(base, product) {
   );
 }
 
-router.post('/events', requireUser, async (req, res) => {
+router.post('/events', requireUser, recommendationEventLimiter, async (req, res) => {
   const type = String(req.body?.type || '').trim();
   if (!EVENT_WEIGHTS[type]) return res.status(400).json({ message: 'Unknown recommendation event type' });
 
@@ -227,7 +242,7 @@ router.get('/admin/stats', requireAdmin, async (_req, res) => {
   });
 });
 
-router.get('/for-you', requireUser, async (req, res) => {
+router.get('/for-you', requireUser, recommendationReadLimiter, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 8, 24);
   const preference = await UserPreference.findOne({ user: req.user._id }).lean();
   const products = await productPoolCache.remember(
@@ -243,7 +258,7 @@ router.get('/for-you', requireUser, async (req, res) => {
   res.json({ products: ranked, personalized: Boolean(preference) });
 });
 
-router.get('/similar/:productId', async (req, res) => {
+router.get('/similar/:productId', recommendationReadLimiter, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.productId)) return res.status(404).json({ message: 'Product not found' });
   const limit = Math.min(Number(req.query.limit) || 4, 12);
   const cacheKey = `${req.params.productId}:${limit}`;

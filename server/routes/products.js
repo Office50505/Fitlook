@@ -7,6 +7,7 @@ import { requireUser } from './auth.js';
 import { clearRecommendationCaches } from './recommendations.js';
 import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { createHybridCache } from '../utils/cache.js';
+import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility, genderedSearchQuery, genderPreferenceForQuery } from '../utils/genderPreference.js';
 import { enqueueJob } from '../utils/jobQueue.js';
@@ -18,6 +19,27 @@ const router = express.Router();
 const readCacheTtlMs = Number(process.env.PRODUCT_READ_CACHE_TTL_MS || 5 * 60 * 1000);
 const productListCache = createHybridCache('products:list', { ttlMs: readCacheTtlMs, maxItems: 150 });
 const productDetailCache = createHybridCache('products:detail', { ttlMs: readCacheTtlMs, maxItems: 300 });
+const productReadLimiter = createRateLimiter({
+  name: 'products:read',
+  windowMs: 5 * 60 * 1000,
+  max: 600,
+  keyGenerator: rateLimitKeys.clientIp,
+  message: 'Catalog browsing is temporarily limited from this network. Please try again shortly.'
+});
+const amazonSearchLimiter = createRateLimiter({
+  name: 'products:amazon-search',
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Too many style bot searches. Please wait a few minutes before searching again.'
+});
+const adminProductWriteLimiter = createRateLimiter({
+  name: 'products:admin-write',
+  windowMs: 10 * 60 * 1000,
+  max: 60,
+  keyGenerator: rateLimitKeys.userOrIp,
+  message: 'Too many product admin actions. Please pause briefly and try again.'
+});
 
 async function clearProductReadCaches() {
   await Promise.all([
@@ -1012,7 +1034,7 @@ function applyProductUpdate(product, body = {}) {
   }
 }
 
-router.get('/', async (req, res) => {
+router.get('/', productReadLimiter, async (req, res) => {
   const cacheKey = req.originalUrl;
   const payload = await productListCache.remember(cacheKey, async () => {
     const { q, tag, category, brand, gender, featured, newArrival, sort } = req.query;
@@ -1058,7 +1080,7 @@ router.get('/', async (req, res) => {
   res.json(payload);
 });
 
-router.post('/amazon-search', requireUser, async (req, res) => {
+router.post('/amazon-search', requireUser, amazonSearchLimiter, async (req, res) => {
   const query = String(req.body?.query || '').trim();
   const limit = Math.min(Math.max(Number(req.body?.limit) || 2, 1), 2);
   const genderPreference = genderPreferenceForQuery(query, req.body?.genderPreference || req.user.genderPreference);
@@ -1134,7 +1156,7 @@ async function runProductRecategorizationJob() {
   return { updated, checked: products.length, changes };
 }
 
-router.post('/recategorize', requireAdmin, async (req, res) => {
+router.post('/recategorize', requireAdmin, adminProductWriteLimiter, async (req, res) => {
   if (req.body?.async || req.query.async === '1') {
     const job = await enqueueJob('maintenance', 'product-recategorize', {}, {
       jobId: `product-recategorize:${Date.now()}`
@@ -1159,7 +1181,7 @@ router.post('/recategorize', requireAdmin, async (req, res) => {
   res.json(result);
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', productReadLimiter, async (req, res) => {
   try {
     const payload = await productDetailCache.remember(req.params.id, async () => {
       const product = await Product.findOne({ _id: req.params.id, isActive: true }).lean();
@@ -1176,7 +1198,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/preview-link', requireAdmin, async (req, res) => {
+router.post('/preview-link', requireAdmin, adminProductWriteLimiter, async (req, res) => {
   try {
     const draft = await buildProductDraft(req.body.affiliateLink);
     res.json({ draft });
@@ -1185,7 +1207,7 @@ router.post('/preview-link', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/', requireAdmin, upload.single('image'), async (req, res) => {
+router.post('/', requireAdmin, adminProductWriteLimiter, upload.single('image'), async (req, res) => {
   const { name, brand, category, gender, price } = req.body;
   if (!name || !brand || !category || !price) {
     return res.status(400).json({ message: 'Name, brand, category, and price are required' });
@@ -1240,7 +1262,7 @@ router.post('/', requireAdmin, upload.single('image'), async (req, res) => {
   res.status(201).json({ product: product.toClient() });
 });
 
-router.patch('/:id', requireAdmin, async (req, res) => {
+router.patch('/:id', requireAdmin, adminProductWriteLimiter, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
@@ -1260,7 +1282,7 @@ router.patch('/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.patch('/:id/garment-placement', requireAdmin, async (req, res) => {
+router.patch('/:id/garment-placement', requireAdmin, adminProductWriteLimiter, async (req, res) => {
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { garmentPlacement: normalizeGarmentPlacement(req.body.garmentPlacement) },
@@ -1278,7 +1300,7 @@ router.patch('/:id/garment-placement', requireAdmin, async (req, res) => {
   res.json({ product: product.toClient() });
 });
 
-router.patch('/:id/tryon-model', requireAdmin, async (req, res) => {
+router.patch('/:id/tryon-model', requireAdmin, adminProductWriteLimiter, async (req, res) => {
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { tryOnModel: normalizeTryOnModel(req.body.tryOnModel) },
@@ -1296,7 +1318,7 @@ router.patch('/:id/tryon-model', requireAdmin, async (req, res) => {
   res.json({ product: product.toClient() });
 });
 
-router.delete('/', requireAdmin, async (req, res) => {
+router.delete('/', requireAdmin, adminProductWriteLimiter, async (req, res) => {
   const result = await Product.updateMany({ isActive: true }, { isActive: false });
   await clearReadCachesAfterProductWrite();
   await recordAdminAudit(req, {
@@ -1308,7 +1330,7 @@ router.delete('/', requireAdmin, async (req, res) => {
   res.json({ removed: result.modifiedCount || 0 });
 });
 
-router.delete('/:id', requireAdmin, async (req, res) => {
+router.delete('/:id', requireAdmin, adminProductWriteLimiter, async (req, res) => {
   const product = await Product.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
   if (!product) return res.status(404).json({ message: 'Product not found' });
   await clearReadCachesAfterProductWrite();

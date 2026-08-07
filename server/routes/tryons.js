@@ -15,6 +15,7 @@ import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility } from '../utils/genderPreference.js';
 import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
 import { enqueueJob, enqueueJobAndWait } from '../utils/jobQueue.js';
+import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { readStoredFile, saveBuffer, storedFileSignature } from '../utils/storage.js';
 
 const router = express.Router();
@@ -29,6 +30,41 @@ const inFlightImageDataUriCache = new Map();
 const avifExtensions = new Set(['.avif']);
 const avifMimeTypes = new Set(['image/avif', 'image/x-avif']);
 const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.env.DEBUG_GENERATION_LOGS || '').toLowerCase());
+const tryOnReadLimiter = createRateLimiter({
+  name: 'tryons:read',
+  windowMs: 5 * 60 * 1000,
+  max: 240,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Try-on history is temporarily limited. Please try again shortly.'
+});
+const tryOnImageBurstLimiter = createRateLimiter({
+  name: 'tryons:image-burst',
+  windowMs: 60 * 1000,
+  max: 5,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Too many AI try-on requests at once. Please wait a minute before generating more.'
+});
+const tryOnImageHourlyLimiter = createRateLimiter({
+  name: 'tryons:image-hour',
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  keyGenerator: rateLimitKeys.user,
+  message: 'AI try-on generation is temporarily limited for your account. Please try again later.'
+});
+const tryOnVideoBurstLimiter = createRateLimiter({
+  name: 'tryons:video-burst',
+  windowMs: 10 * 60 * 1000,
+  max: 3,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Too many video try-on requests. Please wait before generating another video.'
+});
+const tryOnVideoHourlyLimiter = createRateLimiter({
+  name: 'tryons:video-hour',
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Video try-on generation is temporarily limited for your account. Please try again later.'
+});
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 },
@@ -1444,7 +1480,7 @@ async function runProductTryOnJob({ userId, productId, requestedModel = '', forc
   }
 }
 
-router.get('/', requireUser, async (req, res) => {
+router.get('/', requireUser, tryOnReadLimiter, async (req, res) => {
   const ids = String(req.query.productIds || '')
     .split(',')
     .map((id) => id.trim())
@@ -1456,7 +1492,7 @@ router.get('/', requireUser, async (req, res) => {
   res.json({ tryOns: tryOns.map(tryOnToClient) });
 });
 
-router.post('/custom', requireUser, upload.single('garment'), async (req, res) => {
+router.post('/custom', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLimiter, upload.single('garment'), async (req, res) => {
   const timer = createTimer('custom', { userId: req.user._id.toString() });
   let reserved = false;
 
@@ -1487,7 +1523,7 @@ router.post('/custom', requireUser, upload.single('garment'), async (req, res) =
   }
 });
 
-router.post('/external', requireUser, async (req, res) => {
+router.post('/external', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLimiter, async (req, res) => {
   let product;
   try {
     product = externalProductFromBody(req.body?.product);
@@ -1548,7 +1584,7 @@ router.post('/external', requireUser, async (req, res) => {
   }
 });
 
-router.post('/:productId/video', requireUser, async (req, res) => {
+router.post('/:productId/video', requireUser, tryOnVideoBurstLimiter, tryOnVideoHourlyLimiter, async (req, res) => {
   const forceGenerate = Boolean(req.body?.force || req.body?.refresh);
   const timer = createTimer('video', {
     userId: req.user._id.toString(),
@@ -1606,7 +1642,7 @@ router.post('/:productId/video', requireUser, async (req, res) => {
   }
 });
 
-router.post('/:productId', requireUser, async (req, res) => {
+router.post('/:productId', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLimiter, async (req, res) => {
   const requestedModel = String(req.body?.tryOnModel || '');
   const forceGenerate = Boolean(req.body?.force || req.body?.refresh);
 

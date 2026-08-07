@@ -1,15 +1,23 @@
 import express from 'express';
 import { requireUser } from './auth.js';
 import { getJobStatus } from '../utils/jobQueue.js';
+import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 
 const router = express.Router();
 const allowedQueues = new Set(['tryon', 'profile']);
+const jobStatusLimiter = createRateLimiter({
+  name: 'jobs:status',
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Job status checks are temporarily limited. Please wait a moment before checking again.'
+});
 
 function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
 
-router.get('/:queueName/:jobId', requireUser, asyncRoute(async (req, res) => {
+router.get('/:queueName/:jobId', requireUser, jobStatusLimiter, asyncRoute(async (req, res) => {
   const queueName = String(req.params.queueName || '').trim();
   const jobId = String(req.params.jobId || '').trim();
   if (!allowedQueues.has(queueName) || !jobId) return res.status(404).json({ message: 'Job not found' });

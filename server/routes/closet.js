@@ -10,6 +10,7 @@ import ClosetOutfit from '../models/ClosetOutfit.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
 import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
+import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { deleteStoredFile, readStoredFile, saveBuffer } from '../utils/storage.js';
 
 const router = express.Router();
@@ -18,6 +19,34 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '../..');
 const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.env.DEBUG_GENERATION_LOGS || '').toLowerCase());
 const imageMimeTypes = new Set(['image/avif', 'image/x-avif', 'image/heic', 'image/heif']);
+const closetReadLimiter = createRateLimiter({
+  name: 'closet:read',
+  windowMs: 5 * 60 * 1000,
+  max: 240,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Wardrobe requests are temporarily limited. Please try again shortly.'
+});
+const closetUploadLimiter = createRateLimiter({
+  name: 'closet:upload',
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Too many wardrobe image uploads. Please wait a few minutes before uploading more.'
+});
+const closetChatLimiter = createRateLimiter({
+  name: 'closet:chat',
+  windowMs: 5 * 60 * 1000,
+  max: 30,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Too many stylist requests. Please slow down for a moment.'
+});
+const closetOutfitLimiter = createRateLimiter({
+  name: 'closet:outfit-generate',
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Too many outfit generations. Please wait before creating another look.'
+});
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -677,7 +706,7 @@ async function openAiStylistReply(message, items, suggestions) {
   return data.output_text || data.output?.flatMap((item) => item.content || []).map((part) => part.text).filter(Boolean).join('\n') || '';
 }
 
-router.get('/', requireUser, async (req, res) => {
+router.get('/', requireUser, closetReadLimiter, async (req, res) => {
   const items = await ClosetItem.find({ user: req.user._id }).sort({ favorite: -1, updatedAt: -1 });
   const outfits = await ClosetOutfit.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(24);
   const stats = closetStats(items);
@@ -690,7 +719,7 @@ router.get('/', requireUser, async (req, res) => {
   });
 });
 
-router.post('/items/analyze', requireUser, upload.single('item'), async (req, res) => {
+router.post('/items/analyze', requireUser, closetUploadLimiter, upload.single('item'), async (req, res) => {
   const timer = createTimer('analyze-item', { userId: req.user._id.toString() });
   try {
     if (!req.file) return res.status(400).json({ message: 'Upload a clothing image first' });
@@ -711,7 +740,7 @@ router.post('/items/analyze', requireUser, upload.single('item'), async (req, re
   }
 });
 
-router.post('/items', requireUser, upload.single('item'), async (req, res) => {
+router.post('/items', requireUser, closetUploadLimiter, upload.single('item'), async (req, res) => {
   const timer = createTimer('upload-item', { userId: req.user._id.toString() });
   try {
     if (!req.file) return res.status(400).json({ message: 'Upload a clothing image first' });
@@ -787,7 +816,7 @@ router.delete('/items/:id', requireUser, async (req, res) => {
   res.json({ ok: true });
 });
 
-router.post('/suggest', requireUser, async (req, res) => {
+router.post('/suggest', requireUser, closetChatLimiter, async (req, res) => {
   const items = await ClosetItem.find({ user: req.user._id }).sort({ favorite: -1, updatedAt: -1 });
   const context = {
     occasion: cleanWord(req.body?.occasion, 'today'),
@@ -797,7 +826,7 @@ router.post('/suggest', requireUser, async (req, res) => {
   res.json({ suggestions: buildSuggestions(items, context) });
 });
 
-router.post('/chat', requireUser, async (req, res) => {
+router.post('/chat', requireUser, closetChatLimiter, async (req, res) => {
   const message = cleanWord(req.body?.message).slice(0, 600);
   if (!message) return res.status(400).json({ message: 'Ask the stylist what you want to wear.' });
   const items = await ClosetItem.find({ user: req.user._id }).sort({ favorite: -1, updatedAt: -1 });
@@ -812,7 +841,7 @@ router.post('/chat', requireUser, async (req, res) => {
   res.json({ reply: reply || fallbackStylistReply(message, items, suggestions), suggestions });
 });
 
-router.post('/outfits/generate', requireUser, async (req, res) => {
+router.post('/outfits/generate', requireUser, closetOutfitLimiter, async (req, res) => {
   const itemIds = [...new Set((Array.isArray(req.body?.itemIds) ? req.body.itemIds : []).map((id) => String(id || '').trim()).filter(Boolean))].slice(0, 5);
   const timer = createTimer('generate-outfit', { userId: req.user._id.toString(), itemCount: itemIds.length });
   let reserved = false;

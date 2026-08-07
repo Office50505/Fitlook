@@ -28,13 +28,21 @@ function readableError(value, fallback = 'Request failed') {
   return String(value);
 }
 
+function rateLimitMessage(data, fallback) {
+  const base = readableError(data, fallback);
+  const seconds = Number(data?.retryAfterSeconds || 0);
+  if (!Number.isFinite(seconds) || seconds <= 0) return base;
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  return `${base} Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+}
+
 async function api(path, options = {}) {
   const headers = options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' };
   const session = storedAdminSession();
   const authHeaders = session?.token ? { Authorization: `Bearer ${session.token}` } : {};
   const res = await fetch(`${API_BASE}/api${path}`, { ...options, headers: { ...headers, ...authHeaders, ...options.headers } });
   const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(readableError(data, `Request failed (${res.status})`));
+  if (!res.ok) throw new Error(res.status === 429 ? rateLimitMessage(data, `Request failed (${res.status})`) : readableError(data, `Request failed (${res.status})`));
   return data;
 }
 
