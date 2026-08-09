@@ -11,6 +11,8 @@
   --accent: #d8c8b6;
   --danger: #8b2f2f;
   --shadow: 0 16px 38px rgba(74, 53, 31, .08);
+  --font-heading: "Plus Jakarta Sans", sans-serif;
+  --font-body: "Manrope", sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -21,10 +23,34 @@ body {
   margin: 0;
   background: var(--page);
   color: var(--ink);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-body);
 }
 
 button, input, select, textarea { font: inherit; }
+
+body,
+p,
+span,
+input,
+textarea,
+select,
+label,
+nav,
+li,
+a,
+small,
+button {
+  font-family: var(--font-body);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+}
 
 a { color: inherit; }
 
@@ -65,14 +91,14 @@ a { color: inherit; }
   background: #fff;
   color: var(--green);
   font-size: 18px;
-  font-weight: 950;
+  font-weight: 700;
   box-shadow: 0 10px 24px rgba(21, 21, 21, .07);
 }
 
 .login-art > span {
   color: var(--green);
   font-size: 13px;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .login-art h1 {
@@ -185,7 +211,7 @@ a { color: inherit; }
 .sidebar-brand strong {
   overflow: hidden;
   color: var(--green);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-heading);
   font-size: 28px;
   line-height: 1;
   text-overflow: ellipsis;
@@ -195,7 +221,7 @@ a { color: inherit; }
 .sidebar-brand span {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -210,7 +236,7 @@ a { color: inherit; }
   background: #fffdf8;
   color: var(--green);
   font-size: 14px;
-  font-weight: 950;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -226,7 +252,7 @@ a { color: inherit; }
   color: #fff;
   padding: 0 14px;
   font-size: 13px;
-  font-weight: 950;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -258,7 +284,7 @@ a { color: inherit; }
   color: var(--muted);
   padding: 0 12px;
   font-size: 14px;
-  font-weight: 850;
+  font-weight: 700;
   text-align: left;
   cursor: pointer;
 }
@@ -273,7 +299,7 @@ a { color: inherit; }
   background: #fffaf2;
   color: var(--green);
   font-size: 11px;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .sidebar-nav button svg {
@@ -345,7 +371,7 @@ a { color: inherit; }
   overflow: hidden;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -357,7 +383,7 @@ a { color: inherit; }
   background: #fffdf8;
   color: var(--ink);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -388,7 +414,7 @@ a { color: inherit; }
   background: #fff;
   color: var(--ink);
   font-size: 12px;
-  font-weight: 950;
+  font-weight: 700;
   box-shadow: 0 10px 24px rgba(21, 21, 21, .05);
   cursor: pointer;
 }
@@ -417,7 +443,7 @@ a { color: inherit; }
   margin: 0 0 8px;
   color: var(--green);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -482,7 +508,7 @@ h1 {
   padding: 0 14px;
   color: var(--green);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -589,7 +615,7 @@ h1 {
   color: var(--muted);
   padding: 0 12px;
   font-size: 13px;
-  font-weight: 850;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -614,7 +640,7 @@ h1 {
   overflow: hidden;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -628,7 +654,7 @@ h1 {
   color: var(--ink);
   padding: 0 15px;
   font-size: 12px;
-  font-weight: 950;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -709,7 +735,7 @@ h1 {
   padding: 0 10px;
   font-size: 13px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .admin-tabs button.active em {
@@ -851,7 +877,7 @@ h1 {
   color: var(--green);
   font-size: 12px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 700;
   text-align: center;
 }
 
@@ -900,7 +926,7 @@ h1 {
   background: var(--soft);
   color: var(--ink);
   font-size: 11px;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .admin-topbar .admin-tabs button.active span {
@@ -969,7 +995,7 @@ h1 {
   color: var(--green);
   padding: 0 14px;
   font-size: 12px;
-  font-weight: 950;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -1070,7 +1096,7 @@ h1 {
   background: var(--green);
   color: #fff;
   font-size: 34px;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .pipeline-score strong,
@@ -1110,7 +1136,7 @@ h1 {
 .signal-summary-strip span {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 950;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -1161,7 +1187,7 @@ h1 {
 .attention-list span {
   color: var(--danger);
   font-size: 10px;
-  font-weight: 950;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -1294,7 +1320,7 @@ h1 {
   background: var(--green);
   color: #fff;
   font-size: 34px;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .priority-metric strong,
@@ -1377,7 +1403,7 @@ h1 {
 .settings-summary-card span {
   color: var(--muted);
   font-size: 11px;
-  font-weight: 950;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -1414,7 +1440,7 @@ h1 {
 .settings-list span {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .settings-list strong {
@@ -1436,7 +1462,7 @@ h1 {
   color: #fff;
   padding: 0 14px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -1546,7 +1572,7 @@ h1 {
   padding: 0 12px 8px;
   color: var(--muted);
   font-size: 10px;
-  font-weight: 950;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -1583,7 +1609,7 @@ h1 {
   background: var(--green);
   color: #fff;
   font-size: 12px;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .user-identity strong,
@@ -1652,7 +1678,7 @@ h1 {
   color: #fff;
   padding: 0 12px;
   font-size: 12px;
-  font-weight: 950;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -1752,7 +1778,7 @@ h1 {
 .order-summary-strip span {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 950;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -1831,7 +1857,7 @@ h1 {
   color: #fff;
   padding: 0 14px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -1872,7 +1898,7 @@ h1 {
 .stat-box span {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -1937,7 +1963,7 @@ h1 {
 .signal-spotlight span {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: .04em;
   text-transform: uppercase;
 }
@@ -2063,7 +2089,7 @@ h1 {
   background: var(--warm);
   color: var(--green);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .top-product-card strong,
@@ -2151,7 +2177,7 @@ h1 {
 .card-head span, .count {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .catalog-panel {
@@ -2189,7 +2215,7 @@ h1 {
   color: var(--ink);
   padding: 0 12px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -2330,7 +2356,7 @@ h1 {
 .field span {
   color: var(--ink);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .field input,
@@ -2379,7 +2405,7 @@ h1 {
   color: #fff;
   padding: 10px 13px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -2430,7 +2456,7 @@ h1 {
   padding: 0;
   color: var(--ink);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .segmented-field label {
@@ -2452,7 +2478,7 @@ h1 {
   background: #fff;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -2521,13 +2547,13 @@ h1 {
   border-radius: 50%;
   background: var(--warm);
   color: var(--green);
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .upload-title {
   display: block;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .upload-help {
@@ -2545,7 +2571,7 @@ h1 {
   gap: 16px;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .form-message,
@@ -2598,7 +2624,7 @@ h1 {
   background: #fffdf8;
   color: var(--green);
   font-size: 18px;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .distribution-pie-copy {
@@ -2631,7 +2657,7 @@ h1 {
 .distribution-item span {
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .distribution-list {
@@ -2692,7 +2718,7 @@ h1 {
   padding: 0 12px 8px;
   color: var(--muted);
   font-size: 10px;
-  font-weight: 950;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -2851,7 +2877,7 @@ h1 {
   padding: 0 8px;
   color: var(--ink);
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: capitalize;
 }
 
@@ -2860,7 +2886,7 @@ h1 {
   margin-top: 6px;
   color: var(--green);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .admin-row-links {
@@ -2870,7 +2896,7 @@ h1 {
   align-items: center;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .product-link-cell {
@@ -2900,7 +2926,7 @@ h1 {
   padding: 0 7px;
   color: #7a4a12;
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .admin-product-actions {
@@ -2955,7 +2981,7 @@ h1 {
   border-radius: 999px;
   padding: 0 8px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   text-decoration: none;
 }
 
@@ -2979,7 +3005,7 @@ h1 {
 .admin-product-actions span {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -2991,7 +3017,7 @@ h1 {
   padding: 0 8px;
   color: var(--ink);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .editor-backdrop {
@@ -3028,7 +3054,7 @@ h1 {
   margin-bottom: 5px;
   color: var(--green);
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -3484,4 +3510,71 @@ h1 {
   .top-product-card b {
     grid-column: 2;
   }
+}
+
+/* Final typography normalization for the admin app. */
+body,
+p,
+span,
+input,
+textarea,
+select,
+label,
+nav,
+li,
+a,
+small,
+button,
+.sidebar-nav,
+.admin-topbar,
+.login-card,
+.metric-card,
+.content-card,
+.table-card,
+.form-card {
+  font-family: var(--font-body) !important;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.sidebar-brand strong,
+.login-art h1,
+.login-card h2,
+.page-title h1,
+.content-card h2,
+.form-card h2 {
+  font-family: var(--font-heading) !important;
+}
+
+h1,
+h2,
+.sidebar-brand strong,
+.login-art h1,
+.login-card h2,
+.page-title h1 {
+  font-weight: 700 !important;
+}
+
+h3,
+h4,
+h5,
+h6,
+.content-card h2,
+.form-card h2 {
+  font-weight: 600 !important;
+}
+
+button,
+.button,
+.submit,
+.sidebar-nav a,
+.sidebar-nav button,
+.badge,
+.chip {
+  font-family: var(--font-body) !important;
+  font-weight: 600 !important;
 }

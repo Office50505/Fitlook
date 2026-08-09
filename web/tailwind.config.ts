@@ -15,8 +15,8 @@ const config: Config = {
         ink: "#0f0f0f"
       },
       fontFamily: {
-        display: ["var(--font-fitlook-display)", "Georgia", "serif"],
-        sans: ["var(--font-fitlook-sans)", "Inter", "system-ui", "sans-serif"]
+        display: ["var(--font-heading)", "Plus Jakarta Sans", "sans-serif"],
+        sans: ["var(--font-body)", "Manrope", "sans-serif"]
       },
       borderRadius: {
         pill: "999px"

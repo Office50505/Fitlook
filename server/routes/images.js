@@ -23,7 +23,7 @@ function userScopedUploadUrl(user, imageUrl = '') {
   const value = String(imageUrl || '').trim();
   const pathname = uploadPathname(value);
   if (!pathname.startsWith('/uploads/')) {
-    const error = new Error('Only saved FitLook upload images can be processed from this endpoint');
+    const error = new Error('Only saved Lookmefy upload images can be processed from this endpoint');
     error.status = 400;
     throw error;
   }

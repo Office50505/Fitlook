@@ -170,7 +170,7 @@ async function imageBufferFromInput({ rootDir, imageUrl, imageBuffer, storedImag
     const response = await fetch(source, {
       headers: {
         accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-        'user-agent': 'Mozilla/5.0 FitLook subject isolation fetcher'
+        'user-agent': 'Mozilla/5.0 Lookmefy subject isolation fetcher'
       }
     });
     if (!response.ok) throw new Error(`Could not fetch source image (${response.status})`);

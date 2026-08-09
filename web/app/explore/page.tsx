@@ -5,7 +5,7 @@ export default function ExplorePage() {
     <main className="grid min-h-svh place-items-center bg-ink px-6 text-center text-white">
       <section className="max-w-md space-y-5">
         <p className="text-sm uppercase tracking-[0.34em] text-white/60">
-          Explore FitLook
+          Explore Lookmefy
         </p>
         <h1 className="font-display text-5xl">Next screen ready.</h1>
         <p className="text-white/70">

@@ -203,7 +203,7 @@ async function generatedBytesFromUrl(url) {
   const response = await fetch(url, {
     headers: {
       accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-      'user-agent': 'Mozilla/5.0 FitLook profile image fetcher'
+      'user-agent': 'Mozilla/5.0 Lookmefy profile image fetcher'
     }
   });
   if (!response.ok) throw new Error('Could not download generated profile image');
@@ -562,7 +562,7 @@ router.post('/login/request-otp', asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   if (!phone) return res.status(400).json({ message: 'Enter a valid phone number' });
   const user = await User.findOne({ phone });
-  if (!user) return res.status(404).json({ message: 'No FitLook account found for this phone number' });
+  if (!user) return res.status(404).json({ message: 'No Lookmefy account found for this phone number' });
 
   const otp = String(randomInt(100000, 999999));
   const { id: otpSession } = await loginOtpSessions.create({

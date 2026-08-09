@@ -834,7 +834,7 @@ async function buildProductDraft(affiliateLink) {
     redirect: 'follow',
     headers: {
       accept: 'text/html,application/xhtml+xml',
-      'user-agent': 'Mozilla/5.0 FitLook product importer'
+      'user-agent': 'Mozilla/5.0 Lookmefy product importer'
     }
   });
   if (!response.ok) throw new Error('Could not open that affiliate link');

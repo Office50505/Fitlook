@@ -431,7 +431,8 @@ function categoryVisualKey(value) {
   if (/\b(watches?|smart ?watches?|smartwatch(?:es)?|chronograph)\b/.test(key)) return 'watches';
   if (/\b(belts?|caps?|hats?|scarves?|ties?|jewellery|jewelry|necklaces?|bracelets?|earrings?|accessor(?:y|ies))\b/.test(key)) return 'accessories';
   if (/\b(sarees?|saris?|lehengas?|dupattas?|kurtas?|kurtis?|salwars?|churidars?|anarkali|palazzos?|ethnic|traditional|shararas?)\b/.test(key)) return 'ethnic wear';
-  if (/\b(dresses?|gowns?|bodycon|maxi|midi|mini dress|a line dress|wrap dress|party dress|skirts?|skorts?)\b/.test(key)) return 'dresses';
+  if (/\b(skirts?|skorts?)\b/.test(key)) return 'skirts';
+  if (/\b(dresses?|gowns?|bodycon|maxi|midi|mini dress|a line dress|wrap dress|party dress)\b/.test(key)) return 'dresses';
   if (/\b(jeans?|denim)\b/.test(key)) return 'jeans';
   if (/\b(shorts?|bermudas?)\b/.test(key)) return 'shorts';
   if (/\b(pants?|trousers?|joggers?|leggings?|chinos?|cargo pants?|track pants?|bottom ?wear)\b/.test(key)) return 'pants';
@@ -495,39 +496,39 @@ const categoryIconVisuals = {
   lingerie: { image: 'category-heroes/innerwear-hero.png', position: 'center' },
   underwear: { image: 'category-heroes/innerwear-hero.png', position: 'center' },
   shorts: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
-  jeans: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
-  denim: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
-  pants: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
-  trousers: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
-  bottoms: { image: 'category-heroes/bottomwear-hero.png', position: 'center' },
+  jeans: { image: 'category-generated/jeans.png', position: 'center' },
+  denim: { image: 'category-generated/jeans.png', position: 'center' },
+  pants: { image: 'category-generated/pants.png', position: 'center' },
+  trousers: { image: 'category-generated/pants.png', position: 'center' },
+  bottoms: { image: 'category-generated/pants.png', position: 'center' },
   shoes: { image: 'category-heroes/shoes-hero.png', position: 'center' },
   footwear: { image: 'category-heroes/shoes-hero.png', position: 'center' },
   dresses: { image: 'category-heroes/dresses-hero.png', position: 'center' },
   dress: { image: 'category-heroes/dresses-hero.png', position: 'center' },
-  skirts: { image: 'category-heroes/dresses-hero.png', position: 'center' },
+  skirts: { image: 'category-generated/skirts.png', position: 'center' },
   tops: { image: 'category-heroes/tops-hero.png', position: 'center' },
-  shirts: { image: 'category-heroes/shirts-hero.png', position: 'center' },
-  shirt: { image: 'category-heroes/shirts-hero.png', position: 'center' },
-  't-shirts': { image: 'category-heroes/tops-hero.png', position: 'center' },
-  tshirts: { image: 'category-heroes/tops-hero.png', position: 'center' },
-  tees: { image: 'category-heroes/tops-hero.png', position: 'center' },
-  eyewear: { image: 'category-heroes/accessories-hero.png', position: 'center' },
-  sunglasses: { image: 'category-heroes/accessories-hero.png', position: 'center' },
-  glasses: { image: 'category-heroes/accessories-hero.png', position: 'center' },
-  jackets: { image: 'category-heroes/outerwear-hero.png', position: 'center' },
+  shirts: { image: 'category-generated/shirts.png', position: 'center' },
+  shirt: { image: 'category-generated/shirts.png', position: 'center' },
+  't-shirts': { image: 'category-generated/t-shirts.png', position: 'center' },
+  tshirts: { image: 'category-generated/t-shirts.png', position: 'center' },
+  tees: { image: 'category-generated/t-shirts.png', position: 'center' },
+  eyewear: { image: 'category-generated/eyewear.png', position: 'center' },
+  sunglasses: { image: 'category-generated/eyewear.png', position: 'center' },
+  glasses: { image: 'category-generated/eyewear.png', position: 'center' },
+  jackets: { image: 'category-generated/jackets.png', position: 'center' },
   jacket: { image: 'category-heroes/outerwear-hero.png', position: 'center' },
   outerwear: { image: 'category-heroes/outerwear-hero.png', position: 'center' },
-  sweatshirts: { image: 'category-heroes/outerwear-hero.png', position: 'center' },
-  hoodies: { image: 'category-heroes/outerwear-hero.png', position: 'center' },
-  sleepwear: { image: 'category-heroes/sleepwear-hero.png', position: 'center' },
+  sweatshirts: { image: 'category-generated/sweatshirts.png', position: 'center' },
+  hoodies: { image: 'category-generated/sweatshirts.png', position: 'center' },
+  sleepwear: { image: 'category-generated/sleepwear.png', position: 'center' },
   nightwear: { image: 'category-heroes/sleepwear-hero.png', position: 'center' },
   loungewear: { image: 'category-heroes/sleepwear-hero.png', position: 'center' },
-  bags: { image: 'category-heroes/accessories-hero.png', position: 'center' },
+  bags: { image: 'category-generated/bags.png', position: 'center' },
   accessories: { image: 'category-heroes/accessories-hero.png', position: 'center' },
-  watches: { image: 'category-heroes/accessories-hero.png', position: 'center' },
-  watch: { image: 'category-heroes/accessories-hero.png', position: 'center' },
-  'ethnic wear': { image: 'category-heroes/dresses-hero.png', position: 'center' },
-  ethnic: { image: 'category-heroes/dresses-hero.png', position: 'center' },
+  watches: { image: 'category-generated/watches.png', position: 'center' },
+  watch: { image: 'category-generated/watches.png', position: 'center' },
+  'ethnic wear': { image: 'category-generated/ethnic-wear.png', position: 'center' },
+  ethnic: { image: 'category-generated/ethnic-wear.png', position: 'center' },
   women: { image: 'category-women-hero.png', position: '64% 18%' },
   men: { image: 'category-men-hero.png', position: '65% 18%' },
   unisex: { image: 'category-unisex-hero.png', position: 'center' }
@@ -556,19 +557,19 @@ const pageMeta = {
   '/new-arrivals': ['New Arrivals', 'Fresh pieces, first impressions.', 'New products are updated here so you can preview the latest fits before they disappear.', 'arrival-5.jpg'],
   '/sale': ['Sale', 'Better deals, fewer fit doubts.', 'Browse discounted products and use try-on previews before finalizing your picks.', 'search-shirt-2.jpg'],
   '/gift-cards': ['Gift Cards', 'Style confidence makes a good gift.', 'Gift cards can be used toward shopping and try-on tokens when the product is connected.', 'hero2.png'],
-  '/about': ['About', 'Shopping online should feel more certain.', 'FitLook combines product discovery with AI try-on previews so shoppers can compare styles with more confidence.', 'hero2.png'],
+  '/about': ['About', 'Shopping online should feel more certain.', 'Lookmefy combines product discovery with AI try-on previews so shoppers can compare styles with more confidence.', 'hero2.png'],
   '/support': ['Help', 'Support for shopping and try-on.', 'Find answers about shipping, returns, profile photos, tokens, and account access.', 'search-shirt-4.jpg'],
-  '/contact': ['Contact', 'Tell us what you need.', 'For order, token, account, and AI try-on questions, reach the FitLook support team.', 'hero2.png'],
+  '/contact': ['Contact', 'Tell us what you need.', 'For order, token, account, and AI try-on questions, reach the Lookmefy support team.', 'hero2.png'],
   '/cart': ['Cart', 'Review your selected products.', 'Cart is prepared for product checkout, with backend order APIs still required before payment can be enabled.', 'hero2.png'],
-  '/faq': ['FAQ', 'Common FitLook questions.', 'Answers for AI try-on, credits, shopping, privacy, and account support.', 'hero2.png'],
+  '/faq': ['FAQ', 'Common Lookmefy questions.', 'Answers for AI try-on, credits, shopping, privacy, and account support.', 'hero2.png'],
   '/shipping': ['Shipping Policy', 'Delivery information.', 'Shipping terms depend on connected brand and order support.', 'hero2.png'],
   '/returns': ['Return and Refund Policy', 'Return and refund guidance.', 'Return eligibility depends on brand policies and final order support.', 'hero2.png'],
   '/cancellation': ['Cancellation Policy', 'Cancellation guidance.', 'Cancellation support will follow the checkout and order backend contract.', 'hero2.png'],
-  '/data-deletion': ['Data Deletion', 'Request deletion of FitLook data.', 'Learn how uploaded photos, generated looks, and account data can be removed.', 'hero2.png'],
+  '/data-deletion': ['Data Deletion', 'Request deletion of Lookmefy data.', 'Learn how uploaded photos, generated looks, and account data can be removed.', 'hero2.png'],
   '/ai-disclaimer': ['AI Try-On Disclaimer', 'AI previews are visual guides.', 'AI-generated previews help visualize outfits; actual fit, colour, and fabric appearance may vary.', 'hero2.png'],
   '/careers': ['Careers', 'Build the future of fitting rooms.', 'Future roles across product, design, engineering, fashion operations, and partnerships would be listed here.', 'hero2.png'],
   '/blog': ['Blog', 'Fit notes, styling ideas, and AI try-on updates.', 'Editorial content, product guides, and try-on tips would live here.', 'arrival-4.jpg'],
-  '/press': ['Press', 'FitLook press and media.', 'Company information, product screenshots, and media contact details would be available here.', 'hero2.png'],
+  '/press': ['Press', 'Lookmefy press and media.', 'Company information, product screenshots, and media contact details would be available here.', 'hero2.png'],
   '/terms': ['Terms', 'Terms and conditions.', 'This page outlines where account, token, shopping, and AI try-on usage rules live.', 'hero2.png'],
   '/privacy': ['Privacy', 'Your try-on profile is personal.', 'This page describes how account details, full-body photos, token usage, and shopping activity are handled.', 'hero2.png'],
   '/accessibility': ['Accessibility', 'Accessibility matters at every step.', 'Accessibility goals cover navigation, forms, image alt text, contrast, and keyboard-friendly flows.', 'hero2.png']
@@ -711,7 +712,7 @@ async function api(path, options = {}) {
           ? 'AI rendering is taking longer than expected. Please try again in a moment.'
           : 'The request took too long. Check your connection and try again.');
       }
-      lastError = error instanceof Error ? error : new Error('Unable to reach FitLook right now.');
+      lastError = error instanceof Error ? error : new Error('Unable to reach Lookmefy right now.');
       const canRetry = attempt < retryCount && (!lastError.status || lastError.status >= 500);
       if (!canRetry) {
         if (!lastError.status && typeof navigator !== 'undefined' && !navigator.onLine) throw new Error('You appear to be offline. Reconnect and try again.');
@@ -723,7 +724,7 @@ async function api(path, options = {}) {
       externalSignal?.removeEventListener('abort', abortFromCaller);
     }
   }
-  throw lastError || new Error('Unable to reach FitLook right now.');
+  throw lastError || new Error('Unable to reach Lookmefy right now.');
 }
 
 async function resolveQueuedJobResponse(data, { timeout = AI_IMAGE_TIMEOUT_MS, intervalMs = 1800 } = {}) {
@@ -1047,7 +1048,6 @@ function Header({ user, setUser }) {
   const [wishlistCount, setWishlistCount] = useState(() => user?.wishlistCount || readWishlistProductIds().length);
   const headerRef = useRef(null);
   const desktopSearchRef = useRef(null);
-  const mobileSearchRef = useRef(null);
   const [recentSearches, setRecentSearches] = useState(readRecentSearches);
   const currentPath = normalizePath();
   const currentParams = new URLSearchParams(window.location.search);
@@ -1061,6 +1061,7 @@ function Header({ user, setUser }) {
   const navLinks = [
     ['Home', '/home'],
     ['Explore', '/categories'],
+    ['About', '/about'],
     ['Wardrobe', '/closet'],
     ['Custom Try On', '/custom-try-on'],
     ['Wishlist', '/wishlist']
@@ -1133,7 +1134,7 @@ function Header({ user, setUser }) {
         event.preventDefault();
         focusSearch();
       }
-      if (event.key === 'Escape' && (element === desktopSearchRef.current || element === mobileSearchRef.current)) {
+      if (event.key === 'Escape' && element === desktopSearchRef.current) {
         element.blur();
       }
     };
@@ -1147,11 +1148,6 @@ function Header({ user, setUser }) {
     setMenuOpen(false);
   };
   const clearSearch = (target) => {
-    if (target === 'mobile') {
-      if (mobileSearchRef.current) mobileSearchRef.current.value = '';
-      mobileSearchRef.current?.focus();
-      return;
-    }
     if (desktopSearchRef.current) desktopSearchRef.current.value = '';
     desktopSearchRef.current?.focus();
   };
@@ -1166,7 +1162,7 @@ function Header({ user, setUser }) {
       <header className="site-header" ref={headerRef}>
         <div className="wrap header-inner">
           <div className="header-left">
-            <a className="brand" href="/home">FitLook</a>
+            <a className="brand" href="/home">Lookmefy</a>
             <nav className="nav" aria-label="Primary navigation">
               {navLinks.map(([label, href], index) => {
                 const active = isActiveLink(href, index);
@@ -1182,7 +1178,7 @@ function Header({ user, setUser }) {
             </form>
           </div>
           <div className="header-actions">
-            <button className="icon-button mobile-search-trigger" type="button" aria-label="Open search" onClick={() => { setMenuOpen(true); window.setTimeout(() => mobileSearchRef.current?.focus(), 0); }}><SearchIcon /></button>
+            <a className="icon-button mobile-search-trigger" href="/search" aria-label="Open search"><SearchIcon /></a>
             <a className="header-credit-button" href="/tokens" aria-label={user ? `Buy credits. ${tokenLabel} available` : 'Buy credits'}><SparkleLineIcon /><span>Credits</span>{user && <strong>{user.tokens}</strong>}</a>
             <a className="icon-button header-count-button" href="/wishlist" aria-label={`${wishlistCount} wishlist items`}><HeartIcon />{wishlistCount > 0 && <strong>{wishlistCount}</strong>}</a>
             {user ? <a className="icon-button" href="/profile" aria-label="Profile"><UserIcon /></a> : <a className="icon-button" href="/signup" aria-label="Account"><UserIcon /></a>}
@@ -1199,11 +1195,6 @@ function Header({ user, setUser }) {
             from both while preserving the slide animation. */}
         <div className={`mobile-menu ${menuOpen ? 'open' : ''}`} id="mobile-navigation" role="dialog" aria-modal={menuOpen ? 'true' : undefined} aria-label="Mobile navigation" inert={!menuOpen}>
           <div className="wrap mobile-menu-inner">
-            <form className="mobile-search-form" action="/categories" role="search" onSubmit={rememberSearch}>
-              <button className="search-submit" type="submit" aria-label="Search"><SearchIcon /></button>
-              <input ref={mobileSearchRef} name="q" type="search" list="fitlook-recent-searches" placeholder="Search curated collections..." defaultValue={currentSearchValue()} aria-label="Search products" />
-              <button className="search-clear" type="button" aria-label="Clear search" onClick={() => clearSearch('mobile')}><CloseIcon /></button>
-            </form>
             {navLinks.map(([label, href], index) => {
               const active = isActiveLink(href, index);
               return <a className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} href={href} key={label} onClick={() => setMenuOpen(false)}>{label}</a>;
@@ -1221,18 +1212,76 @@ function Header({ user, setUser }) {
   );
 }
 
+function SearchLandingPage() {
+  const searchInputRef = useRef(null);
+  const [recentSearches, setRecentSearches] = useState(readRecentSearches);
+  const quickSearches = ['shirts', 'jeans', 'innerwear', 'ethnic wear', 'sneakers', 'sleepwear'];
+  const featuredCategories = categories.slice(0, 8);
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, []);
+
+  const rememberSearch = (event) => {
+    const query = new FormData(event.currentTarget).get('q');
+    setRecentSearches(saveRecentSearch(query));
+  };
+
+  return (
+    <main className="mobile-search-page">
+      <section className="mobile-search-panel" aria-labelledby="mobile-search-title">
+        <p className="mobile-search-kicker">Find your edit</p>
+        <h1 id="mobile-search-title">Search Lookmefy</h1>
+        <form className="mobile-search-page-form" action="/categories" role="search" onSubmit={rememberSearch}>
+          <SearchIcon />
+          <input ref={searchInputRef} name="q" type="search" list="fitlook-recent-searches" placeholder="Search products..." defaultValue={currentSearchValue()} aria-label="Search products" />
+          <button type="submit">Search</button>
+        </form>
+        {recentSearches.length > 0 && (
+          <div className="mobile-search-block">
+            <div className="mobile-search-block-head">
+              <h2>Recent searches</h2>
+              <button type="button" onClick={() => { localStorage.removeItem('fitlook_recent_searches'); setRecentSearches([]); }}>Clear</button>
+            </div>
+            <div className="mobile-search-chip-row">
+              {recentSearches.map((search) => <a href={`/categories?q=${encodeURIComponent(search)}`} key={search}>{search}</a>)}
+            </div>
+          </div>
+        )}
+        <div className="mobile-search-block">
+          <h2>Popular now</h2>
+          <div className="mobile-search-chip-row">
+            {quickSearches.map((search) => <a href={`/categories?q=${encodeURIComponent(search)}`} key={search}>{search}</a>)}
+          </div>
+        </div>
+        <div className="mobile-search-block">
+          <h2>Browse categories</h2>
+          <div className="mobile-search-category-grid">
+            {featuredCategories.map(([label, image, value]) => (
+              <a href={`/categories/${encodeURIComponent(categorySlug(value))}`} key={value}>
+                <OptimizedImage src={asset(categoryIconVisuals[categoryVisualKey(value)]?.image || image)} alt="" />
+                <span>{label}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function Footer({ compact = false }) {
   if (compact) {
     return (
       <footer className="wishlist-compact-footer">
         <div className="wrap wishlist-compact-footer-inner">
           <div className="wishlist-compact-footer-grid">
-            <div className="wishlist-compact-brand"><a href="/">FitLook</a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div><a href="https://instagram.com/" target="_blank" rel="noreferrer">IG</a><a href="https://tiktok.com/" target="_blank" rel="noreferrer">TK</a><a href="https://x.com/" target="_blank" rel="noreferrer">X</a></div></div>
+            <div className="wishlist-compact-brand"><a href="/">Lookmefy</a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div><a href="https://instagram.com/" target="_blank" rel="noreferrer">IG</a><a href="https://tiktok.com/" target="_blank" rel="noreferrer">TK</a><a href="https://x.com/" target="_blank" rel="noreferrer">X</a></div></div>
             <div><h2>Shop</h2><a href="/categories">New in</a><a href="/categories?gender=women">Women</a><a href="/categories?gender=men">Men</a><a href="/categories?discounted=true">Sale</a></div>
             <div><h2>Help</h2><a href="/support">Track order</a><a href="/support">Returns</a><a href="/support">Contact us</a><a href="/support">Shipping</a></div>
-            <div><h2>Download our App</h2><p>Get the FitLook app for your daily fashion edit.</p><a className="wishlist-app-link" href="/support">App Store</a><a className="wishlist-app-link" href="/support">Google Play</a></div>
+            <div><h2>Download our App</h2><p>Get the Lookmefy app for your daily fashion edit.</p><a className="wishlist-app-link" href="/support">App Store</a><a className="wishlist-app-link" href="/support">Google Play</a></div>
           </div>
-          <div className="wishlist-compact-footer-bottom"><span>© 2026 FitLook. Curated by intelligence.</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a></div></div>
+          <div className="wishlist-compact-footer-bottom"><span>© 2026 Lookmefy. Curated by intelligence.</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a></div></div>
         </div>
       </footer>
     );
@@ -1249,18 +1298,17 @@ function Footer({ compact = false }) {
       <div className="wrap">
         <div className="footer-grid">
           <div className="footer-brand-block">
-            <a className="footer-logo" href="/">FitLook</a>
+            <a className="footer-logo" href="/">Lookmefy</a>
             <p className="footer-about">Defining the intersection of personal styling and digital try-on. Curated for the modern wardrobe.</p>
             <div className="footer-social" aria-label="Social links">
               {socialLinks.map(([label, href]) => <a href={href} key={label} target="_blank" rel="noreferrer" aria-label={label}>{label.slice(0, 2)}</a>)}
             </div>
           </div>
           <FooterCol title="Collections" links={[['New Arrivals', '/categories'], ["Men's Edit", '/categories?gender=men'], ["Women's Edit", '/categories?gender=women'], ['Accessories', '/categories/accessories'], ['Seasonal Sale', '/categories?discounted=true']]} />
-          <FooterCol title="Company" links={[['Journal', '/blog'], ['Sustainability', '/about'], ['Virtual Atelier', '/custom-try-on'], ['Contact', '/contact'], ['Shipping', '/support']]} />
+          <FooterCol title="Company" links={[['Journal', '/blog'], ['About', '/about'], ['Virtual Atelier', '/custom-try-on'], ['Contact', '/contact'], ['Shipping', '/support']]} />
           <FooterCol title="Assurance" links={[['100% Secure Payment', '/support'], ['24/7 Dedicated Support', '/support'], ['30-Day Effortless Returns', '/support']]} />
-          <div className="newsletter"><h3>Newsletter</h3><p>Early access to seasonal drops, private invitations, and high-fashion insights.</p><form className="newsletter-form" onSubmit={(event) => event.preventDefault()}><input type="email" placeholder="Your email address" aria-label="Email address" /><button type="submit">Subscribe</button></form></div>
         </div>
-        <div className="footer-bottom"><div>© 2026 FitLook. All rights reserved.</div><div className="legal"><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/accessibility">Accessibility</a></div></div>
+        <div className="footer-bottom"><div>© 2026 Lookmefy. All rights reserved.</div><div className="legal"><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/accessibility">Accessibility</a></div></div>
       </div>
     </footer>
   );
@@ -1612,14 +1660,50 @@ function buildOfferCards({ catalogProducts = [], arrivalProducts = [], tryOnPick
       cta: 'Open edit',
       href: `/categories?gender=${feedGender}`,
       image: genderProducts[0].imageUrl
+    },
+    {
+      id: 'occasion-edit-offer',
+      kicker: 'Occasion edit',
+      title: 'Plan every look',
+      copy: 'Work, dates, weekends',
+      cta: 'Get ideas',
+      href: '/style-bot',
+      image: asset('opening-editorial-hero.png')
+    },
+    {
+      id: 'men-curated-offer',
+      kicker: "Men's edit",
+      title: 'Curated for men',
+      copy: 'Clean layers and daily staples',
+      cta: 'Open edit',
+      href: '/categories?gender=men',
+      image: asset('category-men-hero.png')
+    },
+    {
+      id: 'category-finder-offer',
+      kicker: 'Explore',
+      title: 'Find your edit',
+      copy: 'Shop every department fast',
+      cta: 'Browse',
+      href: '/categories',
+      image: asset('category-generated/bags.png')
+    },
+    {
+      id: 'cozy-staples-offer',
+      kicker: 'Staples',
+      title: 'Cozy layers',
+      copy: 'Sweatshirts and soft essentials',
+      cta: 'View picks',
+      href: '/categories/sweatshirts',
+      image: asset('category-generated/sweatshirts.png')
     }
-  ].filter(Boolean).slice(0, 6);
+  ].filter(Boolean).slice(0, 8);
 }
 
 function AtelierOfferCards({ offers = [] }) {
   if (!offers.length) return null;
   return (
-    <section className="atelier-offer-card-section atelier-wide" aria-label="FitLook offers">
+    <section className="atelier-offer-card-section atelier-wide" aria-label="Lookmefy offers">
       <div className="atelier-offer-card-grid">
         {offers.map((offer) => (
           <a className="atelier-offer-card" href={offer.href} key={offer.id}>
@@ -1638,12 +1722,7 @@ function AtelierOfferCards({ offers = [] }) {
 }
 
 function buildCampaignCards({ catalogProducts = [], tryOnPickProducts = [] }) {
-  const discountedProducts = uniqueProducts(catalogProducts)
-    .filter((product) => productDiscountPercent(product) > 0)
-    .sort((a, b) => productDiscountPercent(b) - productDiscountPercent(a));
   const tryOnProduct = tryOnPickProducts[0] || catalogProducts.find((product) => product.tryOnAvailable || product.aiTryOnAvailable) || catalogProducts[0];
-  const dealProduct = discountedProducts[0] || catalogProducts[1] || tryOnProduct;
-  const campusProduct = catalogProducts.find((product) => productMatchesAnyCategory(product, ['shirt', 'bag', 't-shirt', 'sneaker', 'jeans'])) || catalogProducts[2] || tryOnProduct;
 
   return [
     tryOnProduct && {
@@ -1655,23 +1734,23 @@ function buildCampaignCards({ catalogProducts = [], tryOnPickProducts = [] }) {
       href: '/custom-try-on',
       image: tryOnProduct.imageUrl
     },
-    dealProduct && {
-      id: 'campaign-extra-offer',
-      tone: 'rose',
-      title: discountedProducts.length ? `Extra ${Math.min(productDiscountPercent(dealProduct), 70)}% Off` : 'Extra Savings',
-      copy: discountedProducts.length ? 'On live markdowns' : 'On selected styles',
-      cta: 'Shop now',
-      href: discountedProducts.length ? '/categories?discounted=true' : '/categories',
-      image: dealProduct.imageUrl
+    {
+      id: 'campaign-smart-wardrobe',
+      tone: 'wardrobe',
+      title: 'Smart Wardrobe',
+      copy: 'Save pieces and build AI looks',
+      cta: 'Open wardrobe',
+      href: '/closet',
+      image: asset('wardrobe-stage-room.png')
     },
-    campusProduct && {
-      id: 'campaign-student-edit',
-      tone: 'mint',
-      title: 'Student Edit',
-      copy: 'Fresh everyday picks',
-      cta: 'Explore',
-      href: '/categories',
-      image: campusProduct.imageUrl
+    {
+      id: 'campaign-ai-stylist',
+      tone: 'stylist',
+      title: 'AI Stylist',
+      copy: 'Ask for looks and outfit ideas',
+      cta: 'Ask looks',
+      href: '/style-bot',
+      image: asset('ai-stylist-campaign.png')
     }
   ].filter(Boolean);
 }
@@ -1679,7 +1758,7 @@ function buildCampaignCards({ catalogProducts = [], tryOnPickProducts = [] }) {
 function AtelierCampaignCards({ cards = [] }) {
   if (!cards.length) return null;
   return (
-    <section className="atelier-campaign-section atelier-wide" aria-label="Featured FitLook campaigns">
+    <section className="atelier-campaign-section atelier-wide" aria-label="Featured Lookmefy campaigns">
       <div className="atelier-campaign-grid">
         {cards.map((card) => (
           <a className={`atelier-campaign-card ${card.tone ? `tone-${card.tone}` : ''}`} href={card.href} key={card.id}>
@@ -1775,7 +1854,7 @@ function AtelierHome({ user }) {
       .filter((product) => productMetric(product, ['wishlistCount', 'wishlistedCount', 'saves']) > 0)
       .sort((a, b) => productMetric(b, ['wishlistCount', 'wishlistedCount', 'saves']) - productMetric(a, ['wishlistCount', 'wishlistedCount', 'saves']));
     const sections = [
-      { id: 'recommended-for-you', title: 'Recommended for You', subtitle: 'Built from your FitLook profile', products: fillProductRailProducts(recommendedProducts, catalogProducts), viewHref: '/categories' },
+      { id: 'recommended-for-you', title: 'Recommended for You', subtitle: 'Built from your Lookmefy profile', products: fillProductRailProducts(recommendedProducts, catalogProducts), viewHref: '/categories' },
       { id: 'top-deals', title: 'Top Deals', subtitle: 'Live markdowns from the catalog', products: fillProductRailProducts(byDiscount, catalogProducts), viewHref: '/categories?discounted=true' },
       { id: 'under-499', title: 'Under ₹499', subtitle: 'Budget-friendly finds', products: fillProductRailProducts(pricedProducts.filter((product) => Number(product.price || 0) < 499), catalogProducts), viewHref: '/categories?maxPrice=499' },
       { id: 'under-999', title: 'Under ₹999', subtitle: 'More styles at easy prices', products: fillProductRailProducts(pricedProducts.filter((product) => Number(product.price || 0) < 999), catalogProducts), viewHref: '/categories?maxPrice=999' },
@@ -1829,7 +1908,7 @@ function AtelierHome({ user }) {
   return (
     <div className="atelier-home">
       <main>
-        <section className="atelier-hero atelier-hero-editorial" aria-label="FitLook AI fashion try-on">
+        <section className="atelier-hero atelier-hero-editorial" aria-label="Lookmefy AI fashion try-on">
           <div className="atelier-hero-editorial-slides" aria-hidden="true">
             {atelierHeroSlides.map((slide, index) => (
               <OptimizedImage
@@ -1928,11 +2007,11 @@ function Home() {
       <OptimizedImage className="opening-page-image" src={asset('opening-editorial-hero.png')} alt="A woman and man in tailored outerwear" eager />
       <div className="opening-page-overlay" aria-hidden="true" />
       <section className="opening-page-content">
-        <a className="opening-page-brand" href="/" id="opening-title">FitLook</a>
+        <a className="opening-page-brand" href="/" id="opening-title">Lookmefy</a>
         <p>Personal style, considered.</p>
-        <nav className="opening-page-actions" aria-label="Start exploring FitLook">
+        <nav className="opening-page-actions" aria-label="Start exploring Lookmefy">
           <a href="/categories?gender=women">Women's edit</a>
-          <a className="opening-page-shop" href="/categories">Shop FitLook</a>
+          <a className="opening-page-shop" href="/categories">Shop Lookmefy</a>
           <a href="/categories?gender=men">Men's edit</a>
         </nav>
         <a className="opening-page-enter" href="/custom-try-on">AI Try-On</a>
@@ -1960,7 +2039,7 @@ function ProductSection({ title, href, state, user, eyebrow = '', copy = '', lim
 
 function HomePromoBand() {
   return (
-    <section className="home-promo-band" aria-label="FitLook offers">
+    <section className="home-promo-band" aria-label="Lookmefy offers">
       <div className="wrap home-promo-grid">
         <a className="home-promo-card dark" href="/categories?discounted=true">
           <span className="home-promo-icon" aria-hidden="true"><TagIcon /></span>
@@ -2611,7 +2690,7 @@ function CategoryDepartmentPage({ category, user }) {
         <div className="wrap department-hero-inner">
           <div className="department-hero-copy">
             <a className="department-back-link" href="/categories">All Departments</a>
-            <p>FitLook Category</p>
+            <p>Lookmefy Category</p>
             <h1>{title}</h1>
             <span>{state.loading ? 'Loading products' : `${state.total} products selected for this department`}</span>
           </div>
@@ -4873,7 +4952,7 @@ function WishlistPage({ user }) {
     setActiveCollection(collection.id);
   };
   const shareWishlist = async () => {
-    const shareData = { title: 'My FitLook Wishlist', text: 'See my saved FitLook edit.', url: window.location.href };
+    const shareData = { title: 'My Lookmefy Wishlist', text: 'See my saved Lookmefy edit.', url: window.location.href };
     try {
       if (navigator.share) await navigator.share(shareData);
       else if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(shareData.url);
@@ -5334,7 +5413,7 @@ function StyleBotPage({ user, setUser }) {
   return (
     <main className="style-bot-page concierge-page">
       <aside className="concierge-session-rail" aria-label="Stylist sessions">
-        <a className="concierge-brand" href="/">FitLook</a>
+        <a className="concierge-brand" href="/">Lookmefy</a>
         <p>Stylist sessions</p>
         <div className="concierge-session-list">
           {sessionHistory.length ? sessionHistory.map((run, index) => (
@@ -5346,18 +5425,18 @@ function StyleBotPage({ user, setUser }) {
         <button className="concierge-new-session" type="button" onClick={startNewSession}>+ New Session</button>
       </aside>
 
-      <section className="concierge-workspace" aria-label="FitLook Concierge">
-        <div className="concierge-chat-head"><span className="concierge-status-dot" aria-hidden="true" /><strong>FitLook Concierge</strong><small>{creditCount} credits</small></div>
+      <section className="concierge-workspace" aria-label="Lookmefy Concierge">
+        <div className="concierge-chat-head"><span className="concierge-status-dot" aria-hidden="true" /><strong>Lookmefy Concierge</strong><small>{creditCount} credits</small></div>
         <div className="concierge-scroll" ref={conciergeScrollRef}>
           <div className="concierge-message assistant">
-            <p className="concierge-message-label">FitLook Concierge</p>
+            <p className="concierge-message-label">Lookmefy Concierge</p>
             <div className="concierge-bubble">Welcome. Share the item, occasion, color, or budget you have in mind and I’ll curate a considered edit for your wardrobe.</div>
           </div>
           {runs.map((run) => (
             <div className="concierge-run" key={run.id}>
               <div className="concierge-message user"><p className="concierge-message-label">You</p><div className="concierge-bubble">{run.query}</div></div>
               <div className="concierge-message assistant">
-                <p className="concierge-message-label">FitLook Concierge</p>
+                <p className="concierge-message-label">Lookmefy Concierge</p>
                 <div className="concierge-bubble concierge-response">
                   {run.loading && <span className="concierge-loading">Curating your edit...</span>}
                   {run.searchError && <p className="form-message error-message">{run.searchError}</p>}
@@ -5369,7 +5448,7 @@ function StyleBotPage({ user, setUser }) {
           <div className="concierge-scroll-anchor" ref={conciergeEndRef} aria-hidden="true" />
         </div>
         <form className="concierge-composer" onSubmit={submit}>
-          <div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ask your stylist anything..." aria-label="Ask FitLook Concierge" /><button type="submit" disabled={busy || !query.trim()} aria-label={busy ? 'Curating suggestions' : 'Send message'} title={busy ? 'Curating suggestions' : 'Send message'}>{busy ? '...' : '→'}</button></div>
+          <div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ask your stylist anything..." aria-label="Ask Lookmefy Concierge" /><button type="submit" disabled={busy || !query.trim()} aria-label={busy ? 'Curating suggestions' : 'Send message'} title={busy ? 'Curating suggestions' : 'Send message'}>{busy ? '...' : '→'}</button></div>
           <section aria-label="Prompt ideas">{promptIdeas.slice(0, 3).map((idea) => <button type="button" key={idea} onClick={() => setQuery(idea)}>{idea}</button>)}</section>
         </form>
       </section>
@@ -5503,7 +5582,7 @@ function TokenPage({ user, setUser }) {
       showCreditsSuffix: true,
       price: 'Free',
       billing: 'With your profile',
-      copy: 'A free set of credits to explore FitLook before your first purchase.',
+      copy: 'A free set of credits to explore Lookmefy before your first purchase.',
       cta: 'Open profile',
       href: '/profile'
     },
@@ -5790,7 +5869,7 @@ function ProfilePage({ user, setUser }) {
         </section>
 
         <section className="profile-reference-panel profile-reference-settings" aria-label="Account settings">
-          <div className="profile-reference-section-head"><div><h2>Account Settings</h2><p>Control how your profile is used across FitLook.</p></div></div>
+          <div className="profile-reference-section-head"><div><h2>Account Settings</h2><p>Control how your profile is used across Lookmefy.</p></div></div>
           <div className="profile-reference-setting-list">
             <div><span>Username</span><strong>@{user.username}</strong></div>
             <div><span>Email address</span><strong>{user.email}</strong></div>
@@ -6298,7 +6377,7 @@ function ProductPage({ id, user, setUser }) {
             </div>
             <div className="product-editorial-ship"><span>Shipping</span><strong>Live catalog item</strong></div>
             <div className="product-editorial-benefits">
-              <div><strong>AI fit preview</strong><span>Built from your FitLook profile</span></div>
+              <div><strong>AI fit preview</strong><span>Built from your Lookmefy profile</span></div>
               <div><strong>Verified catalog</strong><span>Live brand and price details</span></div>
             </div>
             {tryOnError && <p className="form-message error-message">{tryOnError}</p>}
@@ -6307,7 +6386,7 @@ function ProductPage({ id, user, setUser }) {
             <div className="product-editorial-accordions">
               <details open>
                 <summary>Product details</summary>
-                <p>{product.description || 'This product is available through the live FitLook catalog.'}</p>
+                <p>{product.description || 'This product is available through the live Lookmefy catalog.'}</p>
                 <dl>{detailFacts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
               </details>
               <details>
@@ -6452,7 +6531,7 @@ function HowItWorks({ user }) {
     },
     {
       title: 'Generate the preview',
-      copy: 'Use one token to create a try-on image. If that same product was already generated for you, FitLook reuses the saved result.',
+      copy: 'Use one token to create a try-on image. If that same product was already generated for you, Lookmefy reuses the saved result.',
       meta: '1 token when new'
     },
     {
@@ -6471,7 +6550,7 @@ function HowItWorks({ user }) {
     <main className="how-page">
       <section className="wrap how-hero">
         <div>
-          <p className="kicker">How FitLook Works</p>
+          <p className="kicker">How Lookmefy Works</p>
           <h1>Four simple steps.</h1>
           <p className="lead">From profile photo to product preview, the whole flow is built around making online shopping feel less like guessing.</p>
           <a className="button" href={user ? '/search' : '/signup'}>{user ? 'Start Shopping' : 'Create Profile'}</a>
@@ -6485,7 +6564,7 @@ function HowItWorks({ user }) {
         </div>
       </section>
 
-      <section className="wrap how-steps" aria-label="FitLook steps">
+      <section className="wrap how-steps" aria-label="Lookmefy steps">
         {steps.map((step, index) => (
           <article className="how-step" key={step.title}>
             <span>{String(index + 1).padStart(2, '0')}</span>
@@ -6503,6 +6582,179 @@ function HowItWorks({ user }) {
             <p>{copy}</p>
           </article>
         ))}
+      </section>
+    </main>
+  );
+}
+
+function AboutPage({ user }) {
+  const processSteps = [
+    ['01', 'Discover', 'Explore fashion across categories, collections and personalised recommendations.'],
+    ['02', 'Try', 'Use AI Try-On to visualise selected clothing on your saved model.'],
+    ['03', 'Save', 'Keep products you want in your Wishlist and pieces you own in your Wardrobe.'],
+    ['04', 'Style', 'Use your wardrobe and AI Stylist to explore outfit ideas for different occasions.']
+  ];
+  const flowSteps = ['Explore', 'Wishlist', 'Try On', 'Wardrobe', 'Build a Look', 'AI Stylist'];
+
+  return (
+    <main className="about-page">
+      <section className="about-hero about-section" aria-labelledby="about-title">
+        <div className="wrap about-hero-grid">
+          <div className="about-hero-copy">
+            <p className="about-kicker">About Lookmefy</p>
+            <h1 id="about-title">Fashion, made personal.</h1>
+            <p className="about-lead">Lookmefy brings fashion discovery, virtual try-on, your digital wardrobe and AI-powered styling together in one experience.</p>
+            <p className="about-sublead">Discover what you like. See how it looks on you. Build outfits around your style.</p>
+            <div className="about-actions">
+              <a className="about-button about-button-primary" href="/home">Explore Lookmefy</a>
+              <a className="about-button about-button-secondary" href="/custom-try-on">Try It On</a>
+            </div>
+          </div>
+          <div className="about-hero-media">
+            <OptimizedImage src={asset('about/about-hero.png')} alt="Editorial fashion scene representing Lookmefy style discovery" />
+          </div>
+        </div>
+      </section>
+
+      <section className="about-section about-intro" aria-labelledby="about-intro-title">
+        <div className="wrap about-narrow">
+          <p className="about-kicker">About Lookmefy</p>
+          <h2 id="about-intro-title">A smarter way to discover your style.</h2>
+          <div className="about-body">
+            <p>Shopping for fashion online often means jumping between products, imagining how something might look, saving screenshots and trying to remember what already works with your wardrobe.</p>
+            <p>Lookmefy is designed to bring those moments together.</p>
+            <p>Discover fashion from across the platform, virtually try selected pieces, save products you love, organise what you own in your digital wardrobe and use AI-powered styling tools to help put looks together.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="about-section about-process" aria-labelledby="about-process-title">
+        <div className="wrap">
+          <div className="about-section-heading">
+            <p className="about-kicker">How it works</p>
+            <h2 id="about-process-title">From discovery to outfit.</h2>
+          </div>
+          <div className="about-step-grid">
+            {processSteps.map(([number, title, copy]) => (
+              <article className="about-step" key={title}>
+                <span>{number}</span>
+                <h3>{title}</h3>
+                <p>{copy}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="about-section about-feature" aria-labelledby="about-tryon-title">
+        <div className="wrap about-feature-grid">
+          <div className="about-feature-media">
+            <OptimizedImage src={asset('about/about-tryon.png')} alt="Fashion model preview for AI try-on" />
+          </div>
+          <div className="about-feature-copy">
+            <p className="about-kicker">AI Try-On</p>
+            <h2 id="about-tryon-title">See the look before making it yours.</h2>
+            <p>Lookmefy's virtual try-on experience lets you use your saved model and compatible clothing images to create an AI-generated visual preview.</p>
+            <p>It is designed to help you explore styles and combinations before deciding what you want to save, wear or shop.</p>
+            <p className="about-note">AI-generated previews are visual representations and may not exactly reproduce real-world fit, sizing, fabric behaviour or appearance.</p>
+            <a className="about-text-link" href="/custom-try-on">Try It On</a>
+          </div>
+        </div>
+      </section>
+
+      <section className="about-section about-feature about-feature-reverse" aria-labelledby="about-wardrobe-title">
+        <div className="wrap about-feature-grid">
+          <div className="about-feature-copy">
+            <p className="about-kicker">Your Wardrobe</p>
+            <h2 id="about-wardrobe-title">Your clothes, organised around you.</h2>
+            <p>Save the pieces you own and build a digital wardrobe that stays connected to your Lookmefy experience.</p>
+            <p>Combine tops, bottoms, outerwear, shoes and accessories, experiment with different looks and keep the pieces you reach for close at hand.</p>
+            <a className="about-text-link" href="/closet">Open Wardrobe</a>
+          </div>
+          <div className="about-feature-media">
+            <OptimizedImage src={asset('about/about-wardrobe.png')} alt="Minimal wardrobe room for organizing saved fashion pieces" />
+          </div>
+        </div>
+      </section>
+
+      <section className="about-section about-feature" aria-labelledby="about-stylist-title">
+        <div className="wrap about-feature-grid">
+          <div className="about-feature-media">
+            <OptimizedImage src={asset('about/about-stylist.png')} alt="Styled outfit scene for AI stylist ideas" />
+          </div>
+          <div className="about-feature-copy">
+            <p className="about-kicker">AI Stylist</p>
+            <h2 id="about-stylist-title">Ask what to wear.</h2>
+            <p>Need an everyday outfit, something for work, a date, a trip or a special occasion?</p>
+            <p>Lookmefy's AI Stylist is designed to help you explore outfit ideas using your preferences, saved fashion and wardrobe context where available.</p>
+            <a className="about-text-link" href="/style-bot">Ask AI Stylist</a>
+          </div>
+        </div>
+      </section>
+
+      <section className="about-section about-discovery" aria-labelledby="about-discovery-title">
+        <div className="wrap about-discovery-grid">
+          <div>
+            <p className="about-kicker">Discover</p>
+            <h2 id="about-discovery-title">Fashion beyond a single store.</h2>
+            <p>Lookmefy helps users discover fashion through categories, collections and product recommendations while bringing those discoveries into the same experience as Wishlist, Try-On and Wardrobe.</p>
+            <a className="about-text-link" href="/categories">Explore Fashion</a>
+          </div>
+          <div className="about-discovery-panel">
+            <OptimizedImage src={asset('about/about-discovery.png')} alt="Editorial fashion category discovery preview" />
+          </div>
+        </div>
+      </section>
+
+      <section className="about-section about-connected" aria-labelledby="about-connected-title">
+        <div className="wrap about-connected-inner">
+          <h2 id="about-connected-title">Everything works better together.</h2>
+          <p>Lookmefy is designed so fashion discovery does not end when you find a product. Save it, visualise it, connect it to your wardrobe and use it as part of your personal style journey.</p>
+          <ol className="about-flow" aria-label="Lookmefy connected flow">
+            {flowSteps.map((step) => <li key={step}>{step}</li>)}
+          </ol>
+        </div>
+      </section>
+
+      <section className="about-section about-vision" aria-labelledby="about-vision-title">
+        <div className="wrap about-narrow">
+          <p className="about-kicker">Our Vision</p>
+          <h2 id="about-vision-title">Make online fashion feel more personal.</h2>
+          <div className="about-body">
+            <p>We believe discovering fashion online should be more than scrolling through endless products.</p>
+            <p>Our goal with Lookmefy is to create a more connected experience where technology helps people explore what they like, understand how pieces might work together and make more confident style decisions.</p>
+            <p>We are continuing to improve Lookmefy as our AI experiences, catalogue and personalisation systems evolve.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="about-section about-responsible" aria-labelledby="about-responsible-title">
+        <div className="wrap about-responsible-grid">
+          <div>
+            <p className="about-kicker">Responsible AI</p>
+            <h2 id="about-responsible-title">Designed with your experience in mind.</h2>
+          </div>
+          <div className="about-body">
+            <p>Some Lookmefy features use AI to create visual previews and styling suggestions. AI-generated results can vary and should be treated as visual guidance rather than an exact representation of real-world sizing or fit.</p>
+            <p>Where users provide photos or other personal content, those experiences should follow the application's existing Privacy Policy, consent flows and data-handling implementation.</p>
+            <div className="about-actions about-actions-compact">
+              <a className="about-button about-button-secondary" href="/privacy">Privacy Policy</a>
+              <a className="about-button about-button-secondary" href="/terms">Terms</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="about-section about-final" aria-labelledby="about-final-title">
+        <div className="wrap about-final-inner">
+          <p className="about-kicker">Start with your style</p>
+          <h2 id="about-final-title">Find it. Try it. Style it.</h2>
+          <p>Explore fashion in a way that feels more like you.</p>
+          <div className="about-actions">
+            <a className="about-button about-button-primary" href="/categories">Explore Fashion</a>
+            <a className="about-button about-button-secondary" href="/custom-try-on">Try It On</a>
+          </div>
+        </div>
       </section>
     </main>
   );
@@ -6560,6 +6812,7 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [spotlight, setSpotlight] = useState({ x: 0, y: 0, radius: 86 });
   const dialogRef = useRef(null);
   const nextButtonRef = useRef(null);
 
@@ -6567,77 +6820,90 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
     {
       eyebrow: 'Welcome',
       title: 'Let’s take a quick tour',
-      body: 'A few seconds to show how FitLook helps you browse, try on, and plan looks.',
-      gain: 'Skip anytime.',
+      body: 'A few seconds to understand Lookmefy: browse products, try them on, save pieces, and build outfits.',
+      gain: 'You can skip this anytime.',
       icon: <SparkleLineIcon />,
       visual: 'Profile - Browse - Try on',
-      target: 'FitLook',
-      position: 'center'
+      target: 'Lookmefy',
+      position: 'center',
+      selectors: ['.brand', '.site-logo', '.app-logo'],
+      fallback: { x: 50, y: 36, radius: 96 },
+      mobileFallback: { x: 42, y: 9, radius: 54 }
     },
     {
       eyebrow: 'Explore',
       title: 'Shop the catalog',
-      body: 'Use search, categories, and new arrivals to find pieces faster.',
-      gain: 'Find relevant pieces without digging through the whole store.',
+      body: 'Use search, categories, offers, and new arrivals to find relevant pieces quickly.',
+      gain: 'Less scrolling, better product discovery.',
       icon: <SearchIcon />,
       visual: 'Search + filters',
       target: 'Search and explore',
-      position: 'top'
+      position: 'top',
+      selectors: ['.desktop-search', '.search-shell', '.mobile-search-trigger', 'a[href="/categories"]', 'a[href="/search"]'],
+      fallback: { x: 50, y: 14, radius: 88 },
+      mobileFallback: { x: 62, y: 8, radius: 50 }
     },
     {
       eyebrow: 'Preview',
       title: 'AI Try-On',
-      body: 'Open a product and generate a preview with your saved try-on profile.',
-      gain: 'See the fit and vibe on your profile before spending time or credits on more looks.',
+      body: 'Open any product and generate an AI preview using your saved Lookmefy profile.',
+      gain: 'Check the look before buying.',
       icon: <TryOnIcon />,
       visual: 'Product - AI preview',
       target: 'AI try-on button',
-      position: 'right'
+      position: 'right',
+      selectors: ['a[href="/custom-try-on"]', 'a[href="/try-on"]', '.mobile-bottom-nav a[href="/custom-try-on"]', '.mobile-bottom-nav a[href="/try-on"]', '.product-ai-tryon-button', '.ai-tryon-button'],
+      fallback: { x: 58, y: 84, radius: 74 },
+      mobileFallback: { x: 50, y: 92, radius: 54 }
     },
     {
       eyebrow: 'Wardrobe',
       title: 'Build your Smart Closet',
-      body: 'Upload your own clothes, choose tops and bottoms, and generate outfit ideas.',
+      body: 'Upload your own clothes, choose saved tops and bottoms, and generate outfit ideas.',
       gain: 'Turn browsing into outfit planning instead of one-item decisions.',
       icon: <ClosetIcon />,
       visual: 'Upload - Combine - Save',
       target: 'Wardrobe',
-      position: 'left'
+      position: 'left',
+      selectors: ['a[href="/closet"]', '.mobile-bottom-nav a[href="/closet"]', '.closet-link', '.wardrobe-link'],
+      fallback: { x: 72, y: 86, radius: 76 },
+      mobileFallback: { x: 72, y: 92, radius: 54 }
     },
     {
       eyebrow: 'Personalize',
       title: 'Use Wishlist, Credits, and Concierge',
-      body: 'Save favorites, manage credits, and ask AI Stylist when you need help.',
-      gain: 'Keep favorites, budget previews, and get guidance without losing your place.',
+      body: 'Save favorites, manage credits, and ask AI Stylist when you need outfit help.',
+      gain: 'Keep decisions organized in one place.',
       icon: <HeartIcon />,
       visual: 'Save - Credit - Ask',
       target: 'Saved and credits',
-      position: 'bottom-right'
-    },
-    {
-      eyebrow: 'Workflow',
-      title: 'A simple way to use FitLook',
-      body: 'Browse, open a product, try it on, then save it or build an outfit.',
-      gain: 'Use credits only where they help you decide.',
-      icon: <BagIcon />,
-      visual: 'Browse - Try - Decide',
-      target: 'Product flow',
-      position: 'bottom'
+      position: 'bottom-right',
+      selectors: ['.credits-pill', '.credit-button', 'a[href="/wishlist"]', '.ai-stylist-launcher', '.mobile-bottom-nav a[href="/style-bot"]'],
+      fallback: { x: 82, y: 18, radius: 80 },
+      mobileFallback: { x: 80, y: 8, radius: 52 }
     },
     {
       eyebrow: 'Ready',
       title: 'You are all set',
-      body: 'You can replay this tour anytime from Profile.',
+      body: 'Start exploring. You can replay this tour anytime from your profile.',
       gain: 'Let us get your first look moving.',
       icon: <GlobeIcon />,
-      visual: 'Enter FitLook',
+      visual: 'Enter Lookmefy',
       target: 'Start shopping',
-      position: 'center'
+      position: 'center',
+      selectors: [],
+      fallback: { x: 50, y: 42, radius: 92 },
+      mobileFallback: { x: 50, y: 50, radius: 70 }
     }
   ], [user?.name]);
 
   const step = steps[stepIndex];
   const isLastStep = stepIndex === steps.length - 1;
+  const spotlightStyle = {
+    '--tour-x': `${Math.round(spotlight.x)}px`,
+    '--tour-y': `${Math.round(spotlight.y)}px`,
+    '--tour-radius': `${Math.round(spotlight.radius)}px`
+  };
 
   const markComplete = async (reason) => {
     if (saving) return;
@@ -6690,11 +6956,66 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
   };
 
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
+    const scrollX = window.scrollX || window.pageXOffset || 0;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousHtmlHeight = document.documentElement.style.height;
+    const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyPosition = document.body.style.position;
+    const previousBodyTop = document.body.style.top;
+    const previousBodyLeft = document.body.style.left;
+    const previousBodyRight = document.body.style.right;
+    const previousBodyWidth = document.body.style.width;
+    const previousBodyHeight = document.body.style.height;
+    const previousBodyOverscroll = document.body.style.overscrollBehavior;
+    const previousBodyTouchAction = document.body.style.touchAction;
+    const preventTourScroll = (event) => {
+      event.preventDefault();
+    };
+    const holdTourScroll = () => {
+      if (window.scrollX !== scrollX || window.scrollY !== scrollY) {
+        window.scrollTo(scrollX, scrollY);
+      }
+    };
+
+    document.documentElement.classList.add('onboarding-scroll-locked');
+    document.body.classList.add('onboarding-scroll-locked');
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.height = '100%';
+    document.documentElement.style.overscrollBehavior = 'none';
     document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = `-${scrollX}px`;
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+    document.body.style.height = '100dvh';
+    document.body.style.overscrollBehavior = 'none';
+    document.body.style.touchAction = 'none';
+    document.addEventListener('wheel', preventTourScroll, { passive: false, capture: true });
+    document.addEventListener('touchmove', preventTourScroll, { passive: false, capture: true });
+    window.addEventListener('scroll', holdTourScroll, { passive: true });
     window.requestAnimationFrame(() => nextButtonRef.current?.focus());
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('wheel', preventTourScroll, true);
+      document.removeEventListener('touchmove', preventTourScroll, true);
+      window.removeEventListener('scroll', holdTourScroll);
+      document.documentElement.classList.remove('onboarding-scroll-locked');
+      document.body.classList.remove('onboarding-scroll-locked');
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.documentElement.style.height = previousHtmlHeight;
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.position = previousBodyPosition;
+      document.body.style.top = previousBodyTop;
+      document.body.style.left = previousBodyLeft;
+      document.body.style.right = previousBodyRight;
+      document.body.style.width = previousBodyWidth;
+      document.body.style.height = previousBodyHeight;
+      document.body.style.overscrollBehavior = previousBodyOverscroll;
+      document.body.style.touchAction = previousBodyTouchAction;
+      window.scrollTo(scrollX, scrollY);
     };
   }, []);
 
@@ -6702,20 +7023,93 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
     nextButtonRef.current?.focus();
   }, [stepIndex]);
 
+  useEffect(() => {
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+    const getViewport = () => ({
+      width: window.visualViewport?.width || window.innerWidth || document.documentElement.clientWidth || 0,
+      height: window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0
+    });
+
+    const findVisibleTarget = (selectors = []) => {
+      const viewport = getViewport();
+      for (const selector of selectors) {
+        const elements = Array.from(document.querySelectorAll(selector));
+        const target = elements.find((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = window.getComputedStyle(element);
+          return rect.width > 4
+            && rect.height > 4
+            && rect.bottom > 0
+            && rect.right > 0
+            && rect.top < viewport.height
+            && rect.left < viewport.width
+            && style.display !== 'none'
+            && style.visibility !== 'hidden'
+            && Number(style.opacity || 1) > 0;
+        });
+        if (target) return target;
+      }
+      return null;
+    };
+
+    const updateSpotlight = () => {
+      const viewport = getViewport();
+      const isMobile = viewport.width <= 760;
+      const viewportMin = Math.min(viewport.width, viewport.height);
+      const minRadius = isMobile ? 48 : 56;
+      const maxRadius = Math.max(minRadius, Math.min(isMobile ? 86 : 118, viewportMin * (isMobile ? 0.2 : 0.18)));
+      const edgePadding = isMobile ? 18 : 28;
+      const mobileFallback = isMobile ? step.mobileFallback : null;
+      const target = mobileFallback ? null : findVisibleTarget(step.selectors);
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        const focusSize = rect.width > rect.height * 2.4
+          ? rect.height
+          : Math.max(rect.width, rect.height);
+        const radius = clamp(focusSize * (isMobile ? 0.62 : 0.72) + (isMobile ? 14 : 18), minRadius, maxRadius);
+        setSpotlight({
+          x: clamp(rect.left + rect.width / 2, edgePadding + radius * 0.54, viewport.width - edgePadding - radius * 0.54),
+          y: clamp(rect.top + rect.height / 2, edgePadding + radius * 0.54, viewport.height - edgePadding - radius * 0.54),
+          radius
+        });
+        return;
+      }
+
+      const fallback = mobileFallback || step.fallback || { x: 50, y: 50, radius: 92 };
+      const fallbackRadius = clamp(isMobile ? fallback.radius * 0.82 : fallback.radius, minRadius, maxRadius);
+      setSpotlight({
+        x: clamp(viewport.width * (fallback.x / 100), edgePadding + fallbackRadius * 0.54, viewport.width - edgePadding - fallbackRadius * 0.54),
+        y: clamp(viewport.height * (fallback.y / 100), edgePadding + fallbackRadius * 0.54, viewport.height - edgePadding - fallbackRadius * 0.54),
+        radius: fallbackRadius
+      });
+    };
+
+    updateSpotlight();
+    const timer = window.setTimeout(updateSpotlight, 220);
+    window.addEventListener('resize', updateSpotlight);
+    window.visualViewport?.addEventListener('resize', updateSpotlight);
+    window.addEventListener('scroll', updateSpotlight, true);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', updateSpotlight);
+      window.visualViewport?.removeEventListener('resize', updateSpotlight);
+      window.removeEventListener('scroll', updateSpotlight, true);
+    };
+  }, [step]);
+
   return (
     <div
-      className={`onboarding-overview onboarding-tour-step-${stepIndex} onboarding-tour-${step.position}`}
+      className={`onboarding-overview onboarding-cinematic onboarding-tour-step-${stepIndex} onboarding-tour-${step.position}`}
       role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) markComplete('outside-click');
-      }}
+      style={spotlightStyle}
     >
       <div className="onboarding-tour-spotlight" aria-hidden="true">
         <span>{step.icon}</span>
       </div>
       <section
         ref={dialogRef}
-        className={`onboarding-dialog ${stepIndex === 0 || isLastStep ? 'intro' : 'tooltip'}`}
+        className={`onboarding-dialog onboarding-cinematic-caption ${stepIndex === 0 || isLastStep ? 'intro' : 'tooltip'}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="onboarding-title"
@@ -6728,7 +7122,7 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
             <span>{stepIndex + 1} / {steps.length}</span>
           </div>
           <button type="button" onClick={() => markComplete('skip')} disabled={saving}>
-            {saving ? 'Saving...' : '×'}
+            {saving ? 'Saving...' : 'Skip'}
           </button>
         </header>
 
@@ -6916,7 +7310,7 @@ function AuthPage({ mode, setUser }) {
         if (!bodyPhoto) throw new Error('Choose or take a profile photo first.');
         body.set('username', `${baseUsername}_${suffix}`.slice(0, 48));
         body.set('email', `profile_${suffix}@fitlook.local`);
-        body.set('password', `FitLook-${suffix}-${random}`);
+        body.set('password', `Lookmefy-${suffix}-${random}`);
         body.set('phone', phoneValue);
         body.set('otpSession', otpSession);
         body.set('bodyPhoto', await prepareBodyPhoto(bodyPhoto));
@@ -6937,14 +7331,14 @@ function AuthPage({ mode, setUser }) {
   if (!isSignup) {
     return (
       <main className="auth-login-page auth-login-reference-page" aria-labelledby="login-title">
-        <section className="auth-login-story auth-login-reference-story" aria-label="FitLook fashion experience">
+        <section className="auth-login-story auth-login-reference-story" aria-label="Lookmefy fashion experience">
           <OptimizedImage className="auth-login-background" src={asset('login-editorial-couple.png')} alt="" eager />
           <div className="auth-login-scrim" aria-hidden="true" />
-          <a className="auth-login-logo" href="/">FitLook</a>
+          <a className="auth-login-logo" href="/">Lookmefy</a>
           <div className="auth-login-story-copy">
             <h2>AI Fashion Try-On Experience</h2>
             <p>See it on you before you buy it. Experience a more personal way to shop.</p>
-            <ul className="auth-login-benefits" aria-label="FitLook benefits">
+            <ul className="auth-login-benefits" aria-label="Lookmefy benefits">
               {[
                 ['AI Try-On', 'See selected styles on your profile.'],
                 ['Smart Closet', 'Keep your wardrobe in one place.'],
@@ -6957,12 +7351,12 @@ function AuthPage({ mode, setUser }) {
               ))}
             </ul>
           </div>
-          <p className="auth-login-copyright">FitLook, curated with intelligence.</p>
+          <p className="auth-login-copyright">Lookmefy, curated with intelligence.</p>
         </section>
 
         <section className="auth-login-panel auth-login-reference-panel">
           <div className="auth-login-card">
-            <a className="auth-login-mobile-logo" href="/">FitLook</a>
+            <a className="auth-login-mobile-logo" href="/">Lookmefy</a>
             <h1 id="login-title">Welcome Back</h1>
             <p className="auth-login-copy">Login with your mobile number and OTP.</p>
             <div className="auth-login-tabs" aria-hidden="true"><span>Mobile OTP</span></div>
@@ -6982,7 +7376,7 @@ function AuthPage({ mode, setUser }) {
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifyLoginOtp}>{otpLoading ? 'Verifying...' : 'Verify & login'}</button>
                 </div>
               )}
-              <p className="auth-login-switch-inline">New to FitLook? <a href="/signup">Sign up</a></p>
+              <p className="auth-login-switch-inline">New to Lookmefy? <a href="/signup">Sign up</a></p>
             </form>
             {message && <p className={`auth-login-message form-message ${/OTP sent|Logging in|Working/.test(message) ? '' : 'error-message'}`}>{message}</p>}
           </div>
@@ -6994,8 +7388,8 @@ function AuthPage({ mode, setUser }) {
   return (
     <main className="auth-signup-page auth-signup-reference-page" aria-labelledby="signup-title">
       <section className="auth-signup-reference-shell">
-        <form className="auth-signup-form auth-signup-reference-form" onSubmit={submit} aria-busy={isSubmitting}>
-          <a className="auth-signup-reference-logo" href="/">FitLook</a>
+        <form className={`auth-signup-form auth-signup-reference-form signup-step-${signupStep}`} onSubmit={submit} aria-busy={isSubmitting}>
+          <a className="auth-signup-reference-logo" href="/">Lookmefy</a>
           <header className="auth-signup-reference-head">
             <h1 id="signup-title">{signupStep === 'phone' ? <>Verify Your<br />Number</> : <>Create Your<br />Account</>}</h1>
             <p>{signupStep === 'phone' ? 'Start with your mobile number and OTP verification.' : 'Add the style details for your AI try-on profile.'}</p>
@@ -7064,7 +7458,7 @@ function AuthPage({ mode, setUser }) {
 
               <label className="signup-terms">
                 <input name="terms" type="checkbox" required />
-                <span>I agree to FitLook creating an AI try-on profile from my uploaded photo.</span>
+                <span>I agree to Lookmefy creating an AI try-on profile from my uploaded photo.</span>
               </label>
               <button className="signup-submit-button" type="submit" disabled={isSubmitting} aria-busy={isSubmitting}>{isSubmitting ? 'Creating account...' : 'Sign up'}</button>
             </>
@@ -7074,7 +7468,7 @@ function AuthPage({ mode, setUser }) {
           <p className="signup-switch">Already have an account? <a href="/login">Log in</a></p>
         </form>
 
-        <aside className="auth-signup-reference-scene" aria-label="FitLook wardrobe preview">
+        <aside className="auth-signup-reference-scene" aria-label="Lookmefy wardrobe preview">
           <img src={asset('wardrobe-room.jpg')} alt="Warm modern wardrobe interior" />
           <a href="/" className="auth-signup-reference-explore">Explore</a>
           <div className="auth-signup-scene-notes" aria-hidden="true">
@@ -7247,13 +7641,6 @@ function App() {
   }, [path, routeKey, user]);
 
   useEffect(() => {
-    if (path !== '/search') return;
-    const next = `/categories${window.location.search}${window.location.hash}`;
-    window.history.replaceState({}, '', next);
-    syncRoute();
-  }, [path, routeKey]);
-
-  useEffect(() => {
     if (path !== '/signup' && path !== '/login') return;
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
@@ -7287,7 +7674,7 @@ function App() {
     if (path === '/home') return <AtelierHome user={user} />;
     if (path === '/categories') return <CategoriesPage key={routeKey} user={user} />;
     if (categoryMatch) return <CategoryDepartmentPage category={decodeURIComponent(categoryMatch[1])} user={user} />;
-    if (path === '/search') return <CategoriesPage key={routeKey} user={user} />;
+    if (path === '/search') return <SearchLandingPage key={routeKey} />;
     if (path === '/try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/closet') return <ClosetPage user={user} setUser={setUser} />;
     if (path === '/closet/add') return <ClosetAddPage user={user} setUser={setUser} />;
@@ -7304,8 +7691,9 @@ function App() {
     if (path === '/signup') return <AuthPage mode="signup" setUser={setUser} />;
     if (path === '/login') return <AuthPage mode="login" setUser={setUser} />;
     if (path === '/how-it-works') return <HowItWorks user={user} />;
+    if (path === '/about') return <AboutPage user={user} />;
     if (pageMeta[path]) return <InfoPage meta={pageMeta[path]} user={user} />;
-    return <InfoPage meta={['Not Found', 'This page is not available yet.', 'Use the navigation to continue shopping with FitLook.', 'hero2.png']} user={user} ctaLabel="Back to Shop" ctaHref="/search" />;
+    return <InfoPage meta={['Not Found', 'This page is not available yet.', 'Use the navigation to continue shopping with Lookmefy.', 'hero2.png']} user={user} ctaLabel="Back to Shop" ctaHref="/search" />;
   }, [path, routeKey, user]);
 
   useEffect(() => {
@@ -7335,7 +7723,10 @@ function App() {
       '.wishlist-reference-section',
       '.profile-reference-panel',
       '.credit-purchase-layout',
-      '.feature-band'
+      '.feature-band',
+      '.about-section',
+      '.about-feature',
+      '.about-step'
     ].join(',');
     const sections = Array.from(document.querySelectorAll(revealSelectors));
     if (!sections.length) return undefined;
@@ -7362,12 +7753,19 @@ function App() {
     return () => observer.disconnect();
   }, [routeKey]);
 
+  const authFallbackRoutes = ['/try-on', '/custom-try-on', '/closet', '/closet/add', '/closet/combo', '/closet/items', '/style-bot', '/tokens', '/profile'];
   const isStandaloneAuth = (path === '/login' || path === '/signup') && !user;
+  const shouldHideMobileBottomNav = isStandaloneAuth || (!user && authFallbackRoutes.includes(path));
   const isConciergePage = path === '/style-bot' && Boolean(user);
   const isProductPage = /^\/product\/[^/]+$/.test(path);
   const isOpeningPage = path === '/';
   const isWardrobeWorkspace = path === '/closet' || path === '/closet/add';
   const shouldShowOnboarding = Boolean(user && !user.hasCompletedOnboarding && !isStandaloneAuth);
+
+  useEffect(() => {
+    document.body.classList.toggle('fitlook-auth-without-mobile-nav', shouldHideMobileBottomNav);
+    return () => document.body.classList.remove('fitlook-auth-without-mobile-nav');
+  }, [shouldHideMobileBottomNav]);
 
   return (
     <>
@@ -7377,7 +7775,7 @@ function App() {
       {!isOnline && <div className="network-status" role="status" aria-live="polite">You are offline. Changes will resume when you reconnect.</div>}
       {toast && <Toast toast={toast} onDismiss={dismissToast} />}
       {!isStandaloneAuth && !isOpeningPage && !isConciergePage && !isWardrobeWorkspace && <FloatingStylistLauncher user={user} />}
-      {!isStandaloneAuth && <MobileBottomNav user={user} />}
+      {!shouldHideMobileBottomNav && <MobileBottomNav user={user} />}
       {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Footer compact={path === '/wishlist' || path === '/profile' || isProductPage} />}
       {shouldShowOnboarding && <OnboardingOverview user={user} onComplete={setUser} />}
       {replayTourOpen && user && <OnboardingOverview user={user} persist={false} onClose={() => setReplayTourOpen(false)} />}

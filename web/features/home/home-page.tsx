@@ -65,7 +65,7 @@ function HomeNavFallback() {
     <header className="sticky top-0 z-50 border-b border-black/10 bg-white/90 shadow-[0_14px_34px_rgba(17,16,14,0.08)] backdrop-blur-xl">
       <div className="mx-auto flex h-16 w-[min(calc(100%-20px),1480px)] items-center justify-between min-[521px]:h-[72px] min-[521px]:w-[min(calc(100%-28px),1480px)] lg:h-[88px] xl:h-28">
         <Link className="font-display text-[31px] font-bold leading-none text-[#080806] min-[521px]:text-4xl xl:text-[54px]" href="/">
-          FitLook
+          Lookmefy
         </Link>
         <div className="flex items-center gap-1 xl:gap-5">
           <span className="hidden h-[70px] w-[min(22vw,360px)] min-w-[260px] rounded-pill bg-[#f2edeb] lg:block" aria-hidden="true" />
@@ -89,7 +89,7 @@ function HomeNavContent() {
       <div className="mx-auto flex h-16 w-[min(calc(100%-20px),1480px)] items-center justify-between gap-2 min-[521px]:h-[72px] min-[521px]:w-[min(calc(100%-28px),1480px)] lg:h-[88px] xl:h-28">
         <div className="flex min-w-0 flex-1 items-center gap-7 xl:gap-16">
           <Link className="font-display text-[31px] font-bold leading-none text-[#080806] min-[521px]:text-4xl xl:text-[54px]" href="/">
-            FitLook
+            Lookmefy
           </Link>
           <nav className="hidden items-center gap-7 xl:flex 2xl:gap-9" aria-label="Primary navigation">
             {navItems.map((item, index) => {
@@ -388,7 +388,7 @@ function HomeFooter() {
     <footer className="border-t border-[#e4dcda] bg-[#f7f2f0] py-16 text-[#11100e] md:py-24">
       <div className="mx-auto grid w-[min(calc(100%-48px),1480px)] gap-12 lg:grid-cols-[1.4fr_repeat(3,1fr)]">
         <div>
-          <Link className="font-display text-4xl font-bold" href="/">FitLook</Link>
+          <Link className="font-display text-4xl font-bold" href="/">Lookmefy</Link>
           <p className="mt-6 max-w-xs text-sm leading-7 text-[#5f5b56]">Defining the intersection of artisanal craftsmanship and digital innovation. Curated for the modern visionary.</p>
           <div className="mt-8 flex gap-3">
             {socialLinks.map((social) => {
@@ -415,7 +415,7 @@ function HomeFooter() {
         ))}
       </div>
       <div className="mx-auto mt-16 flex w-[min(calc(100%-48px),1480px)] flex-col gap-4 border-t border-[#e4dcda] pt-8 text-xs text-[#77706a] md:flex-row md:items-center md:justify-between">
-        <p>© 2024 FitLook. All rights reserved.</p>
+        <p>© 2024 Lookmefy. All rights reserved.</p>
         <div className="flex gap-8">
           <Link href="/privacy">Privacy Policy</Link>
           <Link href="/terms">Terms of Service</Link>
