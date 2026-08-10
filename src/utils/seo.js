@@ -1,22 +1,23 @@
-const SITE_NAME = 'FitLook';
+const SITE_NAME = 'Lookmefy';
 const DEFAULT_DESCRIPTION = 'AI-powered fashion shopping with virtual try-on, curated products, wardrobe tools, and style recommendations.';
 
 const routeMeta = {
-  '/': ['FitLook - AI Fashion Try-On', 'Upload your photo, try outfits virtually, and shop with more confidence.'],
-  '/home': ['FitLook Home - AI-Powered Fashion', 'Discover curated new arrivals, categories, and AI try-on tools.'],
-  '/categories': ['Fashion Categories - FitLook', 'Explore live catalog categories and discover styles by department.'],
-  '/search': ['Shop Fashion - FitLook', 'Search products, filter the live catalog, and try selected looks with AI.'],
-  '/custom-try-on': ['Custom AI Try-On - FitLook', 'Upload a clothing photo and generate a custom AI try-on preview.'],
-  '/try-on': ['AI Try-On - FitLook', 'Create virtual try-on previews with your FitLook profile.'],
-  '/closet': ['My Wardrobe - FitLook', 'Build outfits from your saved wardrobe and AI-generated looks.'],
-  '/wishlist': ['Wishlist - FitLook', 'Review saved products and create your personal style shortlist.'],
-  '/tokens': ['FitLook Credits', 'Buy secure credits for AI try-on generation.'],
-  '/profile': ['My Profile - FitLook', 'Manage your profile photo, credits, privacy, and account preferences.'],
-  '/cart': ['Cart - FitLook', 'Review selected products before checkout.'],
-  '/privacy': ['Privacy Policy - FitLook', 'How FitLook handles profile photos, try-on results, and account data.'],
-  '/terms': ['Terms and Conditions - FitLook', 'FitLook shopping, credits, AI try-on, and platform terms.'],
-  '/support': ['Support - FitLook', 'Get help with orders, payments, AI try-on, and account questions.'],
-  '/contact': ['Contact FitLook', 'Contact FitLook support for shopping, payment, or AI try-on help.']
+  '/': ['Lookmefy - AI Fashion Try-On', 'Upload your photo, try outfits virtually, and shop with more confidence.'],
+  '/home': ['Lookmefy Home - AI-Powered Fashion', 'Discover curated new arrivals, categories, and AI try-on tools.'],
+  '/about': ['About Lookmefy | AI Fashion, Virtual Try-On & Personal Styling', 'Learn about Lookmefy, an AI-powered fashion platform bringing fashion discovery, virtual try-on, digital wardrobe tools and AI styling into one experience.'],
+  '/categories': ['Fashion Categories - Lookmefy', 'Explore live catalog categories and discover styles by department.'],
+  '/search': ['Shop Fashion - Lookmefy', 'Search products, filter the live catalog, and try selected looks with AI.'],
+  '/custom-try-on': ['Custom AI Try-On - Lookmefy', 'Upload a clothing photo and generate a custom AI try-on preview.'],
+  '/try-on': ['AI Try-On - Lookmefy', 'Create virtual try-on previews with your Lookmefy profile.'],
+  '/closet': ['My Wardrobe - Lookmefy', 'Build outfits from your saved wardrobe and AI-generated looks.'],
+  '/wishlist': ['Wishlist - Lookmefy', 'Review saved products and create your personal style shortlist.'],
+  '/tokens': ['Lookmefy Credits', 'Buy secure credits for AI try-on generation.'],
+  '/profile': ['My Profile - Lookmefy', 'Manage your profile photo, credits, privacy, and account preferences.'],
+  '/cart': ['Cart - Lookmefy', 'Review selected products before checkout.'],
+  '/privacy': ['Privacy Policy - Lookmefy', 'How Lookmefy handles profile photos, try-on results, and account data.'],
+  '/terms': ['Terms and Conditions - Lookmefy', 'Lookmefy shopping, credits, AI try-on, and platform terms.'],
+  '/support': ['Support - Lookmefy', 'Get help with orders, payments, AI try-on, and account questions.'],
+  '/contact': ['Contact Lookmefy', 'Contact Lookmefy support for shopping, payment, or AI try-on help.']
 };
 
 function upsertMeta(selector, attributes) {
@@ -56,8 +57,8 @@ export function updateRouteSeo(path, search = '') {
 
 export function updateProductSeo(product) {
   if (typeof document === 'undefined' || !product) return;
-  const title = `${product.name} - FitLook`;
-  const description = product.description || `${product.name} by ${product.brand || 'FitLook catalog'}. Preview supported items with AI try-on.`;
+  const title = `${product.name} - Lookmefy`;
+  const description = product.description || `${product.name} by ${product.brand || 'Lookmefy catalog'}. Preview supported items with AI try-on.`;
   document.title = title;
   upsertMeta('meta[name="description"]', { identity: { name: 'description' }, values: { content: description.slice(0, 160) } });
   upsertMeta('meta[property="og:title"]', { identity: { property: 'og:title' }, values: { content: title } });

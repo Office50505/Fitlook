@@ -128,7 +128,7 @@ async function readRemoteBuffer(url, label = 'image') {
   const response = await fetch(url, {
     headers: {
       accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-      'user-agent': `Mozilla/5.0 FitLook ${label} fetcher`
+      'user-agent': `Mozilla/5.0 Lookmefy ${label} fetcher`
     }
   });
   if (!response.ok) throw new Error(`Could not fetch ${label} (${response.status})`);

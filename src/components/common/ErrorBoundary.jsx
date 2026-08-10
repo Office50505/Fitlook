@@ -42,7 +42,7 @@ export default class ErrorBoundary extends Component {
     if (this.state.error) {
       return (
         <main className="app-fallback" role="alert">
-          <h1>FitLook needs a refresh</h1>
+          <h1>Lookmefy needs a refresh</h1>
           <p>Something went wrong while loading this view. Refresh the page or return home.</p>
           <div>
             <button type="button" onClick={() => window.location.reload()}>Refresh</button>

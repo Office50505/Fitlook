@@ -41,7 +41,7 @@ export function SplashScreen({ imageSrc }: SplashScreenProps) {
         className="relative z-10 grid min-h-svh place-items-center px-6"
       >
         <div className="sr-only">
-          <h1 id="splash-title">FitLook</h1>
+          <h1 id="splash-title">Lookmefy</h1>
           <p>AI-powered fashion experience.</p>
           <ul>
             {features.map((feature) => (
@@ -52,7 +52,7 @@ export function SplashScreen({ imageSrc }: SplashScreenProps) {
 
         <motion.form
           animate={{ opacity: 1, y: 0 }}
-          aria-label="Start FitLook"
+          aria-label="Start Lookmefy"
           className="absolute left-1/2 top-[66.35%] z-20 -translate-x-1/2"
           initial={{ opacity: 0, y: 12 }}
           onSubmit={(event) => {
@@ -62,7 +62,7 @@ export function SplashScreen({ imageSrc }: SplashScreenProps) {
           transition={{ delay: 0.34, duration: 0.65, ease: "easeOut" }}
         >
           <Button
-            aria-label="Get started with FitLook"
+            aria-label="Get started with Lookmefy"
             className="opacity-0 focus-visible:opacity-100 focus-visible:ring-offset-4 focus-visible:ring-offset-black/40"
             size="splash"
             type="submit"

@@ -327,7 +327,7 @@ const PAGE_COPY = {
   inventory: {
     kicker: 'Products',
     title: 'Inventory',
-    lead: 'Add, edit, and review the products shown on the FitLook website.'
+    lead: 'Add, edit, and review the products shown on the Lookmefy website.'
   },
   analytics: {
     kicker: 'Reports',
@@ -755,7 +755,7 @@ function AdminApp() {
         <aside className="admin-sidebar" aria-label="Admin navigation">
           <div className="sidebar-brand-row">
             <div className="sidebar-brand">
-              <strong>FitLook</strong>
+              <strong>Lookmefy</strong>
               <span>Admin</span>
             </div>
             <button
@@ -794,7 +794,7 @@ function AdminApp() {
         <section className="admin-workspace">
           <header className="admin-topbar">
             <div className="admin-brand">
-              <span>FitLook</span>
+              <span>Lookmefy</span>
               <strong>Admin</strong>
             </div>
             <div className="admin-topline">
@@ -1630,7 +1630,7 @@ function AdminLogin({ onLogin }) {
       <section className="login-panel">
         <div className="login-art">
           <div className="brand-mark">F</div>
-          <span>FitLook Admin</span>
+          <span>Lookmefy Admin</span>
           <h1>Catalog access for invited Gmail accounts.</h1>
           <p>Use an approved Gmail and the admin key to enter the dashboard.</p>
           <div className="login-metrics" aria-label="Admin capabilities">

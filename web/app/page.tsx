@@ -1,5 +1,5 @@
-import { HomePage as FitLookHomePage } from "@/features/home/home-page";
+import { HomePage as LookmefyHomePage } from "@/features/home/home-page";
 
 export default function HomePage() {
-  return <FitLookHomePage />;
+  return <LookmefyHomePage />;
 }

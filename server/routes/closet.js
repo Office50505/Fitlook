@@ -228,7 +228,7 @@ function ensureTryOnProfileReady(user) {
   const status = user?.bodyPhoto?.status || 'ready';
   if (status === 'generating') throw new Error('Your full-body try-on profile is still preparing. Try again in a minute.');
   if (status === 'failed') throw new Error('Your full-body try-on profile failed. Upload a clearer profile photo first.');
-  if (!user?.bodyPhoto?.path) throw new Error('Upload a try-on profile photo before generating closet looks.');
+  if (!user?.bodyPhoto?.path && !user?.bodyPhoto?.url && !user?.bodyPhoto?.remoteUrl) throw new Error('Upload a try-on profile photo before generating closet looks.');
 }
 
 async function normalizeUpload(file, label, timer) {
@@ -446,7 +446,7 @@ async function greyStudioOutfitFromTransparent(transparentImage, user, timer) {
 }
 
 async function filePartFromStoredImage(image, label, timer) {
-  if (!image?.path) throw new Error(`${label} image is missing`);
+  if (!image?.path && !image?.url && !image?.remoteUrl) throw new Error(`${label} image is missing`);
   const { buffer: bytes } = await readStoredFile(image, label);
   const normalized = await sharp(bytes).rotate().jpeg({ quality: 90 }).toBuffer();
   timer?.mark(`${label} file prepared`, { kb: Math.round(normalized.length / 1024) });
@@ -491,7 +491,7 @@ async function generatedBytesFromUrl(url, timer) {
   const response = await fetch(url, {
     headers: {
       accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-      'user-agent': 'Mozilla/5.0 FitLook closet generated image fetcher'
+      'user-agent': 'Mozilla/5.0 Lookmefy closet generated image fetcher'
     }
   });
   if (!response.ok) throw new Error('Could not download generated closet outfit');
@@ -663,7 +663,7 @@ async function openAiStylistReply(message, items, suggestions) {
       input: [
         {
           role: 'system',
-          content: 'You are FitLook stylist AI. Recommend outfits only from the user closet data. Use visualProfile details such as color, pattern, fabric, silhouette, formality, occasions, seasons, style tags, and pairing notes when available. Be concise, practical, and mention exact item names.'
+          content: 'You are Lookmefy stylist AI. Recommend outfits only from the user closet data. Use visualProfile details such as color, pattern, fabric, silhouette, formality, occasions, seasons, style tags, and pairing notes when available. Be concise, practical, and mention exact item names.'
         },
         {
           role: 'user',

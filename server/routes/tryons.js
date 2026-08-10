@@ -108,6 +108,9 @@ function chargedVideoTokenCost(user) {
 }
 
 function ensureTryOnProfileReady(user) {
+  if (!user?.bodyPhoto?.path && !user?.bodyPhoto?.url && !user?.bodyPhoto?.remoteUrl) {
+    throw new Error('Upload a profile photo before starting an AI try-on.');
+  }
   const status = user?.bodyPhoto?.status || 'ready';
   if (status === 'generating') {
     throw new Error('Your full-body try-on profile is still being prepared. You can keep browsing and try again in a minute.');
@@ -136,7 +139,7 @@ function readableError(value, fallback = 'Request failed') {
   if (Array.isArray(value)) {
     const policyError = value.find((item) => /content[_\s-]?policy|safety|flagged/i.test([item?.type, item?.code, item?.msg, item?.message].filter(Boolean).join(' ')));
     if (policyError) {
-      return 'This try-on was blocked by the image provider safety check. FitLook will use the fitted/swimwear try-on mode for this product.';
+      return 'This try-on was blocked by the image provider safety check. Lookmefy will use the fitted/swimwear try-on mode for this product.';
     }
     const imageSizeError = value.find((item) => item?.type === 'image_too_small');
     if (imageSizeError) {
@@ -149,7 +152,7 @@ function readableError(value, fallback = 'Request failed') {
   if (typeof value === 'object') {
     const policyText = [value.type, value.code, value.msg, value.message, value.error].filter((item) => typeof item === 'string').join(' ');
     if (/content[_\s-]?policy|safety|flagged/i.test(policyText)) {
-      return 'This try-on was blocked by the image provider safety check. FitLook will use the fitted/swimwear try-on mode for this product.';
+      return 'This try-on was blocked by the image provider safety check. Lookmefy will use the fitted/swimwear try-on mode for this product.';
     }
     if (value.type === 'image_too_small') {
       return 'Reference image is too small for Wan 2.6. Wan requires every reference image to be at least 384x384px.';
@@ -449,7 +452,7 @@ async function cachedDataUri({ cache, key, timer, label, load }) {
 }
 
 async function dataUriFromUpload(image, label, timer, options = {}) {
-  if (!image?.path) throw new Error(`${label} image is missing`);
+  if (!image?.path && !image?.url && !image?.remoteUrl) throw new Error(`${label} image is missing`);
   const mimetype = image.mimetype || 'image/jpeg';
   const minWidth = Number(options.minWidth || 0);
   const minHeight = Number(options.minHeight || 0);
@@ -497,7 +500,7 @@ async function dataUriFromProduct(product, timer, options = {}) {
           const response = await fetch(url, {
             headers: {
               accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-              'user-agent': 'Mozilla/5.0 FitLook image fetcher'
+              'user-agent': 'Mozilla/5.0 Lookmefy image fetcher'
             }
           });
           if (!response.ok) throw new Error('Could not fetch product image');
@@ -525,7 +528,7 @@ async function dataUriFromProduct(product, timer, options = {}) {
 }
 
 async function filePartFromUpload(image, label, timer) {
-  if (!image?.path) throw new Error(`${label} image is missing`);
+  if (!image?.path && !image?.url && !image?.remoteUrl) throw new Error(`${label} image is missing`);
   const { buffer: bytes } = await readStoredFile(image, label);
   const mimetype = image.mimetype || 'image/jpeg';
   const normalized = await normalizeAvifImage({
@@ -547,7 +550,7 @@ async function filePartFromRemoteUrl(url, label, timer) {
   const response = await fetch(url, {
     headers: {
       accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-      'user-agent': 'Mozilla/5.0 FitLook image fetcher'
+      'user-agent': 'Mozilla/5.0 Lookmefy image fetcher'
     }
   });
   if (!response.ok) throw new Error(`Could not fetch ${label} image`);
@@ -867,7 +870,7 @@ async function generatedBytesFromUrl(url, timer) {
     const response = await fetch(url, {
       headers: {
         accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'user-agent': 'Mozilla/5.0 FitLook generated image fetcher'
+        'user-agent': 'Mozilla/5.0 Lookmefy generated image fetcher'
       }
     });
     if (response.ok) {
@@ -909,7 +912,7 @@ async function generatedVideoBytesFromUrl(url, timer) {
   const response = await fetch(url, {
     headers: {
       accept: 'video/mp4,video/quicktime,video/*,*/*;q=0.8',
-      'user-agent': 'Mozilla/5.0 FitLook generated video fetcher'
+      'user-agent': 'Mozilla/5.0 Lookmefy generated video fetcher'
     }
   });
   if (!response.ok) throw new Error(`Could not download generated try-on video from ${shortUrlForLog(url)}`);
@@ -998,7 +1001,7 @@ function readableVideoError(value, fallback = 'Could not generate video try-on')
 }
 
 async function videoFirstFrameDataUri(image, label, timer) {
-  if (!image?.path) throw new Error(`${label} image is missing`);
+  if (!image?.path && !image?.url && !image?.remoteUrl) throw new Error(`${label} image is missing`);
   const { buffer: bytes } = await readStoredFile(image, label);
   const normalized = await normalizeAvifImage({
     bytes,

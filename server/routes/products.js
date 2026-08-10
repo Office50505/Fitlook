@@ -856,7 +856,7 @@ async function buildProductDraft(affiliateLink) {
     redirect: 'follow',
     headers: {
       accept: 'text/html,application/xhtml+xml',
-      'user-agent': 'Mozilla/5.0 FitLook product importer'
+      'user-agent': 'Mozilla/5.0 Lookmefy product importer'
     }
   });
   if (!response.ok) throw new Error('Could not open that affiliate link');
@@ -1037,8 +1037,10 @@ function applyProductUpdate(product, body = {}) {
 router.get('/', productReadLimiter, async (req, res) => {
   const cacheKey = req.originalUrl;
   const payload = await productListCache.remember(cacheKey, async () => {
-    const { q, tag, category, brand, gender, featured, newArrival, sort } = req.query;
+    const { q, tag, category, brand, gender, featured, newArrival, sort, discounted, sale } = req.query;
     const limit = Math.min(Number(req.query.limit) || 48, 96);
+    const minPrice = Number(req.query.minPrice);
+    const maxPrice = Number(req.query.maxPrice);
     const botAmazonRecord = { badge: 'Amazon', $or: [{ sourceUrl: /amazon\.[a-z.]+\/dp\//i }, { affiliateLink: /amazon\.[a-z.]+\/dp\//i }] };
     const filter = { isActive: true, $nor: [botAmazonRecord] };
 
@@ -1049,6 +1051,14 @@ router.get('/', productReadLimiter, async (req, res) => {
     if (gender) filter.gender = new RegExp(`^${String(gender).trim()}$`, 'i');
     if (featured === 'true') filter.isFeatured = true;
     if (newArrival === 'true') filter.isNewArrival = true;
+    if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
+      filter.price = {};
+      if (Number.isFinite(minPrice)) filter.price.$gte = minPrice;
+      if (Number.isFinite(maxPrice)) filter.price.$lte = maxPrice;
+    }
+    if (discounted === 'true' || sale === 'true') {
+      filter.$expr = { $gt: ['$compareAtPrice', '$price'] };
+    }
 
     const projection = q ? { score: { $meta: 'textScore' } } : {};
     const query = Product.find(filter, projection).limit(limit).lean();

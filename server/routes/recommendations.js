@@ -35,7 +35,7 @@ async function clearRecommendationCaches() {
 }
 
 const EVENT_WEIGHTS = {
-  page_view: 1,
+  page_view: 0.25,
   search: 1,
   filter: 1,
   wishlist: 1,

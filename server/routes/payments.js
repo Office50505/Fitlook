@@ -25,7 +25,7 @@ const paymentStatusLimiter = createRateLimiter({
 
 const MONTHLY_PLAN = {
   id: 'monthly_100_tokens',
-  name: 'Monthly FitLook Tokens',
+  name: 'Monthly Lookmefy Tokens',
   amount: 100000,
   currency: 'INR',
   tokens: 100
@@ -214,14 +214,14 @@ async function createPhonePePayment({ req, user }) {
       expireAfter: Number(process.env.PHONEPE_ORDER_EXPIRE_SECONDS || 1200),
       paymentFlow: {
         type: 'PG_CHECKOUT',
-        message: 'FitLook monthly token subscription',
+        message: 'Lookmefy monthly token subscription',
         merchantUrls: { redirectUrl }
       },
       metaInfo: {
         udf1: user._id.toString(),
         udf2: MONTHLY_PLAN.id,
         udf3: String(MONTHLY_PLAN.tokens),
-        udf4: 'FitLook',
+        udf4: 'Lookmefy',
         udf5: 'monthly'
       }
     };
