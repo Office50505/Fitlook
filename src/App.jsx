@@ -4416,11 +4416,6 @@ function ClosetAddPage({ user, setUser }) {
               {uploadPreview ? <img src={uploadPreview} alt="Closet item preview" /> : <span className="atelier-closet-upload-copy"><span className="atelier-closet-upload-icon"><SparkleLineIcon /></span><strong>Upload Clothing Photo</strong><small>Drag and drop or click to browse</small><em>Optimal: Neutral background, flat lay or ghost mannequin</em></span>}
             </label>
             <input ref={cameraRef} className="camera-input" type="file" accept="image/*" capture="environment" onChange={selectUpload} />
-            <div className="atelier-closet-upload-thumbs" aria-label="Upload options">
-              <button type="button" onClick={() => cameraRef.current?.click()} aria-label="Take a photo"><CameraIcon /></button>
-              <button className="atelier-closet-upload-preview" type="button" onClick={() => fileRef.current?.click()} aria-label="Browse clothing photos">{uploadPreview ? <img src={uploadPreview} alt="Selected clothing" /> : <SparkleLineIcon />}</button>
-              <button type="button" onClick={() => fileRef.current?.click()} aria-label="Add a clothing photo">+</button>
-            </div>
             {savedItems.length > 0 && <div className="atelier-closet-recent"><span>Recently added</span>{savedItems.slice(0, 3).map((item) => <a href="/closet/items" key={item.id}><img src={item.imageUrl} alt={item.name} /></a>)}</div>}
           </div>
 
@@ -6813,6 +6808,9 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [spotlight, setSpotlight] = useState({ x: 0, y: 0, radius: 86 });
+  const [isMobileTour, setIsMobileTour] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches
+  ));
   const dialogRef = useRef(null);
   const nextButtonRef = useRef(null);
 
@@ -6827,6 +6825,7 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       target: 'Lookmefy',
       position: 'center',
       selectors: ['.brand', '.site-logo', '.app-logo'],
+      mobileSelectors: ['.site-header .brand', '.brand', '.site-logo', '.app-logo'],
       fallback: { x: 50, y: 36, radius: 96 },
       mobileFallback: { x: 42, y: 9, radius: 54 }
     },
@@ -6840,6 +6839,7 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       target: 'Search and explore',
       position: 'top',
       selectors: ['.desktop-search', '.search-shell', '.mobile-search-trigger', 'a[href="/categories"]', 'a[href="/search"]'],
+      mobileSelectors: ['.mobile-search-trigger', '.mobile-bottom-nav a[href="/categories"]', 'a[href="/search"]', 'a[href="/categories"]'],
       fallback: { x: 50, y: 14, radius: 88 },
       mobileFallback: { x: 62, y: 8, radius: 50 }
     },
@@ -6853,6 +6853,7 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       target: 'AI try-on button',
       position: 'right',
       selectors: ['a[href="/custom-try-on"]', 'a[href="/try-on"]', '.mobile-bottom-nav a[href="/custom-try-on"]', '.mobile-bottom-nav a[href="/try-on"]', '.product-ai-tryon-button', '.ai-tryon-button'],
+      mobileSelectors: ['.mobile-bottom-nav a[href="/custom-try-on"]', '.mobile-bottom-nav a[href="/try-on"]', 'a[href="/custom-try-on"]', 'a[href="/try-on"]', '.product-ai-tryon-button', '.ai-tryon-button'],
       fallback: { x: 58, y: 84, radius: 74 },
       mobileFallback: { x: 50, y: 92, radius: 54 }
     },
@@ -6866,6 +6867,7 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       target: 'Wardrobe',
       position: 'left',
       selectors: ['a[href="/closet"]', '.mobile-bottom-nav a[href="/closet"]', '.closet-link', '.wardrobe-link'],
+      mobileSelectors: ['.mobile-bottom-nav a[href="/closet"]', 'a[href="/closet"]', '.closet-link', '.wardrobe-link'],
       fallback: { x: 72, y: 86, radius: 76 },
       mobileFallback: { x: 72, y: 92, radius: 54 }
     },
@@ -6874,11 +6876,17 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       title: 'Use Wishlist, Credits, and Concierge',
       body: 'Save favorites, manage credits, and ask AI Stylist when you need outfit help.',
       gain: 'Keep decisions organized in one place.',
+      mobileEyebrow: 'AI Stylist and credits',
+      mobileTitle: 'Use AI Stylist and Credits',
+      mobileBody: 'Ask AI Stylist for outfit ideas and manage credits for try-ons.',
+      mobileGain: 'Keep outfit help one tap away on mobile.',
+      mobileTarget: 'AI Stylist',
       icon: <HeartIcon />,
       visual: 'Save - Credit - Ask',
       target: 'Saved and credits',
       position: 'bottom-right',
       selectors: ['.credits-pill', '.credit-button', 'a[href="/wishlist"]', '.ai-stylist-launcher', '.mobile-bottom-nav a[href="/style-bot"]'],
+      mobileSelectors: ['.mobile-bottom-nav a[href="/style-bot"]', '.mobile-bottom-nav a[href="/profile"]', '.header-credit-button', '.credits-pill', '.credit-button', '.ai-stylist-launcher', 'a[href="/wishlist"]'],
       fallback: { x: 82, y: 18, radius: 80 },
       mobileFallback: { x: 80, y: 8, radius: 52 }
     },
@@ -6898,6 +6906,14 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
   ], [user?.name]);
 
   const step = steps[stepIndex];
+  const displayStep = isMobileTour ? {
+    ...step,
+    eyebrow: step.mobileEyebrow || step.eyebrow,
+    title: step.mobileTitle || step.title,
+    body: step.mobileBody || step.body,
+    gain: step.mobileGain || step.gain,
+    target: step.mobileTarget || step.target
+  } : step;
   const isLastStep = stepIndex === steps.length - 1;
   const spotlightStyle = {
     '--tour-x': `${Math.round(spotlight.x)}px`,
@@ -6954,6 +6970,23 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       first.focus();
     }
   };
+
+  useEffect(() => {
+    const updateMobileTourState = () => {
+      setIsMobileTour(window.matchMedia('(max-width: 760px)').matches);
+    };
+
+    updateMobileTourState();
+    window.addEventListener('resize', updateMobileTourState);
+    window.addEventListener('orientationchange', updateMobileTourState);
+    window.visualViewport?.addEventListener('resize', updateMobileTourState);
+
+    return () => {
+      window.removeEventListener('resize', updateMobileTourState);
+      window.removeEventListener('orientationchange', updateMobileTourState);
+      window.visualViewport?.removeEventListener('resize', updateMobileTourState);
+    };
+  }, []);
 
   useEffect(() => {
     const scrollX = window.scrollX || window.pageXOffset || 0;
@@ -7025,6 +7058,11 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
 
   useEffect(() => {
     const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+    const clampCenter = (value, size, radius, padding) => {
+      const min = padding + radius;
+      const max = size - padding - radius;
+      return min > max ? size / 2 : clamp(value, min, max);
+    };
     const getViewport = () => ({
       width: window.visualViewport?.width || window.innerWidth || document.documentElement.clientWidth || 0,
       height: window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0
@@ -7060,7 +7098,8 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       const maxRadius = Math.max(minRadius, Math.min(isMobile ? 86 : 118, viewportMin * (isMobile ? 0.2 : 0.18)));
       const edgePadding = isMobile ? 18 : 28;
       const mobileFallback = isMobile ? step.mobileFallback : null;
-      const target = mobileFallback ? null : findVisibleTarget(step.selectors);
+      const targetSelectors = isMobile ? (step.mobileSelectors || step.selectors) : step.selectors;
+      const target = findVisibleTarget(targetSelectors);
       if (target) {
         const rect = target.getBoundingClientRect();
         const focusSize = rect.width > rect.height * 2.4
@@ -7068,8 +7107,8 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
           : Math.max(rect.width, rect.height);
         const radius = clamp(focusSize * (isMobile ? 0.62 : 0.72) + (isMobile ? 14 : 18), minRadius, maxRadius);
         setSpotlight({
-          x: clamp(rect.left + rect.width / 2, edgePadding + radius * 0.54, viewport.width - edgePadding - radius * 0.54),
-          y: clamp(rect.top + rect.height / 2, edgePadding + radius * 0.54, viewport.height - edgePadding - radius * 0.54),
+          x: clampCenter(rect.left + rect.width / 2, viewport.width, radius, edgePadding),
+          y: clampCenter(rect.top + rect.height / 2, viewport.height, radius, edgePadding),
           radius
         });
         return;
@@ -7078,22 +7117,28 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       const fallback = mobileFallback || step.fallback || { x: 50, y: 50, radius: 92 };
       const fallbackRadius = clamp(isMobile ? fallback.radius * 0.82 : fallback.radius, minRadius, maxRadius);
       setSpotlight({
-        x: clamp(viewport.width * (fallback.x / 100), edgePadding + fallbackRadius * 0.54, viewport.width - edgePadding - fallbackRadius * 0.54),
-        y: clamp(viewport.height * (fallback.y / 100), edgePadding + fallbackRadius * 0.54, viewport.height - edgePadding - fallbackRadius * 0.54),
+        x: clampCenter(viewport.width * (fallback.x / 100), viewport.width, fallbackRadius, edgePadding),
+        y: clampCenter(viewport.height * (fallback.y / 100), viewport.height, fallbackRadius, edgePadding),
         radius: fallbackRadius
       });
     };
 
     updateSpotlight();
     const timer = window.setTimeout(updateSpotlight, 220);
+    const secondTimer = window.setTimeout(updateSpotlight, 520);
     window.addEventListener('resize', updateSpotlight);
+    window.addEventListener('orientationchange', updateSpotlight);
     window.visualViewport?.addEventListener('resize', updateSpotlight);
+    window.visualViewport?.addEventListener('scroll', updateSpotlight);
     window.addEventListener('scroll', updateSpotlight, true);
 
     return () => {
       window.clearTimeout(timer);
+      window.clearTimeout(secondTimer);
       window.removeEventListener('resize', updateSpotlight);
+      window.removeEventListener('orientationchange', updateSpotlight);
       window.visualViewport?.removeEventListener('resize', updateSpotlight);
+      window.visualViewport?.removeEventListener('scroll', updateSpotlight);
       window.removeEventListener('scroll', updateSpotlight, true);
     };
   }, [step]);
@@ -7118,7 +7163,7 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       >
         <header className="onboarding-topbar">
           <div>
-            <p>{step.eyebrow}</p>
+            <p>{displayStep.eyebrow}</p>
             <span>{stepIndex + 1} / {steps.length}</span>
           </div>
           <button type="button" onClick={() => markComplete('skip')} disabled={saving}>
@@ -7128,10 +7173,10 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
 
         <div className="onboarding-content">
           <div className="onboarding-copy">
-            <small>{step.target}</small>
-            <h2 id="onboarding-title">{step.title}</h2>
-            <p id="onboarding-copy">{step.body}</p>
-            <b>{step.gain}</b>
+            <small>{displayStep.target}</small>
+            <h2 id="onboarding-title">{displayStep.title}</h2>
+            <p id="onboarding-copy">{displayStep.body}</p>
+            <b>{displayStep.gain}</b>
           </div>
         </div>
 
@@ -7755,10 +7800,10 @@ function App() {
 
   const authFallbackRoutes = ['/try-on', '/custom-try-on', '/closet', '/closet/add', '/closet/combo', '/closet/items', '/style-bot', '/tokens', '/profile'];
   const isStandaloneAuth = (path === '/login' || path === '/signup') && !user;
-  const shouldHideMobileBottomNav = isStandaloneAuth || (!user && authFallbackRoutes.includes(path));
   const isConciergePage = path === '/style-bot' && Boolean(user);
   const isProductPage = /^\/product\/[^/]+$/.test(path);
   const isOpeningPage = path === '/';
+  const shouldHideMobileBottomNav = isOpeningPage || isStandaloneAuth || (!user && authFallbackRoutes.includes(path));
   const isWardrobeWorkspace = path === '/closet' || path === '/closet/add';
   const shouldShowOnboarding = Boolean(user && !user.hasCompletedOnboarding && !isStandaloneAuth);
 
