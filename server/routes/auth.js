@@ -448,7 +448,7 @@ async function runProfileFullBodyJob({ userId, sourceBodyPhoto }) {
 async function generateFullBodyProfileInBackground(userId, sourceBodyPhoto, { enabled = true } = {}) {
   if (!enabled || !shouldGenerateFullBodyProfile()) return;
 
-  const queueMode = String(process.env.PROFILE_FULL_BODY_QUEUE_MODE || 'queue').toLowerCase();
+  const queueMode = String(process.env.PROFILE_FULL_BODY_QUEUE_MODE || 'inline').toLowerCase();
   if (['inline', 'local', 'api', 'off'].includes(queueMode)) {
     setImmediate(() => {
       runProfileFullBodyJob({ userId, sourceBodyPhoto }).catch(() => {});
