@@ -7433,6 +7433,7 @@ function AuthPage({ mode, setUser }) {
                 </div>
               )}
               <p className="auth-login-switch-inline">New to Lookmefy? <a href="/signup">Sign up</a></p>
+              <p className="auth-login-switch-inline"><a href="/categories">Explore without login</a></p>
             </form>
             {message && <p className={`auth-login-message form-message ${/OTP sent|Logging in|Working/.test(message) ? '' : 'error-message'}`}>{message}</p>}
           </div>
@@ -7522,11 +7523,12 @@ function AuthPage({ mode, setUser }) {
 
           {message && <p className={`signup-message form-message ${/OTP sent|Creating account/.test(message) ? '' : 'error-message'}`}>{message}</p>}
           <p className="signup-switch">Already have an account? <a href="/login">Log in</a></p>
+          <p className="signup-switch"><a href="/categories">Explore without login</a></p>
         </form>
 
         <aside className="auth-signup-reference-scene" aria-label="Lookmefy wardrobe preview">
           <img src={asset('wardrobe-room.jpg')} alt="Warm modern wardrobe interior" />
-          <a href="/" className="auth-signup-reference-explore">Explore</a>
+          <a href="/categories" className="auth-signup-reference-explore">Explore</a>
           <div className="auth-signup-scene-notes" aria-hidden="true">
             <div><img src={asset('arrival-3.jpg')} alt="" /><span><strong>Personalized for you</strong><small>Curated pieces for your style</small></span></div>
             <div><img src={asset('arrival-5.jpg')} alt="" /><span><strong>AI style edit</strong><small>Looks built around you</small></span></div>
