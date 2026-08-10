@@ -7728,7 +7728,7 @@ function App() {
     const categoryMatch = path.match(/^\/categories\/([^/]+)$/);
     if (path === '/') return <Home user={user} />;
     if (path === '/home') return <AtelierHome user={user} />;
-    if (path === '/categories') return <CategoriesPage key={routeKey} user={user} />;
+    if (path === '/categories' || path === '/explore') return <CategoriesPage key={routeKey} user={user} />;
     if (categoryMatch) return <CategoryDepartmentPage category={decodeURIComponent(categoryMatch[1])} user={user} />;
     if (path === '/search') return <SearchLandingPage key={routeKey} />;
     if (path === '/try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
