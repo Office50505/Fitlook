@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import OptimizedImage from './components/common/OptimizedImage.jsx';
 import ShaderBackground from './components/common/ShaderBackground.jsx';
@@ -3312,6 +3312,7 @@ function ClosetPage({ user, setUser }) {
   ]);
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [mobileWardrobePicker, setMobileWardrobePicker] = useState(null);
+  const generateInFlightRef = useRef(false);
 
   const loadCloset = () => {
     if (!user) return;
@@ -3548,10 +3549,12 @@ function ClosetPage({ user, setUser }) {
   };
 
   const generateOutfit = async (ids = selectedIds, details = {}) => {
+    if (generateInFlightRef.current) return;
     if (!ids.length) {
       setMessage('Select closet items or choose a suggested combo first.');
       return;
     }
+    generateInFlightRef.current = true;
     setGenerating(true);
     setMessage('');
     try {
@@ -3579,6 +3582,7 @@ function ClosetPage({ user, setUser }) {
     } catch (err) {
       setMessage(err.message);
     } finally {
+      generateInFlightRef.current = false;
       setGenerating(false);
     }
   };
@@ -5090,6 +5094,8 @@ function CustomTryOnPage({ user, setUser }) {
 function CustomClothingTryOn({ user, setUser }) {
   const fileRef = useRef(null);
   const generationControllerRef = useRef(null);
+  const generationInFlightRef = useRef(false);
+  const generationRunRef = useRef(0);
   const [garmentFile, setGarmentFile] = useState(null);
   const [garmentPreview, setGarmentPreview] = useState('');
   const [result, setResult] = useState(null);
@@ -5107,13 +5113,48 @@ function CustomClothingTryOn({ user, setUser }) {
     if (garmentPreview.startsWith('blob:')) URL.revokeObjectURL(garmentPreview);
   }, [garmentPreview]);
 
+  const isValidImageFile = (file) => Boolean(file)
+    && (String(file.type || '').startsWith('image/') || /\.(?:avif|gif|heic|heif|jpe?g|png|svg|webp)$/i.test(file.name || ''));
+
+  const clearFileInput = () => {
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const abortActiveGeneration = () => {
+    generationControllerRef.current?.abort();
+    generationControllerRef.current = null;
+    generationInFlightRef.current = false;
+    setLoading(false);
+  };
+
+  const clearGarment = () => {
+    generationRunRef.current += 1;
+    abortActiveGeneration();
+    setResult(null);
+    setMessage('');
+    setPreviewMode('garment');
+    setGarmentFile(null);
+    setGarmentPreview('');
+    clearFileInput();
+  };
+
   const setGarmentFromFile = (file) => {
+    generationRunRef.current += 1;
+    abortActiveGeneration();
     setResult(null);
     setMessage('');
     setPreviewMode('garment');
     if (!file) {
       setGarmentFile(null);
       setGarmentPreview('');
+      clearFileInput();
+      return;
+    }
+    if (!isValidImageFile(file)) {
+      setGarmentFile(null);
+      setGarmentPreview('');
+      setMessage('Upload a valid image file.');
+      clearFileInput();
       return;
     }
     setGarmentFile(file);
@@ -5137,19 +5178,31 @@ function CustomClothingTryOn({ user, setUser }) {
 
   const submit = async (event) => {
     event.preventDefault();
+    if (generationInFlightRef.current) return;
     const file = garmentFile || fileRef.current?.files?.[0];
     if (!file) {
       setMessage('Upload a clothing photo first.');
       return;
     }
+    if (!isValidImageFile(file)) {
+      setMessage('Upload a valid image file.');
+      clearFileInput();
+      return;
+    }
+    generationInFlightRef.current = true;
+    const generationRun = generationRunRef.current + 1;
+    generationRunRef.current = generationRun;
     setLoading(true);
     setMessage('Generating custom try-on...');
+    setResult(null);
+    setPreviewMode('garment');
     const controller = new AbortController();
     generationControllerRef.current = controller;
     try {
       const form = new FormData();
       form.append('garment', file);
       const data = await api('/tryons/custom', { method: 'POST', body: form, timeout: AI_IMAGE_TIMEOUT_MS, signal: controller.signal });
+      if (generationRunRef.current !== generationRun) return;
       setResult(data.tryOn);
       setPreviewMode('result');
       recordEvent('custom_tryon');
@@ -5161,11 +5214,13 @@ function CustomClothingTryOn({ user, setUser }) {
       }
       setMessage('Custom try-on ready.');
     } catch (err) {
+      if (generationRunRef.current !== generationRun) return;
       if (err.name === 'AbortError') setMessage('Generation canceled. Your garment photo is ready to try again.');
       else setMessage(err.message);
     } finally {
       if (generationControllerRef.current === controller) {
         generationControllerRef.current = null;
+        generationInFlightRef.current = false;
         setLoading(false);
       }
     }
@@ -5198,6 +5253,7 @@ function CustomClothingTryOn({ user, setUser }) {
               <span className="upload-action">Browse files</span>
             </span>
           </label>
+          {garmentPreview && <button className="custom-upload-remove" type="button" onClick={clearGarment} disabled={loading}>Remove upload</button>}
           <div className="custom-tryon-mobile-action">
             <button className="submit" type="submit" disabled={loading}>{loading ? 'Generating...' : 'Generate Custom Try-On'}</button>
             <span>{user?.tokens ?? 0} Credits Left</span>
@@ -7153,7 +7209,7 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
     nextButtonRef.current?.focus();
   }, [stepIndex]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
     const clampCenter = (value, size, radius, padding) => {
       const min = padding + radius;
@@ -7187,6 +7243,41 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       return null;
     };
 
+    let frameId = 0;
+    let observedTarget = null;
+    let resizeObserver = null;
+    let mutationObserver = null;
+
+    const setMeasuredSpotlight = (nextSpotlight) => {
+      setSpotlight((current) => {
+        const isSame = Math.abs(current.x - nextSpotlight.x) < 0.5
+          && Math.abs(current.y - nextSpotlight.y) < 0.5
+          && Math.abs(current.radius - nextSpotlight.radius) < 0.5;
+        return isSame ? current : nextSpotlight;
+      });
+    };
+
+    const scheduleSpotlightUpdate = () => {
+      if (frameId) return;
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        updateSpotlight();
+      });
+    };
+
+    const observeTarget = (target) => {
+      if (observedTarget === target) return;
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+      observedTarget = target;
+      if (!target || typeof ResizeObserver === 'undefined') return;
+
+      resizeObserver = new ResizeObserver(scheduleSpotlightUpdate);
+      resizeObserver.observe(target);
+      const layoutParent = target.closest?.('.mobile-bottom-nav, .site-header, .desktop-search, .header-actions, .mobile-header-actions, header');
+      if (layoutParent && layoutParent !== target) resizeObserver.observe(layoutParent);
+    };
+
     const updateSpotlight = () => {
       const viewport = getViewport();
       const isMobile = viewport.width <= 760;
@@ -7204,17 +7295,19 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
           : Math.max(rect.width, rect.height);
         const isBottomNavTarget = isMobile && target.closest?.('.mobile-bottom-nav');
         const radius = clamp((focusSize / 2) + (isBottomNavTarget ? 2 : isMobile ? 4 : 16), minRadius, isBottomNavTarget ? 28 : maxRadius);
-        setSpotlight({
-          x: clampCenter(rect.left + rect.width / 2, viewport.width, radius, edgePadding),
-          y: clampCenter(rect.top + rect.height / 2, viewport.height, radius, edgePadding),
+        observeTarget(target);
+        setMeasuredSpotlight({
+          x: clamp(rect.left + rect.width / 2, edgePadding, viewport.width - edgePadding),
+          y: clamp(rect.top + rect.height / 2, edgePadding, viewport.height - edgePadding),
           radius
         });
         return;
       }
 
+      observeTarget(null);
       const fallback = mobileFallback || step.fallback || { x: 50, y: 50, radius: 92 };
       const fallbackRadius = clamp(isMobile ? fallback.radius * 0.82 : fallback.radius, minRadius, maxRadius);
-      setSpotlight({
+      setMeasuredSpotlight({
         x: clampCenter(viewport.width * (fallback.x / 100), viewport.width, fallbackRadius, edgePadding),
         y: clampCenter(viewport.height * (fallback.y / 100), viewport.height, fallbackRadius, edgePadding),
         radius: fallbackRadius
@@ -7222,22 +7315,34 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
     };
 
     updateSpotlight();
-    const timer = window.setTimeout(updateSpotlight, 220);
-    const secondTimer = window.setTimeout(updateSpotlight, 520);
-    window.addEventListener('resize', updateSpotlight);
-    window.addEventListener('orientationchange', updateSpotlight);
-    window.visualViewport?.addEventListener('resize', updateSpotlight);
-    window.visualViewport?.addEventListener('scroll', updateSpotlight);
-    window.addEventListener('scroll', updateSpotlight, true);
+    const timer = window.setTimeout(scheduleSpotlightUpdate, 220);
+    const secondTimer = window.setTimeout(scheduleSpotlightUpdate, 520);
+    if (typeof MutationObserver !== 'undefined') {
+      mutationObserver = new MutationObserver(scheduleSpotlightUpdate);
+      mutationObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'],
+        childList: true,
+        subtree: true
+      });
+    }
+    window.addEventListener('resize', scheduleSpotlightUpdate);
+    window.addEventListener('orientationchange', scheduleSpotlightUpdate);
+    window.visualViewport?.addEventListener('resize', scheduleSpotlightUpdate);
+    window.visualViewport?.addEventListener('scroll', scheduleSpotlightUpdate);
+    window.addEventListener('scroll', scheduleSpotlightUpdate, true);
 
     return () => {
+      if (frameId) window.cancelAnimationFrame(frameId);
       window.clearTimeout(timer);
       window.clearTimeout(secondTimer);
-      window.removeEventListener('resize', updateSpotlight);
-      window.removeEventListener('orientationchange', updateSpotlight);
-      window.visualViewport?.removeEventListener('resize', updateSpotlight);
-      window.visualViewport?.removeEventListener('scroll', updateSpotlight);
-      window.removeEventListener('scroll', updateSpotlight, true);
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+      window.removeEventListener('resize', scheduleSpotlightUpdate);
+      window.removeEventListener('orientationchange', scheduleSpotlightUpdate);
+      window.visualViewport?.removeEventListener('resize', scheduleSpotlightUpdate);
+      window.visualViewport?.removeEventListener('scroll', scheduleSpotlightUpdate);
+      window.removeEventListener('scroll', scheduleSpotlightUpdate, true);
     };
   }, [step]);
 
