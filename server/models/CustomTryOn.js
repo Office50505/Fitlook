@@ -52,6 +52,11 @@ const customTryOnSchema = new mongoose.Schema(
     model: { type: String, default: 'openai/gpt-image-2/edit' },
     quality: { type: String, default: 'low' },
     prompt: { type: String, trim: true },
+    promptKey: { type: String, trim: true },
+    providerPredictionId: { type: String, trim: true },
+    providerCostUsd: { type: Number },
+    turbo: { type: Boolean },
+    garmentCount: { type: Number },
     tokenCost: { type: Number, default: 1 },
     garment: {
       filename: String,
@@ -80,6 +85,10 @@ customTryOnSchema.methods.toClient = function toClient() {
     provider: this.provider,
     model: this.model,
     quality: this.quality,
+    promptKey: this.promptKey || '',
+    providerCostUsd: this.providerCostUsd || 0,
+    turbo: Boolean(this.turbo),
+    garmentCount: this.garmentCount || 1,
     tokenCost: this.tokenCost,
     createdAt: this.createdAt
   };

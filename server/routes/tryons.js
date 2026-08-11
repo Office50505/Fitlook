@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import multer from 'multer';
 import path from 'node:path';
 import sharp from 'sharp';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import CustomTryOn from '../models/CustomTryOn.js';
 import ExternalTryOn from '../models/ExternalTryOn.js';
@@ -17,6 +18,17 @@ import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
 import { enqueueJob, enqueueJobAndWait, safeJobId } from '../utils/jobQueue.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { readStoredFile, saveBuffer, storedFileSignature } from '../utils/storage.js';
+import {
+  createPrunaPrediction,
+  downloadPrunaOutput,
+  fetchPrunaOutput,
+  firstPrunaGenerationUrl,
+  imagePrunaCostUsd,
+  uploadPrunaFile,
+  videoPrunaCostUsd,
+  waitForPrunaPrediction
+} from '../utils/prunaClient.js';
+import { isWatchProduct, promptForKey, promptForProduct, promptKeyForProduct } from '../utils/tryOnPrompts.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -30,6 +42,7 @@ const inFlightImageDataUriCache = new Map();
 const avifExtensions = new Set(['.avif']);
 const avifMimeTypes = new Set(['image/avif', 'image/x-avif']);
 const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.env.DEBUG_GENERATION_LOGS || '').toLowerCase());
+const debugPrunaVideoLogs = ['1', 'true', 'yes', 'on'].includes(String(process.env.DEBUG_PRUNA_VIDEO_LOGS || process.env.DEBUG_GENERATION_LOGS || '').toLowerCase());
 const tryOnReadLimiter = createRateLimiter({
   name: 'tryons:read',
   windowMs: 5 * 60 * 1000,
@@ -50,20 +63,6 @@ const tryOnImageHourlyLimiter = createRateLimiter({
   max: 30,
   keyGenerator: rateLimitKeys.user,
   message: 'AI try-on generation is temporarily limited for your account. Please try again later.'
-});
-const tryOnVideoBurstLimiter = createRateLimiter({
-  name: 'tryons:video-burst',
-  windowMs: 10 * 60 * 1000,
-  max: 3,
-  keyGenerator: rateLimitKeys.user,
-  message: 'Too many video try-on requests. Please wait before generating another video.'
-});
-const tryOnVideoHourlyLimiter = createRateLimiter({
-  name: 'tryons:video-hour',
-  windowMs: 60 * 60 * 1000,
-  max: 10,
-  keyGenerator: rateLimitKeys.user,
-  message: 'Video try-on generation is temporarily limited for your account. Please try again later.'
 });
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -91,8 +90,8 @@ function tokenCost() {
 }
 
 function videoTokenCost() {
-  const value = Number(process.env.TRYON_VIDEO_TOKEN_COST || 2);
-  return Number.isFinite(value) && value > 0 ? Math.ceil(value) : 2;
+  const value = Number(process.env.TRYON_VIDEO_TOKEN_COST || 3);
+  return Number.isFinite(value) && value > 0 ? Math.ceil(value) : 3;
 }
 
 function devMode(user) {
@@ -171,10 +170,20 @@ function readableError(value, fallback = 'Request failed') {
 function createTimer(label, meta = {}) {
   const start = performance.now();
   let last = start;
+  const steps = [];
   if (debugGenerationLogs) console.log(`[tryon:${label}] start`, meta);
+  const addStep = (name, now, extra = {}) => {
+    steps.push({
+      step: name,
+      stepMs: Math.round(now - last),
+      totalMs: Math.round(now - start),
+      ...extra
+    });
+  };
   return {
     mark(step, extra = {}) {
       const now = performance.now();
+      addStep(step, now, extra);
       if (debugGenerationLogs) {
         console.log(`[tryon:${label}] ${step}`, {
           stepMs: Math.round(now - last),
@@ -186,11 +195,23 @@ function createTimer(label, meta = {}) {
     },
     end(extra = {}) {
       const now = performance.now();
+      const totalMs = Math.round(now - start);
       if (debugGenerationLogs) {
         console.log(`[tryon:${label}] done`, {
-          totalMs: Math.round(now - start),
+          totalMs,
           ...extra
         });
+      }
+      if (label === 'video') {
+        const failed = Boolean(extra?.error);
+        console.log(JSON.stringify({
+          level: failed ? 'warn' : 'info',
+          event: 'tryon_video_timeline',
+          totalMs,
+          ...meta,
+          ...extra,
+          steps
+        }));
       }
     }
   };
@@ -232,8 +253,91 @@ function pixverseImageToVideoCameraMovement() {
   return value && !['0', 'false', 'none', 'off'].includes(value.toLowerCase()) ? value : '';
 }
 
+function aiProvider() {
+  return String(process.env.AI_PROVIDER || 'pruna').trim().toLowerCase();
+}
+
+function usePrunaProvider() {
+  return aiProvider() === 'pruna';
+}
+
+function prunaTryOnModel() {
+  return process.env.PRUNA_TRYON_MODEL || 'p-image-try-on';
+}
+
+function prunaVideoModel() {
+  return process.env.PRUNA_VIDEO_MODEL || 'p-video';
+}
+
+function prunaTryOnTurbo(product) {
+  if (isWatchProduct(product)) return false;
+  const value = String(process.env.PRUNA_TRYON_TURBO || 'true').trim().toLowerCase();
+  return !['0', 'false', 'no', 'off'].includes(value);
+}
+
+function prunaOutputFormat() {
+  const value = String(process.env.PRUNA_TRYON_OUTPUT_FORMAT || 'png').trim().toLowerCase();
+  return ['jpg', 'jpeg', 'png', 'webp'].includes(value) ? value.replace('jpeg', 'jpg') : 'jpg';
+}
+
+function prunaOutputQuality() {
+  const value = Number(process.env.PRUNA_TRYON_OUTPUT_QUALITY || 100);
+  return Number.isFinite(value) && value >= 0 && value <= 100 ? Math.round(value) : 100;
+}
+
+function prunaPreserveInputSize() {
+  const value = String(process.env.PRUNA_TRYON_PRESERVE_INPUT_SIZE || 'true').trim().toLowerCase();
+  return !['0', 'false', 'no', 'off'].includes(value);
+}
+
+function prunaImagePollOptions(timer) {
+  return {
+    timer,
+    maxAttempts: Number(process.env.PRUNA_IMAGE_POLL_ATTEMPTS || 90),
+    pollMs: Number(process.env.PRUNA_IMAGE_POLL_MS || 1500)
+  };
+}
+
+function prunaImageTrySync() {
+  const value = String(process.env.PRUNA_IMAGE_TRY_SYNC || 'false').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(value);
+}
+
+function prunaVideoDuration() {
+  const value = Number(process.env.PRUNA_VIDEO_DURATION || 5);
+  return Number.isFinite(value) && value >= 1 && value <= 20 ? Math.round(value) : 5;
+}
+
+function prunaVideoResolution() {
+  const value = String(process.env.PRUNA_VIDEO_RESOLUTION || '720p').trim().toLowerCase();
+  return value === '1080p' ? '1080p' : '720p';
+}
+
+function prunaVideoAspectRatio() {
+  const value = String(process.env.PRUNA_VIDEO_ASPECT_RATIO || '9:16').trim();
+  return new Set(['16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '1:1']).has(value) ? value : '9:16';
+}
+
+function prunaVideoFps() {
+  const value = Number(process.env.PRUNA_VIDEO_FPS || 24);
+  return value === 48 ? 48 : 24;
+}
+
+function prunaVideoPollOptions(timer) {
+  return {
+    timer,
+    maxAttempts: Number(process.env.PRUNA_VIDEO_POLL_ATTEMPTS || 180),
+    pollMs: Number(process.env.PRUNA_VIDEO_POLL_MS || 2000)
+  };
+}
+
+function prunaVideoTrySync() {
+  const value = String(process.env.PRUNA_VIDEO_TRY_SYNC || 'false').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(value);
+}
+
 function tryOnModelForProduct() {
-  return 'fitroom/tryon-v2';
+  return usePrunaProvider() ? prunaTryOnModel() : 'fitroom/tryon-v2';
 }
 
 function imageQuality() {
@@ -754,6 +858,78 @@ function customTryOnPrompt() {
     'Return one clean full-body try-on image.'
   ].join(' ');
 }
+
+async function callPrunaTryOn({ user, product = {}, garmentFile, promptKey, fallbackPromptKey = 'upper', timer }) {
+  const personPart = await filePartFromUpload(user.bodyPhoto, 'person', timer);
+  const garmentPart = garmentFile
+    ? await filePartFromMemoryFile(garmentFile, 'garment', timer)
+    : await filePartFromProduct(product, timer);
+
+  const [personUpload, garmentUpload] = await Promise.all([
+    uploadPrunaFile({
+      bytes: personPart.bytes,
+      mimetype: personPart.mimetype,
+      filename: personPart.filename || `person${extensionFor(personPart.mimetype)}`
+    }),
+    uploadPrunaFile({
+      bytes: garmentPart.bytes,
+      mimetype: garmentPart.mimetype,
+      filename: garmentPart.filename || `garment${extensionFor(garmentPart.mimetype)}`
+    })
+  ]);
+
+  const promptInfo = promptKey
+    ? { key: promptKey, prompt: promptForKey(promptKey, product) }
+    : promptForProduct(product, fallbackPromptKey);
+  const turbo = prunaTryOnTurbo(product);
+  const input = {
+    person_image: personUpload.url,
+    garment_images: [garmentUpload.url],
+    prompt: promptInfo.prompt,
+    turbo,
+    output_format: prunaOutputFormat(),
+    output_quality: prunaOutputQuality(),
+    preserve_input_size: prunaPreserveInputSize()
+  };
+
+  timer?.mark('pruna try-on submit attempt', {
+    model: prunaTryOnModel(),
+    promptKey: promptInfo.key,
+    turbo,
+    standardReason: isWatchProduct(product) ? 'watch' : ''
+  });
+
+  const prediction = await createPrunaPrediction({
+    model: prunaTryOnModel(),
+    input,
+    trySync: prunaImageTrySync()
+  });
+  timer?.mark('pruna try-on submitted', { predictionId: prediction.id || '', status: prediction.status });
+  const result = await waitForPrunaPrediction(prediction, prunaImagePollOptions(timer));
+  const outputUrl = firstPrunaGenerationUrl(result);
+  if (!outputUrl) throw new Error(`Pruna try-on returned no image. Response keys: ${Object.keys(result || {}).join(', ')}`);
+  const downloaded = await downloadPrunaOutput(outputUrl, 'image/*,*/*;q=0.8');
+  const mimetype = downloaded.mimetype?.startsWith('image/')
+    ? downloaded.mimetype
+    : imageMimeTypeFromBuffer(downloaded.bytes) || 'image/jpeg';
+  timer?.mark('pruna try-on downloaded', { outputKb: Math.round(downloaded.bytes.length / 1024), mimetype });
+
+  return {
+    bytes: downloaded.bytes,
+    mimetype,
+    prompt: promptInfo.prompt,
+    promptKey: promptInfo.key,
+    provider: 'pruna',
+    model: prunaTryOnModel(),
+    quality: turbo ? 'turbo' : 'standard',
+    turbo,
+    garmentCount: 1,
+    providerCostUsd: imagePrunaCostUsd({ turbo, garmentCount: 1 }),
+    providerPredictionId: result.id || prediction.id || '',
+    providerOutputUrl: outputUrl
+  };
+}
+
 function falHeaders() {
   if (!process.env.FAL_KEY) throw new Error('FAL_KEY is missing on the server');
   return {
@@ -923,36 +1099,15 @@ async function generatedVideoBytesFromUrl(url, timer) {
   };
 }
 
-function modelGenderForVideo(user, product) {
-  const preference = String(user?.genderPreference || '').toLowerCase();
-  const productGender = String(product?.gender || '').toLowerCase();
-  if (preference === 'male' || /\b(men|man|male|boys?)\b/.test(productGender)) return 'male';
-  if (preference === 'female' || /\b(women|woman|female|girls?)\b/.test(productGender)) return 'female';
-  return 'neutral';
-}
-
-function pixverseTryOnVideoPrompt(product, user) {
-  const gender = modelGenderForVideo(user, product);
-  const expression = gender === 'male'
-    ? 'calm masculine expression'
-    : gender === 'female'
-      ? 'calm elegant expression'
-      : 'calm natural expression';
+function tryOnVideoPrompt() {
   return [
-    'Clean ecommerce product photo animation from the exact input image. Treat the input image as the master frame for brightness, exposure, color, floor, shadows, and background.',
-    'Preserve the same person, face, hairstyle, outfit, fabric, garment colors, skin tone, lighting, floor, shadows, and background exactly as shown in the input image.',
-    'The original light ecommerce background is locked for the entire video. Keep it bright, neutral, off-white or light gray as in the input image. The video must not become darker than the input frame. Do not darken the image, lower exposure, increase contrast, add vignette, add spotlight lighting, add cinematic color grading, or create a black/dark studio backdrop.',
-    'If any area of the input background is plain or transparent-looking, fill it with the same soft off-white ecommerce background, never black.',
-    'Use a full-frame vertical 9:16 ecommerce video composition. No letterboxing, no pillarboxing, no black bars, no black border, and no empty dark margins around the person.',
-    'Keep the video flat-lit like a product page, with normal daylight ecommerce exposure and no dramatic mood lighting.',
-    `Keep a ${expression}.`,
-    'Full body remains visible head to toe with clear space above the full hair outline and below the feet.',
-    'Locked camera with fixed wide framing for the entire 360 rotation: no zoom, no close-up, no crop, no camera push-in, no reframing while turning.',
-    'The person rotates slowly in place through a full 360 degrees like a turntable, at a smooth constant speed, arms relaxed at the sides, ending back in the front-facing pose.',
-    'Feet stay in the same spot on the floor, pivoting naturally in place. Show the full side and back views of the outfit during the rotation while keeping the complete head, hair, body, hands, legs, and feet inside frame at all times.',
-    'Do not walk, approach, step, dance, pose dramatically, or change the scene.',
-    'Do not change the face, body, outfit, or background at any point of the rotation. Smooth realistic motion only.'
-  ].join(' ');
+    'Create a clean premium ecommerce fashion video using the input image as the master visual reference.',
+    'The person remains mostly front-facing and makes a subtle natural fashion-model movement: a small weight shift, a slight shoulder turn about 10 to 20 degrees to one side, then returns to the original front-facing pose. Then make a slight shoulder turn about 10 to 20 degrees to the other side and return to the original front-facing pose.',
+    'The face should stay visible and generally facing the camera throughout. Do not turn to the side fully. Do not show the back. Do not perform a 360-degree rotation.',
+    'Keep feet nearly planted and arms relaxed. Use only minimal natural body movement and subtle fabric motion. No walking, dancing, dramatic posing, hand gestures, or camera movement.',
+    'Preserve the same face, identity, hairstyle, body shape, skin tone, outfit, garment colors, fabric texture, logos, footwear, background, lighting, exposure, and framing throughout the entire video.',
+    'The first frame and final frame should match the input image as closely as possible. Smooth premium ecommerce lookbook style.'
+  ].join('\n\n');
 }
 
 function pixverseTryOnVideoNegativePrompt() {
@@ -980,6 +1135,20 @@ function safeFalResultForLog(value, depth = 0) {
     }
   }
   return safe;
+}
+
+function logPrunaVideo(step, payload = {}) {
+  if (!debugPrunaVideoLogs) return;
+  console.log(`[tryon:pruna-video] ${step}`, payload);
+}
+
+function safePrunaVideoPayloadForLog(input = {}) {
+  return {
+    ...input,
+    image: shortUrlForLog(input.image || ''),
+    promptChars: String(input.prompt || '').length,
+    promptPreview: String(input.prompt || '').slice(0, 500)
+  };
 }
 
 function readableVideoError(value, fallback = 'Could not generate video try-on') {
@@ -1066,7 +1235,7 @@ async function runVideoAttempt({ endpoint, payload, prompt, label, providerName,
 
 async function callPixverseTryOnVideo({ tryOn, product, user, timer }) {
   const imageUrl = await videoFirstFrameDataUri(tryOn.image, 'try-on image', timer);
-  const prompt = pixverseTryOnVideoPrompt(product, user);
+  const prompt = tryOnVideoPrompt(product, user);
   const payload = {
     prompt,
     image_url: imageUrl,
@@ -1087,6 +1256,107 @@ async function callPixverseTryOnVideo({ tryOn, product, user, timer }) {
     providerName: 'PixVerse',
     timer
   });
+}
+
+async function callPrunaTryOnVideo({ tryOn, product, user, timer }) {
+  let imageUrl = String(tryOn.providerOutputUrl || '').trim();
+  if (imageUrl) {
+    timer?.mark('pruna source image reused', {
+      source: 'provider_output_url',
+      url: shortUrlForLog(imageUrl)
+    });
+  } else {
+    const imagePart = await filePartFromUpload(tryOn.image, 'try-on image', timer);
+    const sourceDimensions = imageDimensionsFromBuffer(imagePart.bytes);
+    timer?.mark('pruna source image prepared', {
+      sourceKb: Math.round(imagePart.bytes.length / 1024),
+      sourceDimensions: sourceDimensions || 'unknown'
+    });
+    logPrunaVideo('source image prepared', {
+      tryOnId: tryOn._id?.toString?.() || '',
+      imageProvider: tryOn.provider || '',
+      imageModel: tryOn.model || '',
+      imageQuality: tryOn.quality || '',
+      imagePromptKey: tryOn.promptKey || '',
+      imageTurbo: tryOn.turbo,
+      imageProviderCostUsd: tryOn.providerCostUsd,
+      imageStorage: tryOn.image?.storage || '',
+      imagePath: tryOn.image?.path || '',
+      filename: imagePart.filename,
+      mimetype: imagePart.mimetype,
+      kb: Math.round(imagePart.bytes.length / 1024),
+      dimensions: sourceDimensions || 'unknown'
+    });
+    const imageUpload = await uploadPrunaFile({
+      bytes: imagePart.bytes,
+      mimetype: imagePart.mimetype,
+      filename: imagePart.filename || `tryon${extensionFor(imagePart.mimetype)}`
+    });
+    imageUrl = imageUpload.url;
+    timer?.mark('pruna source image uploaded', { uploadId: imageUpload.id || '' });
+    logPrunaVideo('source image uploaded', {
+      uploadId: imageUpload.id || '',
+      uploadUrl: shortUrlForLog(imageUpload.url)
+    });
+  }
+  const prompt = tryOnVideoPrompt(product, user);
+  const duration = prunaVideoDuration();
+  const resolution = prunaVideoResolution();
+  const input = {
+    image: imageUrl,
+    prompt,
+    duration,
+    resolution,
+    fps: prunaVideoFps(),
+    aspect_ratio: prunaVideoAspectRatio()
+  };
+  logPrunaVideo('payload', {
+    model: prunaVideoModel(),
+    trySync: prunaVideoTrySync(),
+    input: safePrunaVideoPayloadForLog(input)
+  });
+
+  timer?.mark('pruna video submit attempt', {
+    model: prunaVideoModel(),
+    resolution,
+    duration,
+    aspectRatio: input.aspect_ratio
+  });
+  const prediction = await createPrunaPrediction({
+    model: prunaVideoModel(),
+    input,
+    trySync: prunaVideoTrySync()
+  });
+  logPrunaVideo('prediction created', {
+    predictionId: prediction.id || '',
+    status: prediction.status || '',
+    keys: Object.keys(prediction || {})
+  });
+  timer?.mark('pruna video submitted', { predictionId: prediction.id || '', status: prediction.status });
+  const result = await waitForPrunaPrediction(prediction, prunaVideoPollOptions(timer));
+  logPrunaVideo('prediction completed', {
+    predictionId: result.id || prediction.id || '',
+    status: result.status || '',
+    keys: Object.keys(result || {})
+  });
+  const outputUrl = firstPrunaGenerationUrl(result);
+  if (!outputUrl) throw new Error(`Pruna video returned no output. Response keys: ${Object.keys(result || {}).join(', ')}`);
+  timer?.mark('pruna video output ready', { outputUrl: shortUrlForLog(outputUrl) });
+
+  return {
+    bytes: null,
+    mimetype: 'video/mp4',
+    prompt,
+    provider: 'pruna',
+    model: prunaVideoModel(),
+    quality: `${resolution} ${duration}s`,
+    duration,
+    resolution,
+    providerCostUsd: videoPrunaCostUsd({ duration, resolution, draft: false }),
+    providerPredictionId: result.id || prediction.id || '',
+    providerOutputUrl: outputUrl,
+    deferDownload: true
+  };
 }
 
 async function callFalWanImageToImage({ user, product, garmentDataUri, prompt, timer }) {
@@ -1199,6 +1469,59 @@ async function saveUserCacheFile({ user, bytes, filename, mimetype }) {
   });
 }
 
+function videoMediaUrl(tryOnId) {
+  return `/api/tryons/${tryOnId}/video/media?v=${Date.now()}`;
+}
+
+function backgroundSavePrunaVideo({ tryOnId, user, outputUrl, filename, mimetype = 'video/mp4' }) {
+  setImmediate(async () => {
+    const startedAt = performance.now();
+    try {
+      const downloaded = await downloadPrunaOutput(outputUrl, 'video/mp4,video/*,*/*;q=0.8');
+      const saved = await saveUserCacheFile({
+        user,
+        bytes: downloaded.bytes,
+        filename,
+        mimetype: downloaded.mimetype?.startsWith('video/') ? downloaded.mimetype : mimetype
+      });
+      const set = {
+        'video.filename': saved.filename,
+        'video.path': saved.path,
+        'video.storage': saved.storage,
+        'video.mimetype': saved.mimetype,
+        'video.size': saved.size,
+        'video.storageStatus': 'stored'
+      };
+      const update = saved.url
+        ? { $set: { ...set, 'video.url': saved.url } }
+        : { $set: set, $unset: { 'video.url': '' } };
+      await TryOn.findByIdAndUpdate(tryOnId, update);
+      console.log(JSON.stringify({
+        level: 'info',
+        event: 'tryon_video_background_saved',
+        tryOnId: tryOnId.toString(),
+        durationMs: Math.round(performance.now() - startedAt),
+        path: saved.path,
+        storage: saved.storage,
+        size: saved.size
+      }));
+    } catch (error) {
+      await TryOn.findByIdAndUpdate(tryOnId, {
+        $set: {
+          'video.storageStatus': 'save_failed'
+        }
+      }).catch(() => {});
+      console.error(JSON.stringify({
+        level: 'error',
+        event: 'tryon_video_background_save_failed',
+        tryOnId: tryOnId.toString(),
+        durationMs: Math.round(performance.now() - startedAt),
+        error: readableError(error)
+      }));
+    }
+  });
+}
+
 async function isolateGeneratedImage(user, image, timer) {
   const isolation = await isolateSubjectAsset({ rootDir, user, storedImage: image });
   if (isolation.metadata.processingStatus === 'completed') {
@@ -1212,6 +1535,9 @@ async function isolateGeneratedImage(user, image, timer) {
 async function generateProductTryOnImage({ user, product, tryOnModel, timer }) {
   const selectedModel = tryOnModel || tryOnModelForProduct(product);
   timer?.mark('image generator selected', { tryOnModel: selectedModel });
+  if (usePrunaProvider()) {
+    return callPrunaTryOn({ user, product, timer });
+  }
   if (selectedModel === 'fitroom/tryon-v2') {
     const clothType = fitRoomClothTypeForProduct(product);
     timer?.mark('fitroom cloth type selected', { clothType });
@@ -1239,10 +1565,16 @@ async function saveGeneratedTryOn({ user, product, tryOnModel, timer }) {
   return TryOn.create({
     user: user._id,
     product: product._id,
-    provider: generated.model?.includes('fitroom') ? 'fitroom' : 'fal',
+    provider: generated.provider || (generated.model?.includes('fitroom') ? 'fitroom' : 'fal'),
     model: generated.model,
     quality: generated.quality,
     prompt: generated.prompt,
+    promptKey: generated.promptKey,
+    providerPredictionId: generated.providerPredictionId,
+    providerOutputUrl: generated.providerOutputUrl,
+    providerCostUsd: generated.providerCostUsd,
+    turbo: generated.turbo,
+    garmentCount: generated.garmentCount,
     tokenCost: chargedTokenCost(user),
     image,
     transparentImage: isolation.image || undefined,
@@ -1261,10 +1593,16 @@ async function replaceGeneratedTryOn({ user, product, tryOnModel, timer }) {
     { user: user._id, product: product._id },
     {
       $set: {
-        provider: generated.model?.includes('fitroom') ? 'fitroom' : 'fal',
+        provider: generated.provider || (generated.model?.includes('fitroom') ? 'fitroom' : 'fal'),
         model: generated.model,
         quality: generated.quality,
         prompt: generated.prompt,
+        promptKey: generated.promptKey,
+        providerPredictionId: generated.providerPredictionId,
+        providerOutputUrl: generated.providerOutputUrl,
+        providerCostUsd: generated.providerCostUsd,
+        turbo: generated.turbo,
+        garmentCount: generated.garmentCount,
         tokenCost: chargedTokenCost(user),
         image,
         transparentImage: isolation.image || undefined,
@@ -1310,9 +1648,14 @@ function externalProductFromBody(value = {}) {
 }
 
 async function saveGeneratedExternalTryOn({ user, product, timer }) {
-  const clothType = fitRoomClothTypeForProduct(product);
-  timer?.mark('external fitroom cloth type selected', { clothType });
-  const generated = await callFitRoomTryOn({ user, product, clothType, timer });
+  let generated;
+  if (usePrunaProvider()) {
+    generated = await callPrunaTryOn({ user, product, timer });
+  } else {
+    const clothType = fitRoomClothTypeForProduct(product);
+    timer?.mark('external fitroom cloth type selected', { clothType });
+    generated = await callFitRoomTryOn({ user, product, clothType, timer });
+  }
   const filename = `tryon-external-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   timer?.mark('external try-on saved', { path: image.path });
@@ -1326,10 +1669,15 @@ async function saveGeneratedExternalTryOn({ user, product, timer }) {
     brand: product.brand,
     category: product.category,
     imageUrl: product.imageUrl,
-    provider: 'fitroom',
+    provider: generated.provider || 'fitroom',
     model: generated.model,
     quality: generated.quality,
     prompt: generated.prompt,
+    promptKey: generated.promptKey,
+    providerPredictionId: generated.providerPredictionId,
+    providerCostUsd: generated.providerCostUsd,
+    turbo: generated.turbo,
+    garmentCount: generated.garmentCount,
     tokenCost: chargedTokenCost(user),
     image,
     transparentImage: isolation.image || undefined,
@@ -1369,10 +1717,28 @@ async function saveUploadFile(file, prefix, user) {
   });
 }
 
-async function saveGeneratedCustomTryOn({ user, garmentFile, timer }) {
-  const clothType = fitRoomDefaultClothType();
-  timer?.mark('custom fitroom cloth type selected', { clothType });
-  const generated = await callFitRoomTryOn({ user, garmentFile, clothType, timer });
+async function saveGeneratedCustomTryOn({ user, garmentFile, promptKey, category, timer }) {
+  const customProduct = {
+    name: garmentFile?.originalname || 'Custom uploaded garment',
+    brand: 'Custom',
+    category: category || promptKey || garmentFile?.originalname || 'full outfit'
+  };
+  let generated;
+  if (usePrunaProvider()) {
+    const selectedPromptKey = promptKey || promptKeyForProduct(customProduct, 'full_outfit');
+    generated = await callPrunaTryOn({
+      user,
+      product: customProduct,
+      garmentFile,
+      promptKey: selectedPromptKey,
+      fallbackPromptKey: 'full_outfit',
+      timer
+    });
+  } else {
+    const clothType = fitRoomDefaultClothType();
+    timer?.mark('custom fitroom cloth type selected', { clothType });
+    generated = await callFitRoomTryOn({ user, garmentFile, clothType, timer });
+  }
   const filename = `tryon-custom-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
   const garment = await saveUploadFile(garmentFile, 'garment', user);
@@ -1381,10 +1747,15 @@ async function saveGeneratedCustomTryOn({ user, garmentFile, timer }) {
 
   return CustomTryOn.create({
     user: user._id,
-    provider: 'fitroom',
+    provider: generated.provider || 'fitroom',
     model: generated.model,
     quality: generated.quality,
     prompt: generated.prompt,
+    promptKey: generated.promptKey,
+    providerPredictionId: generated.providerPredictionId,
+    providerCostUsd: generated.providerCostUsd,
+    turbo: generated.turbo,
+    garmentCount: generated.garmentCount,
     tokenCost: chargedTokenCost(user),
     garment,
     image,
@@ -1497,6 +1868,33 @@ router.get('/', requireUser, tryOnReadLimiter, async (req, res) => {
   res.json({ tryOns: tryOns.map(tryOnToClient) });
 });
 
+router.get('/:tryOnId/video/media', async (req, res) => {
+  try {
+    const tryOn = await TryOn.findById(req.params.tryOnId).select('video').lean();
+    const outputUrl = String(tryOn?.video?.providerOutputUrl || '').trim();
+    if (!outputUrl) return res.status(404).json({ message: 'Video is not available' });
+
+    const upstream = await fetchPrunaOutput(outputUrl, {
+      accept: 'video/mp4,video/*,*/*;q=0.8',
+      range: req.headers.range || ''
+    });
+    if (!upstream.ok || !upstream.body) {
+      const detail = await upstream.text().catch(() => '');
+      return res.status(502).json({ message: `Could not stream video${detail ? `: ${detail.slice(0, 120)}` : ''}` });
+    }
+
+    res.status(upstream.status);
+    for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control']) {
+      const value = upstream.headers.get(header);
+      if (value) res.setHeader(header, value);
+    }
+    if (!res.getHeader('content-type')) res.setHeader('content-type', 'video/mp4');
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (error) {
+    res.status(400).json({ message: readableVideoError(error, 'Could not stream video try-on') });
+  }
+});
+
 router.post('/custom', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLimiter, upload.single('garment'), async (req, res) => {
   const timer = createTimer('custom', { userId: req.user._id.toString() });
   let reserved = false;
@@ -1516,6 +1914,8 @@ router.post('/custom', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLimi
     const tryOn = await saveGeneratedCustomTryOn({
       user: req.user,
       garmentFile,
+      promptKey: String(req.body?.promptKey || '').trim(),
+      category: String(req.body?.category || '').trim(),
       timer
     });
     timer.end({ tokensRemaining: req.user.tokens });
@@ -1589,7 +1989,7 @@ router.post('/external', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLi
   }
 });
 
-router.post('/:productId/video', requireUser, tryOnVideoBurstLimiter, tryOnVideoHourlyLimiter, async (req, res) => {
+router.post('/:productId/video', requireUser, async (req, res) => {
   const forceGenerate = Boolean(req.body?.force || req.body?.refresh);
   const timer = createTimer('video', {
     userId: req.user._id.toString(),
@@ -1604,12 +2004,44 @@ router.post('/:productId/video', requireUser, tryOnVideoBurstLimiter, tryOnVideo
       Product.findOne({ _id: req.params.productId, isActive: true }),
       TryOn.findOne({ user: req.user._id, product: req.params.productId })
     ]);
-    if (!product) return res.status(404).json({ message: 'Product not found' });
-    if (!existing?.image?.path) return res.status(400).json({ message: 'Generate the AI clothing try-on image before creating a video.' });
-    if (existing.video?.path && !forceGenerate) {
+    timer.mark('video prerequisites loaded', {
+      productFound: Boolean(product),
+      tryOnFound: Boolean(existing),
+      hasImage: Boolean(existing?.image?.path),
+      hasVideo: Boolean(existing?.video?.path || existing?.video?.url || existing?.video?.providerOutputUrl)
+    });
+    if (!product) {
+      timer.end({ error: 'product not found' });
+      return res.status(404).json({ message: 'Product not found' });
+    }
+    if (!existing?.image?.path) {
+      timer.end({ error: 'missing try-on image' });
+      return res.status(400).json({ message: 'Generate the AI clothing try-on image before creating a video.' });
+    }
+    if ((existing.video?.path || existing.video?.url || existing.video?.providerOutputUrl) && !forceGenerate) {
+      logPrunaVideo('reusing existing video', {
+        tryOnId: existing._id?.toString?.() || '',
+        videoModel: existing.video?.model || '',
+        videoQuality: existing.video?.quality || '',
+        videoGeneratedAt: existing.video?.generatedAt || null,
+        videoPath: existing.video?.path || '',
+        videoStorageStatus: existing.video?.storageStatus || ''
+      });
       timer.end({ reused: true });
       return res.json({ tryOn: existing.toClient(), user: req.user.toClient(), reused: true });
     }
+    logPrunaVideo('generating video', {
+      productId: req.params.productId,
+      forceGenerate,
+      existingTryOnId: existing._id?.toString?.() || '',
+      existingImageProvider: existing.provider || '',
+      existingImageModel: existing.model || '',
+      existingImageQuality: existing.quality || '',
+      existingImagePromptKey: existing.promptKey || '',
+      existingImageTurbo: existing.turbo,
+      existingImagePath: existing.image?.path || '',
+      existingVideoPath: existing.video?.path || ''
+    });
 
     const chargedUser = await reserveToken(req.user, timer, cost);
     if (!chargedUser) {
@@ -1619,9 +2051,34 @@ router.post('/:productId/video', requireUser, tryOnVideoBurstLimiter, tryOnVideo
     reserved = true;
     req.user = chargedUser;
 
-    const generated = await callPixverseTryOnVideo({ tryOn: existing, product, user: req.user, timer });
+    const generated = usePrunaProvider()
+      ? await callPrunaTryOnVideo({ tryOn: existing, product, user: req.user, timer })
+      : await callPixverseTryOnVideo({ tryOn: existing, product, user: req.user, timer });
     const filename = `tryon-video-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
-    const video = await saveUserCacheFile({ user: req.user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
+    let video;
+    if (generated.deferDownload && generated.providerOutputUrl) {
+      video = {
+        filename,
+        path: '',
+        url: videoMediaUrl(existing._id),
+        storage: 'pruna-proxy',
+        mimetype: generated.mimetype || 'video/mp4',
+        size: 0,
+        providerOutputUrl: generated.providerOutputUrl,
+        storageStatus: 'saving'
+      };
+      timer.mark('video provider url ready', {
+        outputUrl: shortUrlForLog(generated.providerOutputUrl),
+        proxyUrl: video.url
+      });
+    } else {
+      video = await saveUserCacheFile({ user: req.user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
+      timer.mark('video file saved', {
+        outputKb: Math.round(generated.bytes.length / 1024),
+        mimetype: generated.mimetype,
+        path: video.path
+      });
+    }
     const updated = await TryOn.findOneAndUpdate(
       { user: req.user._id, product: req.params.productId },
       {
@@ -1630,6 +2087,15 @@ router.post('/:productId/video', requireUser, tryOnVideoBurstLimiter, tryOnVideo
             ...video,
             model: generated.model,
             prompt: generated.prompt,
+            provider: generated.provider,
+            providerPredictionId: generated.providerPredictionId,
+            providerOutputUrl: generated.providerOutputUrl,
+            providerCostUsd: generated.providerCostUsd,
+            storageStatus: video.storageStatus || 'stored',
+            draft: generated.draft,
+            duration: generated.duration,
+            resolution: generated.resolution,
+            quality: generated.quality,
             tokenCost: chargedVideoTokenCost(req.user),
             generatedAt: new Date()
           }
@@ -1637,7 +2103,23 @@ router.post('/:productId/video', requireUser, tryOnVideoBurstLimiter, tryOnVideo
       },
       { new: true }
     );
-    timer.end({ reused: false, tokensRemaining: req.user.tokens, path: video.path });
+    timer.mark('video metadata saved', {
+      provider: generated.provider,
+      predictionId: generated.providerPredictionId || '',
+      cost: generated.providerCostUsd,
+      storageStatus: video.storageStatus || 'stored'
+    });
+    if (generated.deferDownload && generated.providerOutputUrl) {
+      backgroundSavePrunaVideo({
+        tryOnId: existing._id,
+        user: req.user,
+        outputUrl: generated.providerOutputUrl,
+        filename,
+        mimetype: generated.mimetype || 'video/mp4'
+      });
+      timer.mark('video background save queued', { filename });
+    }
+    timer.end({ reused: false, tokensRemaining: req.user.tokens, path: video.path || '', proxyUrl: video.url || '' });
     res.status(201).json({ tryOn: updated.toClient(), user: req.user.toClient(), reused: false });
   } catch (error) {
     if (reserved) req.user = await refundToken(req.user, timer, cost);

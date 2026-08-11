@@ -1165,7 +1165,7 @@ function Header({ user, setUser }) {
 
   return (
     <>
-      {currentPath !== '/wishlist' && currentPath !== '/tokens' && currentPath !== '/profile' && <div className="announcement">
+      {currentPath !== '/wishlist' && currentPath !== '/tokens' && currentPath !== '/tokens/top-up' && currentPath !== '/profile' && <div className="announcement">
         <span>✨</span>
         <span>{user ? <>You have {user.tokens} tokens ready for AI try-on</> : <>Get free tokens on sign up to try AI try-on</>}</span>
         <span>✨</span>
@@ -5531,9 +5531,10 @@ function ImageLightbox({ image, onClose }) {
   return createPortal(lightbox, document.body);
 }
 
-function TokenPage({ user, setUser }) {
+function TokenPage({ user, setUser, mode = 'overview' }) {
+  const isTopUpPage = mode === 'topup';
   const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [selectedPackId, setSelectedPackId] = useState('monthly');
+  const [selectedPackId, setSelectedPackId] = useState(isTopUpPage ? 'topup_50_tokens' : 'monthly_150_tokens');
   const [message, setMessage] = useState('');
   const verifiedOrderRef = useRef('');
   const params = new URLSearchParams(window.location.search);
@@ -5551,7 +5552,10 @@ function TokenPage({ user, setUser }) {
         if (!alive) return;
         if (data.user) setUser(data.user);
         const state = data.order?.status;
-        if (state === 'completed') setMessage('Payment confirmed. 100 tokens have been added to your account.');
+        if (state === 'completed') {
+          const addedTokens = Number(data.order?.tokens || 0);
+          setMessage(`Payment confirmed. ${addedTokens || 'Your'} tokens have been added to your account.`);
+        }
         else if (state === 'failed') setMessage('Payment was not completed. You can try again when ready.');
         else setMessage('Payment is still pending. Refresh this page in a moment to check again.');
       })
@@ -5563,7 +5567,7 @@ function TokenPage({ user, setUser }) {
     };
   }, [user, returnedOrderId, setUser]);
 
-  const startCheckout = async () => {
+  const startCheckout = async (pack) => {
     if (!user) {
       window.location.href = '/signup';
       return;
@@ -5571,7 +5575,10 @@ function TokenPage({ user, setUser }) {
     setCheckoutLoading(true);
     setMessage('Opening secure PhonePe checkout...');
     try {
-      const data = await api('/payments/phonepe/subscription', { method: 'POST' });
+      const data = await api('/payments/checkout', {
+        method: 'POST',
+        body: JSON.stringify({ planId: pack.planId || pack.id })
+      });
       window.location.assign(data.redirectUrl);
     } catch (err) {
       setMessage(err.message);
@@ -5579,50 +5586,112 @@ function TokenPage({ user, setUser }) {
     }
   };
 
-  const creditPacks = [
+  const subscriptionPack = {
+    id: 'monthly_150_tokens',
+    planId: 'monthly_150_tokens',
+    label: 'Mandate',
+    headline: 'Rs 1 setup',
+    price: 'Rs 500',
+    tokensLabel: '150 monthly tokens',
+    rateLabel: 'Rs 3.33 / credit monthly',
+    billing: 'Rs 500 after 24 hours, then monthly',
+    copy: 'Start the monthly membership with a mandate setup. Images use 1 token and videos use 3 tokens.',
+    cta: user ? 'Set up mandate' : 'Create profile',
+    featured: true,
+    payable: true
+  };
+  const topUpPacks = [
     {
-      id: 'starter',
-      label: 'Starter',
-      credits: '20',
-      showCreditsSuffix: true,
-      price: 'Free',
-      billing: 'With your profile',
-      copy: 'A free set of credits to explore Lookmefy before your first purchase.',
-      cta: 'Open profile',
-      href: '/profile'
+      id: 'topup_50_tokens',
+      planId: 'topup_50_tokens',
+      label: 'Top-up',
+      headline: 'Rs 200',
+      tokensLabel: '50 tokens',
+      rateLabel: 'Rs 4.00 / credit',
+      price: 'Rs 200',
+      billing: 'One-time',
+      copy: 'Quick refill when you need a smaller batch of extra generations.',
+      cta: user ? 'Buy top-up' : 'Create profile',
+      payable: true
     },
     {
-      id: 'monthly',
-      label: 'Monthly',
-      credits: '100',
-      showCreditsSuffix: true,
+      id: 'topup_75_tokens',
+      planId: 'topup_75_tokens',
+      label: 'Top-up',
+      headline: 'Rs 300',
+      tokensLabel: '75 tokens',
+      rateLabel: 'Rs 4.00 / credit',
+      price: 'Rs 300',
+      billing: 'One-time',
+      copy: 'A mid-size refill for regular image try-on sessions.',
+      cta: user ? 'Buy top-up' : 'Create profile',
+      payable: true
+    },
+    {
+      id: 'topup_110_tokens',
+      planId: 'topup_110_tokens',
+      label: 'Top-up',
+      headline: 'Rs 400',
+      tokensLabel: '110 tokens',
+      rateLabel: 'Rs 3.64 / credit',
+      price: 'Rs 400',
+      billing: 'One-time',
+      copy: 'Better value for product batches and style exploration.',
+      cta: user ? 'Buy top-up' : 'Create profile',
+      payable: true
+    },
+    {
+      id: 'topup_135_tokens',
+      planId: 'topup_135_tokens',
+      label: 'Top-up',
+      headline: 'Rs 500',
+      tokensLabel: '135 tokens',
+      rateLabel: 'Rs 3.70 / credit',
+      price: 'Rs 500',
+      billing: 'One-time',
+      copy: 'A larger one-time refill without changing the monthly plan.',
+      cta: user ? 'Buy top-up' : 'Create profile',
+      payable: true
+    },
+    {
+      id: 'topup_400_tokens',
+      planId: 'topup_400_tokens',
+      label: 'Top-up',
+      headline: 'Rs 1,000',
+      tokensLabel: '400 tokens',
+      rateLabel: 'Rs 2.50 / credit',
       price: 'Rs 1,000',
-      billing: 'Every month',
-      copy: 'Your renewable credit pack for product and custom clothing try-ons.',
-      cta: user ? 'Continue to payment' : 'Create profile',
-      featured: true
-    },
-    {
-      id: 'archive',
-      label: 'Archive',
-      credits: 'Saved looks',
-      showCreditsSuffix: false,
-      price: 'Included',
-      billing: 'Always available',
-      copy: 'Revisit generated looks, browse the catalog, and compare products at no extra cost.',
-      cta: 'View saved looks',
-      href: '/wishlist'
+      billing: 'One-time',
+      copy: 'Best value for bulk catalog work and repeated video trials.',
+      cta: user ? 'Buy top-up' : 'Create profile',
+      payable: true
     }
   ];
+  const overviewPacks = [
+    subscriptionPack,
+    {
+      id: 'topup_banner',
+      label: 'Top-up',
+      headline: 'Add more',
+      price: 'From Rs 200',
+      tokensLabel: 'One-time packs',
+      billing: 'No subscription change',
+      copy: 'Open the top-up page to choose 50, 75, 110, 135, or 400 extra tokens.',
+      cta: 'View top-ups',
+      href: '/tokens/top-up',
+      featured: false
+    }
+  ];
+  const creditPacks = isTopUpPage ? topUpPacks : overviewPacks;
   const selectedPack = creditPacks.find((pack) => pack.id === selectedPackId) || creditPacks[1];
-  const isPaidPack = selectedPack.id === 'monthly';
+  const isPaidPack = Boolean(selectedPack.payable);
   const completeSelection = () => {
     if (!user) {
       window.location.assign('/signup');
       return;
     }
     if (isPaidPack) {
-      startCheckout();
+      startCheckout(selectedPack);
       return;
     }
     window.location.assign(selectedPack.href);
@@ -5632,26 +5701,39 @@ function TokenPage({ user, setUser }) {
     <main className="credit-purchase-page">
       <section className="wrap credit-purchase-shell">
         <header className="credit-purchase-head">
-          <p>Curation power</p>
-          <h1>Credits</h1>
-          <span>Elevate your digital wardrobe experience. Credits empower our sophisticated AI neural networks to render high-fidelity virtual try-ons and generate personalized style journeys tailored to your unique aesthetic.</span>
+          <p>{isTopUpPage ? 'One-time refill' : 'Token access'}</p>
+          <h1>{isTopUpPage ? 'Top-ups' : 'Credits'}</h1>
+          <span>{isTopUpPage ? 'Choose a one-time token pack when you want extra image try-ons or videos on top of the monthly membership.' : 'Pick the monthly mandate setup or open one-time top-ups. Starter accounts include 8 tokens, images use 1 token, and videos use 3 tokens.'}</span>
         </header>
 
         {message && <p className={`credit-purchase-message ${/failed|not completed|missing|Could not|error/i.test(message) ? 'error-message' : ''}`} role="status">{message}</p>}
+        {isTopUpPage && <a className="credit-back-link" href="/tokens">Back to mandate</a>}
 
         <div className="credit-purchase-layout">
           <div className="credit-purchase-main">
-            <section className="credit-pack-grid" aria-label="Credit packs">
-              {creditPacks.map((pack) => (
-                <button className={`credit-pack-option ${selectedPack.id === pack.id ? 'selected' : ''} ${pack.featured ? 'featured' : ''}`} type="button" key={pack.id} onClick={() => setSelectedPackId(pack.id)} aria-pressed={selectedPack.id === pack.id}>
-                  {pack.featured && <span className="credit-pack-badge">Most popular</span>}
-                  <small>{pack.label}</small>
-                  <strong>{pack.credits}{pack.showCreditsSuffix && <> <em>credits</em></>}</strong>
-                  <b>{pack.price}</b>
-                  <span>{pack.billing}</span>
-                  <i>{pack.copy}</i>
-                </button>
-              ))}
+            <section className={`credit-pack-grid ${isTopUpPage ? 'topup-grid' : 'overview-grid'}`} aria-label="Credit packs">
+              {creditPacks.map((pack) => {
+                const className = `credit-pack-option ${selectedPack.id === pack.id ? 'selected' : ''} ${pack.featured ? 'featured' : ''}`;
+                const content = (
+                  <>
+                    {pack.featured && <span className="credit-pack-badge">Focused</span>}
+                    <small>{pack.label}</small>
+                    <strong>{pack.headline}</strong>
+                    <b>{pack.tokensLabel}</b>
+                    {pack.rateLabel && <em className="credit-pack-rate">{pack.rateLabel}</em>}
+                    <span>{pack.billing}</span>
+                    <i>{pack.copy}</i>
+                  </>
+                );
+                if (pack.href) {
+                  return <a className={className} key={pack.id} href={pack.href}>{content}</a>;
+                }
+                return (
+                  <button className={className} type="button" key={pack.id} onClick={() => setSelectedPackId(pack.id)} aria-pressed={selectedPack.id === pack.id}>
+                    {content}
+                  </button>
+                );
+              })}
             </section>
 
             <section className="credit-payment-section" aria-label="Payment method">
@@ -5665,12 +5747,13 @@ function TokenPage({ user, setUser }) {
           <aside className="credit-order-summary" aria-label="Order summary">
             <div className="credit-summary-heading"><h2>Order Summary</h2><span>{isActive ? 'Active plan' : 'Selected pack'}</span></div>
             <div className="credit-summary-row"><span>Credit Package</span><strong>{selectedPack.label}</strong></div>
-            <div className="credit-summary-row"><span>Credits</span><strong>{selectedPack.credits}</strong></div>
+            <div className="credit-summary-row"><span>Tokens</span><strong>{selectedPack.tokensLabel}</strong></div>
+            {selectedPack.rateLabel && <div className="credit-summary-row"><span>Rate</span><strong>{selectedPack.rateLabel}</strong></div>}
             <div className="credit-summary-row"><span>Billing</span><strong>{selectedPack.billing}</strong></div>
             <div className="credit-summary-row"><span>Processing Fee</span><strong>Free</strong></div>
             <div className="credit-summary-total"><span>Total, today</span><strong>{selectedPack.price}</strong></div>
             <button type="button" onClick={completeSelection} disabled={checkoutLoading}>{checkoutLoading ? 'Opening checkout...' : selectedPack.cta}</button>
-            <small>{isPaidPack ? (isActive && subscription.currentPeriodEnd ? `Current plan ends ${formatDate(subscription.currentPeriodEnd)}. Credits are added after secure payment verification.` : 'Secured by PhonePe. Credits are added only after payment verification.') : selectedPack.copy}</small>
+            <small>{isPaidPack ? (isActive && subscription.currentPeriodEnd && selectedPack.id === 'monthly_150_tokens' ? `Current plan ends ${formatDate(subscription.currentPeriodEnd)}. Credits are added after secure payment verification.` : 'Secured by PhonePe. Credits are added only after payment verification.') : selectedPack.copy}</small>
           </aside>
         </div>
       </section>
@@ -7746,7 +7829,8 @@ function App() {
     if (path === '/cart') return <CartPage />;
     if (path === '/custom-try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/style-bot') return <StyleBotPage user={user} setUser={setUser} />;
-    if (path === '/tokens') return <TokenPage user={user} setUser={setUser} />;
+    if (path === '/tokens') return <TokenPage user={user} setUser={setUser} mode="overview" />;
+    if (path === '/tokens/top-up') return <TokenPage key={routeKey} user={user} setUser={setUser} mode="topup" />;
     if (path === '/profile') return <ProfilePage user={user} setUser={setUser} />;
     if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} />;
     if ((path === '/signup' || path === '/login') && user) return <SearchPage user={user} setUser={setUser} />;

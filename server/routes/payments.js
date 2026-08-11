@@ -23,13 +23,30 @@ const paymentStatusLimiter = createRateLimiter({
   message: 'Payment status checks are temporarily limited. Please try again shortly.'
 });
 
-const MONTHLY_PLAN = {
-  id: 'monthly_100_tokens',
-  name: 'Monthly Lookmefy Tokens',
-  amount: 100000,
+const SUBSCRIPTION_PLAN = {
+  id: 'monthly_150_tokens',
+  name: 'Monthly Lookmefy Membership',
+  orderType: 'subscription',
+  amount: 50000,
   currency: 'INR',
-  tokens: 100
+  tokens: 150,
+  billing: 'Monthly',
+  mandate: {
+    setupAmount: 100,
+    recurringAmount: 50000,
+    firstDebitDelayHours: 24
+  }
 };
+
+const TOP_UP_PLANS = [
+  { id: 'topup_50_tokens', name: '50 Token Top-up', orderType: 'topup', amount: 20000, currency: 'INR', tokens: 50, billing: 'One-time' },
+  { id: 'topup_75_tokens', name: '75 Token Top-up', orderType: 'topup', amount: 30000, currency: 'INR', tokens: 75, billing: 'One-time' },
+  { id: 'topup_110_tokens', name: '110 Token Top-up', orderType: 'topup', amount: 40000, currency: 'INR', tokens: 110, billing: 'One-time' },
+  { id: 'topup_135_tokens', name: '135 Token Top-up', orderType: 'topup', amount: 50000, currency: 'INR', tokens: 135, billing: 'One-time' },
+  { id: 'topup_400_tokens', name: '400 Token Top-up', orderType: 'topup', amount: 100000, currency: 'INR', tokens: 400, billing: 'One-time' }
+];
+
+const PAYMENT_PLANS = [SUBSCRIPTION_PLAN, ...TOP_UP_PLANS];
 
 let cachedAuth = null;
 
@@ -99,11 +116,34 @@ function clientOrigin(req) {
   return process.env.CLIENT_ORIGIN || req.get('origin') || `${req.protocol}://${req.get('host')}`;
 }
 
-function configuredRedirectUrl(req, merchantOrderId) {
+function publicPlan(plan) {
+  return {
+    id: plan.id,
+    name: plan.name,
+    orderType: plan.orderType,
+    amount: plan.amount,
+    currency: plan.currency,
+    tokens: plan.tokens,
+    billing: plan.billing,
+    mandate: plan.mandate || null
+  };
+}
+
+function planById(planId) {
+  const id = String(planId || '').trim();
+  return PAYMENT_PLANS.find((plan) => plan.id === id) || null;
+}
+
+function checkoutMessage(plan) {
+  if (plan.orderType === 'topup') return `Lookmefy ${plan.tokens} token top-up`;
+  return 'Lookmefy monthly membership';
+}
+
+function configuredRedirectUrl(req, merchantOrderId, planId) {
   const base = process.env.PHONEPE_REDIRECT_URL || `${clientOrigin(req)}/tokens`;
   const url = new URL(base, clientOrigin(req));
   url.searchParams.set('merchantOrderId', merchantOrderId);
-  url.searchParams.set('plan', MONTHLY_PLAN.id);
+  url.searchParams.set('plan', planId);
   return url.toString();
 }
 
@@ -193,36 +233,37 @@ function createMerchantOrderId(userId) {
   return `FL_${Date.now()}_${userPart}_${random}`.slice(0, 63);
 }
 
-async function createPhonePePayment({ req, user }) {
+async function createPhonePePayment({ req, user, plan = SUBSCRIPTION_PLAN }) {
   const merchantOrderId = createMerchantOrderId(user._id);
-  const redirectUrl = configuredRedirectUrl(req, merchantOrderId);
+  const redirectUrl = configuredRedirectUrl(req, merchantOrderId, plan.id);
   const order = await TokenOrder.create({
     user: user._id,
     merchantOrderId,
-    planId: MONTHLY_PLAN.id,
-    planName: MONTHLY_PLAN.name,
-    amount: MONTHLY_PLAN.amount,
-    currency: MONTHLY_PLAN.currency,
-    tokens: MONTHLY_PLAN.tokens,
+    planId: plan.id,
+    planName: plan.name,
+    orderType: plan.orderType,
+    amount: plan.amount,
+    currency: plan.currency,
+    tokens: plan.tokens,
     redirectUrl
   });
 
   try {
     const payload = {
       merchantOrderId,
-      amount: MONTHLY_PLAN.amount,
+      amount: plan.amount,
       expireAfter: Number(process.env.PHONEPE_ORDER_EXPIRE_SECONDS || 1200),
       paymentFlow: {
         type: 'PG_CHECKOUT',
-        message: 'Lookmefy monthly token subscription',
+        message: checkoutMessage(plan),
         merchantUrls: { redirectUrl }
       },
       metaInfo: {
         udf1: user._id.toString(),
-        udf2: MONTHLY_PLAN.id,
-        udf3: String(MONTHLY_PLAN.tokens),
+        udf2: plan.id,
+        udf3: String(plan.tokens),
         udf4: 'Lookmefy',
-        udf5: 'monthly'
+        udf5: plan.orderType
       }
     };
 
@@ -257,38 +298,44 @@ async function grantPaidTokens(order, providerResponse) {
   if (order.creditedAt) return User.findById(order.user);
 
   const now = new Date();
-  const currentPeriodEnd = addMonths(now, 1);
+  const isSubscription = order.orderType === 'subscription' || order.planId === SUBSCRIPTION_PLAN.id;
+  const currentPeriodEnd = isSubscription ? addMonths(now, 1) : null;
+  const orderSet = {
+    status: 'completed',
+    providerState: 'COMPLETED',
+    providerResponse,
+    creditedAt: now
+  };
+  if (isSubscription) {
+    orderSet.currentPeriodStart = now;
+    orderSet.currentPeriodEnd = currentPeriodEnd;
+  }
   const creditedOrder = await TokenOrder.findOneAndUpdate(
     { _id: order._id, creditedAt: null },
-    {
-      $set: {
-        status: 'completed',
-        providerState: 'COMPLETED',
-        providerResponse,
-        creditedAt: now,
-        currentPeriodStart: now,
-        currentPeriodEnd
-      }
-    },
+    { $set: orderSet },
     { new: true }
   );
   if (!creditedOrder) return User.findById(order.user);
 
+  const userUpdate = {
+    $inc: { tokens: order.tokens }
+  };
+  if (isSubscription) {
+    userUpdate.$set = {
+      subscription: {
+        planId: order.planId,
+        status: 'active',
+        tokensPerMonth: order.tokens,
+        currentPeriodStart: now,
+        currentPeriodEnd,
+        lastOrderId: order.merchantOrderId
+      }
+    };
+  }
+
   return User.findByIdAndUpdate(
     order.user,
-    {
-      $inc: { tokens: order.tokens },
-      $set: {
-        subscription: {
-          planId: order.planId,
-          status: 'active',
-          tokensPerMonth: order.tokens,
-          currentPeriodStart: now,
-          currentPeriodEnd,
-          lastOrderId: order.merchantOrderId
-        }
-      }
-    },
+    userUpdate,
     { new: true }
   );
 }
@@ -327,7 +374,15 @@ function orderIdFromCallback(req) {
 }
 
 router.get('/plans', (_req, res) => {
-  res.json({ plans: [MONTHLY_PLAN] });
+  res.json({
+    plans: PAYMENT_PLANS.map(publicPlan),
+    subscription: publicPlan(SUBSCRIPTION_PLAN),
+    topUps: TOP_UP_PLANS.map(publicPlan),
+    costs: {
+      imageTokens: Number(process.env.TRYON_TOKEN_COST || 1),
+      videoTokens: Number(process.env.TRYON_VIDEO_TOKEN_COST || 3)
+    }
+  });
 });
 
 router.get('/credits/history', requireUser, async (req, res) => {
@@ -342,7 +397,7 @@ router.get('/credits/history', requireUser, async (req, res) => {
   const purchaseItems = orders.map((order) => ({
     id: `order-${order._id}`,
     type: 'purchase',
-    title: order.planName || 'Credit purchase',
+    title: order.orderType === 'topup' ? (order.planName || 'Token top-up') : (order.planName || 'Credit purchase'),
     detail: order.amount ? `${order.currency || 'INR'} ${(Number(order.amount || 0) / 100).toLocaleString('en-IN')}` : 'Payment verified',
     credits: Number(order.tokens || 0),
     date: order.creditedAt || order.createdAt,
@@ -419,9 +474,21 @@ router.get('/credits/history', requireUser, async (req, res) => {
   });
 });
 
+router.post('/checkout', requireUser, paymentCreateLimiter, async (req, res) => {
+  try {
+    const requestedPlanId = String(req.body?.planId || '').trim();
+    const plan = requestedPlanId ? planById(requestedPlanId) : SUBSCRIPTION_PLAN;
+    if (!plan) return res.status(400).json({ message: 'Selected credit plan is not available.' });
+    const order = await createPhonePePayment({ req, user: req.user, plan });
+    res.status(201).json({ order: order.toClient(), redirectUrl: order.redirectUrl });
+  } catch (error) {
+    res.status(400).json({ message: readablePhonePeError(error, 'Could not start PhonePe checkout') });
+  }
+});
+
 router.post('/phonepe/subscription', requireUser, paymentCreateLimiter, async (req, res) => {
   try {
-    const order = await createPhonePePayment({ req, user: req.user });
+    const order = await createPhonePePayment({ req, user: req.user, plan: SUBSCRIPTION_PLAN });
     res.status(201).json({ order: order.toClient(), redirectUrl: order.redirectUrl });
   } catch (error) {
     res.status(400).json({ message: readablePhonePeError(error, 'Could not start PhonePe checkout') });
