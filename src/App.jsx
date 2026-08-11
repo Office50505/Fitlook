@@ -2003,8 +2003,7 @@ function AtelierHome({ user }) {
 function Home() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const destination = localStorage.getItem('fitlook_token') ? '/home' : '/signup';
-      window.history.pushState({}, '', destination);
+      window.history.pushState({}, '', authReturnPath());
       window.dispatchEvent(new PopStateEvent('popstate'));
     }, 2000);
     return () => window.clearTimeout(timer);
@@ -6917,6 +6916,7 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
   ], [user?.name]);
 
   const step = steps[stepIndex];
+  const hasSpotlightTarget = stepIndex !== 0 && stepIndex !== steps.length - 1;
   const displayStep = isMobileTour ? {
     ...step,
     eyebrow: step.mobileEyebrow || step.eyebrow,
@@ -7105,9 +7105,9 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       const viewport = getViewport();
       const isMobile = viewport.width <= 760;
       const viewportMin = Math.min(viewport.width, viewport.height);
-      const minRadius = isMobile ? 48 : 56;
-      const maxRadius = Math.max(minRadius, Math.min(isMobile ? 86 : 118, viewportMin * (isMobile ? 0.2 : 0.18)));
-      const edgePadding = isMobile ? 18 : 28;
+      const minRadius = isMobile ? 16 : 46;
+      const maxRadius = Math.max(minRadius, Math.min(isMobile ? 42 : 108, viewportMin * (isMobile ? 0.1 : 0.16)));
+      const edgePadding = isMobile ? 12 : 28;
       const mobileFallback = isMobile ? step.mobileFallback : null;
       const targetSelectors = isMobile ? (step.mobileSelectors || step.selectors) : step.selectors;
       const target = findVisibleTarget(targetSelectors);
@@ -7116,7 +7116,8 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
         const focusSize = rect.width > rect.height * 2.4
           ? rect.height
           : Math.max(rect.width, rect.height);
-        const radius = clamp(focusSize * (isMobile ? 0.62 : 0.72) + (isMobile ? 14 : 18), minRadius, maxRadius);
+        const isBottomNavTarget = isMobile && target.closest?.('.mobile-bottom-nav');
+        const radius = clamp((focusSize / 2) + (isBottomNavTarget ? 2 : isMobile ? 4 : 16), minRadius, isBottomNavTarget ? 28 : maxRadius);
         setSpotlight({
           x: clampCenter(rect.left + rect.width / 2, viewport.width, radius, edgePadding),
           y: clampCenter(rect.top + rect.height / 2, viewport.height, radius, edgePadding),
@@ -7156,13 +7157,13 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
 
   return (
     <div
-      className={`onboarding-overview onboarding-cinematic onboarding-tour-step-${stepIndex} onboarding-tour-${step.position}`}
+      className={`onboarding-overview onboarding-cinematic onboarding-tour-step-${stepIndex} onboarding-tour-${step.position} ${hasSpotlightTarget ? 'has-spotlight-target' : 'no-spotlight-target'}`}
       role="presentation"
       style={spotlightStyle}
     >
-      <div className="onboarding-tour-spotlight" aria-hidden="true">
+      {hasSpotlightTarget && <div className="onboarding-tour-spotlight" aria-hidden="true">
         <span>{step.icon}</span>
-      </div>
+      </div>}
       <section
         ref={dialogRef}
         className={`onboarding-dialog onboarding-cinematic-caption ${stepIndex === 0 || isLastStep ? 'intro' : 'tooltip'}`}
