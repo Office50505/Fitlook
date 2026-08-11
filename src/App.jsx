@@ -15,6 +15,7 @@ const API_TIMEOUT_MS = 25000;
 const AI_IMAGE_TIMEOUT_MS = 180000;
 const AI_VIDEO_TIMEOUT_MS = 300000;
 const PRODUCT_CACHE_TTL_MS = 30_000;
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const productListCache = new Map();
 const productDetailLocalCache = new Map();
 
@@ -686,6 +687,8 @@ async function api(path, options = {}) {
   const token = localStorage.getItem('fitlook_token');
   const headers = requestOptions.body instanceof FormData ? {} : { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
+  const requestPath = String(path || '').startsWith('/') ? String(path || '') : `/${path || ''}`;
+  const requestUrl = `${API_BASE_URL}/api${requestPath}`;
 
   let lastError;
   for (let attempt = 0; attempt <= retryCount; attempt += 1) {
@@ -700,7 +703,7 @@ async function api(path, options = {}) {
     }, timeout);
 
     try {
-      const res = await fetch(`/api${path}`, {
+      const res = await fetch(requestUrl, {
         ...requestOptions,
         signal: controller.signal,
         headers: { ...headers, ...optionHeaders }
