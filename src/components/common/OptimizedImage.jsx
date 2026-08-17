@@ -18,6 +18,7 @@ export function highResolutionImageSource(src) {
  * @typedef {import('react').ImgHTMLAttributes<HTMLImageElement> & {
  *   eager?: boolean;
  *   fallbackSrc?: string;
+ *   highResolution?: boolean;
  * }} OptimizedImageProps
  */
 
@@ -26,9 +27,9 @@ export function highResolutionImageSource(src) {
  *
  * @param {OptimizedImageProps} props
  */
-export default function OptimizedImage({ eager = false, loading, decoding = 'async', fetchPriority, fallbackSrc = '/assets/hero2.png', src, onError, ...props }) {
+export default function OptimizedImage({ eager = false, loading, decoding = 'async', fetchPriority, fallbackSrc = '/assets/hero2.png', highResolution = true, src, onError, ...props }) {
   const fallbackApplied = useRef(false);
-  const imageSrc = highResolutionImageSource(src);
+  const imageSrc = highResolution ? highResolutionImageSource(src) : String(src || '').trim();
 
   useEffect(() => {
     fallbackApplied.current = false;

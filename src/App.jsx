@@ -18,6 +18,25 @@ const PRODUCT_CACHE_TTL_MS = 30_000;
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const productListCache = new Map();
 const productDetailLocalCache = new Map();
+const EMPTY_PRODUCT_FACETS = { brands: [], categories: [], categoryCounts: [] };
+
+function emptyProductListState(error = '') {
+  return { products: [], total: 0, facets: EMPTY_PRODUCT_FACETS, loading: false, error };
+}
+
+function normalizeProductListResponse(data) {
+  if (!data || typeof data !== 'object') return emptyProductListState('Product catalog response was empty. Please try again.');
+  const products = Array.isArray(data.products) ? data.products : [];
+  const facets = data.facets && typeof data.facets === 'object'
+    ? {
+        brands: Array.isArray(data.facets.brands) ? data.facets.brands : [],
+        categories: Array.isArray(data.facets.categories) ? data.facets.categories : [],
+        categoryCounts: Array.isArray(data.facets.categoryCounts) ? data.facets.categoryCounts : []
+      }
+    : EMPTY_PRODUCT_FACETS;
+  const total = Number.isFinite(Number(data.total)) ? Number(data.total) : products.length;
+  return { products, total, facets, loading: false, error: '' };
+}
 
 function formatFileSize(bytes) {
   return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
@@ -857,9 +876,15 @@ async function api(path, options = {}) {
         signal: controller.signal,
         headers: { ...headers, ...optionHeaders }
       });
+      const contentType = res.headers.get('content-type') || '';
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         const error = new Error(res.status === 429 ? rateLimitMessage(data, `Request failed (${res.status})`) : readableError(data, `Request failed (${res.status})`));
+        error.status = res.status;
+        throw error;
+      }
+      if (data === null && !contentType.includes('application/json')) {
+        const error = new Error('The API is not returning JSON. Check the production /api routing.');
         error.status = res.status;
         throw error;
       }
@@ -936,6 +961,27 @@ function announce(message, tone = 'success') {
   window.dispatchEvent(new CustomEvent('fitlook:toast', { detail: { message, tone } }));
 }
 
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => (
+    typeof window !== 'undefined' && Boolean(window.matchMedia?.(query)?.matches)
+  ));
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    if (media.addEventListener) {
+      media.addEventListener('change', update);
+      return () => media.removeEventListener('change', update);
+    }
+    media.addListener(update);
+    return () => media.removeListener(update);
+  }, [query]);
+
+  return matches;
+}
+
 function useProducts(params) {
   const paramKey = JSON.stringify(params || {});
   const query = useMemo(() => {
@@ -962,12 +1008,12 @@ function useProducts(params) {
     api(`/products${query ? `?${query}` : ''}`, { signal: controller.signal })
       .then((data) => {
         if (!alive) return;
-        const nextState = { products: data.products || [], total: data.total || 0, facets: data.facets || { brands: [], categories: [], categoryCounts: [] }, loading: false, error: '' };
-        productListCache.set(query, { createdAt: Date.now(), state: nextState });
+        const nextState = normalizeProductListResponse(data);
+        if (!nextState.error) productListCache.set(query, { createdAt: Date.now(), state: nextState });
         setState(nextState);
       })
       .catch((err) => {
-        if (alive && err.name !== 'AbortError') setState({ products: [], total: 0, facets: { brands: [], categories: [], categoryCounts: [] }, loading: false, error: err.message });
+        if (alive && err.name !== 'AbortError') setState(emptyProductListState(err.message));
       });
     return () => {
       alive = false;
@@ -991,10 +1037,10 @@ function useRecommendedProducts(user, limit = 6) {
     setState((current) => ({ ...current, loading: true, error: '' }));
     api(`/recommendations/for-you?limit=${limit}`, { signal: controller.signal })
       .then((data) => {
-        if (alive) setState({ products: data.products || [], total: data.products?.length || 0, facets: { brands: [], categories: [], categoryCounts: [] }, loading: false, error: '' });
+        if (alive) setState({ ...normalizeProductListResponse(data), facets: EMPTY_PRODUCT_FACETS });
       })
       .catch((err) => {
-        if (alive && err.name !== 'AbortError') setState({ products: [], total: 0, facets: { brands: [], categories: [], categoryCounts: [] }, loading: false, error: err.message });
+        if (alive && err.name !== 'AbortError') setState(emptyProductListState(err.message));
       });
     return () => {
       alive = false;
@@ -1015,7 +1061,7 @@ function useSimilarProducts(id, limit = 4) {
     setState({ products: [], loading: true, error: '' });
     api(`/recommendations/similar/${encodeURIComponent(id)}?limit=${limit}`, { signal: controller.signal })
       .then((data) => {
-        if (alive) setState({ products: data.products || [], loading: false, error: '' });
+        if (alive) setState({ products: Array.isArray(data?.products) ? data.products : [], loading: false, error: '' });
       })
       .catch((err) => {
         if (alive && err.name !== 'AbortError') setState({ products: [], loading: false, error: err.message });
@@ -1637,24 +1683,25 @@ function AtelierProductRailCard({ product }) {
 
   return (
     <article className="atelier-product">
-      <a className="atelier-product-image" href={`/product/${encodeURIComponent(product.id)}`} aria-label={`Open ${product.name}`}>
-        {(badge || discount > 0) && <span className="atelier-best-seller">{badge || `${discount}% off`}</span>}
-        <OptimizedImage src={product.imageUrl} alt={product.name} />
-        <span className="atelier-product-quick-link">View Product</span>
+      <a className="atelier-product-link" href={`/product/${encodeURIComponent(product.id)}`} aria-label={`Open ${product.name}`}>
+        <span className="atelier-product-image">
+          {(badge || discount > 0) && <span className="atelier-best-seller">{badge || `${discount}% off`}</span>}
+          <OptimizedImage src={product.imageUrl} alt={product.name} highResolution={false} />
+        </span>
+        <span className="atelier-product-category">{displayCategory(product)}</span>
+        <h3>{product.name}</h3>
+        <span className="atelier-price">
+          <strong>{formatMoney(product.price || 0, product.currency)}</strong>
+          {hasDiscount && <del>{formatMoney(product.compareAtPrice, product.currency)}</del>}
+        </span>
+        {(rating > 0 || product.tryOnAvailable || product.aiTryOnAvailable) && (
+          <span className="atelier-product-meta">
+            {rating > 0 && <span>★ {rating.toFixed(1)}{ratingCount > 0 ? ` (${ratingCount})` : ''}</span>}
+            {(product.tryOnAvailable || product.aiTryOnAvailable) && <span>AI Try-On</span>}
+          </span>
+        )}
       </a>
       <WishlistHeartButton product={product} className="card-wishlist-heart" />
-      <span className="atelier-product-category">{displayCategory(product)}</span>
-      <h3>{product.name}</h3>
-      <div className="atelier-price">
-        <strong>{formatMoney(product.price || 0, product.currency)}</strong>
-        {hasDiscount && <del>{formatMoney(product.compareAtPrice, product.currency)}</del>}
-      </div>
-      {(rating > 0 || product.tryOnAvailable || product.aiTryOnAvailable) && (
-        <div className="atelier-product-meta">
-          {rating > 0 && <span>★ {rating.toFixed(1)}{ratingCount > 0 ? ` (${ratingCount})` : ''}</span>}
-          {(product.tryOnAvailable || product.aiTryOnAvailable) && <span>AI Try-On</span>}
-        </div>
-      )}
     </article>
   );
 }
@@ -1664,7 +1711,7 @@ function AtelierCategoryProductCard({ product }) {
     <article className="atelier-category-product">
       <a href={`/product/${encodeURIComponent(product.id)}`}>
         <div className="atelier-category-product-image">
-          <OptimizedImage src={product.imageUrl} alt={product.name} />
+          <OptimizedImage src={product.imageUrl} alt={product.name} highResolution={false} />
         </div>
         <span className="atelier-category-product-brand">{displayBrand(product)}</span>
         <h3>{product.name}</h3>
@@ -1740,7 +1787,8 @@ function fillProductRailProducts(products = [], fallbackProducts = [], minimum =
 
 function AtelierCommerceStrip({ id, title, subtitle, products, viewHref = '/categories' }) {
   const railRef = useRef(null);
-  const visibleProducts = uniqueProducts(products).slice(0, 18);
+  const isMobileRail = useMediaQuery('(max-width: 760px)');
+  const visibleProducts = uniqueProducts(products).slice(0, isMobileRail ? 8 : 18);
   if (!visibleProducts.length) return null;
 
   const scrollRail = (direction) => {
@@ -1987,19 +2035,22 @@ function AtelierHome({ user }) {
   const essentialsRailRef = useRef(null);
   const categoryRailRef = useRef(null);
   const [heroSlideIndex, setHeroSlideIndex] = useState(0);
+  const isMobileHome = useMediaQuery('(max-width: 760px)');
+  const primaryRailLimit = isMobileHome ? 8 : 12;
+  const mixedFeedLimit = isMobileHome ? 18 : 48;
   const catalogProducts = useMemo(
     () => (state.products || []).filter((product) => product?.id && product?.imageUrl),
     [state.products]
   );
   const newArrivalProducts = catalogProducts.filter((product) => product.isNewArrival);
-  const arrivalProducts = [...newArrivalProducts, ...catalogProducts.filter((product) => !product.isNewArrival)].slice(0, 12);
+  const arrivalProducts = [...newArrivalProducts, ...catalogProducts.filter((product) => !product.isNewArrival)].slice(0, primaryRailLimit);
   const productsAfterArrivals = catalogProducts.filter((product) => !arrivalProducts.some((arrival) => arrival.id === product.id));
-  const tryOnPickProducts = (productsAfterArrivals.length ? productsAfterArrivals : catalogProducts).slice(0, 12);
+  const tryOnPickProducts = (productsAfterArrivals.length ? productsAfterArrivals : catalogProducts).slice(0, primaryRailLimit);
   const productsAfterTryOnPicks = catalogProducts.filter((product) => (
     !arrivalProducts.some((arrival) => arrival.id === product.id)
     && !tryOnPickProducts.some((item) => item.id === product.id)
   ));
-  const dailyEssentialProducts = (productsAfterTryOnPicks.length ? productsAfterTryOnPicks : [...catalogProducts].reverse()).slice(0, 12);
+  const dailyEssentialProducts = (productsAfterTryOnPicks.length ? productsAfterTryOnPicks : [...catalogProducts].reverse()).slice(0, primaryRailLimit);
   const recommendedProducts = uniqueProducts(recommendedState.products || []);
   const feedGender = productGenderForPreference(user?.genderPreference || '');
   const genderedFeedPool = useMemo(() => {
@@ -2012,8 +2063,8 @@ function AtelierHome({ user }) {
     });
   }, [catalogProducts, feedGender]);
   const mixedFeedProducts = useMemo(() => {
-    return stableExploreProducts(genderedFeedPool).slice(0, 48);
-  }, [genderedFeedPool]);
+    return stableExploreProducts(genderedFeedPool).slice(0, mixedFeedLimit);
+  }, [genderedFeedPool, mixedFeedLimit]);
   const mixedFeedLabel = feedGender ? `${feedGender === 'women' ? "Women's" : "Men's"} picks from every department` : 'Mixed picks from every department';
   const promoProducts = catalogProducts.slice(4, 6);
   const offerCards = useMemo(() => buildOfferCards({ catalogProducts, arrivalProducts, tryOnPickProducts, feedGender }), [arrivalProducts, catalogProducts, feedGender, tryOnPickProducts]);
@@ -2063,6 +2114,9 @@ function AtelierHome({ user }) {
       .slice(0, 16);
   }, [catalogProducts, state.facets]);
   const heroSlide = atelierHeroSlides[heroSlideIndex] || atelierHeroSlides[0];
+  const firstCommerceSections = commerceSections.slice(0, isMobileHome ? 2 : 4);
+  const secondCommerceSections = commerceSections.slice(isMobileHome ? 2 : 4, isMobileHome ? 4 : 8);
+  const finalCommerceSections = isMobileHome ? [] : commerceSections.slice(8);
 
   useEffect(() => {
     if (atelierHeroSlides.length < 2) return undefined;
@@ -2143,19 +2197,19 @@ function AtelierHome({ user }) {
         </section>
 
         {promoProducts.length > 0 && <section className="atelier-promos atelier-wide" aria-label="Featured products">
-          {promoProducts.map((product) => <article className="atelier-promo atelier-promo-sale" key={product.id}><a className="atelier-promo-link" href={`/product/${encodeURIComponent(product.id)}`}><div><span className="atelier-eyebrow">{displayCategory(product)}</span><h3>{product.name}</h3><p>{displayBrand(product)} · {formatMoney(product.price || 0, product.currency)}</p><span className="atelier-text-link">View Product →</span></div><OptimizedImage src={product.imageUrl} alt={product.name} /></a><WishlistHeartButton product={product} className="card-wishlist-heart" /></article>)}
+          {promoProducts.map((product) => <article className="atelier-promo atelier-promo-sale" key={product.id}><a className="atelier-promo-link" href={`/product/${encodeURIComponent(product.id)}`}><div><span className="atelier-eyebrow">{displayCategory(product)}</span><h3>{product.name}</h3><p>{displayBrand(product)} · {formatMoney(product.price || 0, product.currency)}</p><span className="atelier-text-link">View Product →</span></div><OptimizedImage src={product.imageUrl} alt={product.name} highResolution={false} /></a><WishlistHeartButton product={product} className="card-wishlist-heart" /></article>)}
         </section>}
 
         <AtelierProductStrip title="Curated New Arrivals" railId="new-arrivals-rail" label="Curated new arrivals" products={arrivalProducts} railRef={arrivalsRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
         <AtelierOfferCards offers={offerCards.slice(0, 4)} />
-        {commerceSections.slice(0, 4).map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
+        {firstCommerceSections.map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
         <AtelierProductStrip title="AI Try-On Picks" railId="ai-tryon-picks-rail" label="AI try-on picks" products={tryOnPickProducts} viewHref="/categories" railRef={tryOnRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
-        <AtelierOfferCards offers={offerCards.slice(4)} />
-        <AtelierCampaignCards cards={campaignCards} />
+        {!isMobileHome && <AtelierOfferCards offers={offerCards.slice(4)} />}
+        {!isMobileHome && <AtelierCampaignCards cards={campaignCards} />}
         <AtelierBestCategories categories={categoryCards} />
-        {commerceSections.slice(4, 8).map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
+        {secondCommerceSections.map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
         <AtelierProductStrip title="Daily Essentials" railId="daily-essentials-rail" label="Daily essentials" products={dailyEssentialProducts} viewHref="/categories" railRef={essentialsRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
-        {commerceSections.slice(8).map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
+        {finalCommerceSections.map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
         {mixedFeedProducts.length > 0 && (
           <section className="atelier-mixed-feed">
             <div className="atelier-wide">
@@ -2953,6 +3007,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
           <OptimizedImage
             src={image}
             alt={product.name}
+            highResolution={false}
             onError={(event) => {
               if (hasUsableTryOn) setTryOnImageFailed(true);
               else if (event.currentTarget.src !== window.location.origin + asset('hero2.png')) event.currentTarget.src = asset('hero2.png');
