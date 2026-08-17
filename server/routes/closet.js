@@ -12,6 +12,7 @@ import { requireUser } from './auth.js';
 import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { deleteStoredFile, readStoredFile, saveBuffer } from '../utils/storage.js';
+import { developmentBillingBypass, isAllowedRasterImageUpload, safeFetchBuffer } from '../utils/security.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -74,7 +75,7 @@ const activeWords = ['gym', 'run', 'sports', 'walk', 'training'];
 function isAllowedImageUpload(file) {
   const type = String(file.mimetype || '').toLowerCase();
   const name = String(file.originalname || '').toLowerCase();
-  return type.startsWith('image/') || imageMimeTypes.has(type) || /\.(avif|heic|heif)$/i.test(name);
+  return isAllowedRasterImageUpload(file) || imageMimeTypes.has(type) || /\.(avif|heic|heif)$/i.test(name);
 }
 
 function extensionFor(mimetype) {
@@ -139,7 +140,7 @@ function tokenCost() {
 }
 
 function chargedTokenCost(user) {
-  return user?.devMode ? 0 : tokenCost();
+  return developmentBillingBypass(user) ? 0 : tokenCost();
 }
 
 function shouldAnalyzeClosetUploads() {
@@ -488,14 +489,14 @@ async function waitForFitRoomTask(taskId, timer) {
 }
 
 async function generatedBytesFromUrl(url, timer) {
-  const response = await fetch(url, {
+  const { response, buffer: bytes } = await safeFetchBuffer(url, {
+    maxBytes: 12 * 1024 * 1024,
     headers: {
       accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
       'user-agent': 'Mozilla/5.0 Lookmefy closet generated image fetcher'
     }
   });
   if (!response.ok) throw new Error('Could not download generated closet outfit');
-  const bytes = Buffer.from(await response.arrayBuffer());
   const mimetype = (response.headers.get('content-type') || '').split(';')[0] || 'image/jpeg';
   timer?.mark('generated image downloaded', { kb: Math.round(bytes.length / 1024), mimetype });
   return { bytes, mimetype };
@@ -552,7 +553,7 @@ async function callFitRoomTryOn({ user, garment, timer }) {
 }
 
 async function reserveToken(user, timer) {
-  if (user.devMode) {
+  if (developmentBillingBypass(user)) {
     timer.mark('dev mode token bypass', { cost: 0, tokensRemaining: user.tokens });
     return user;
   }
@@ -563,7 +564,7 @@ async function reserveToken(user, timer) {
 }
 
 async function refundToken(user, timer) {
-  if (user.devMode) return user;
+  if (developmentBillingBypass(user)) return user;
   const refundedUser = await User.findByIdAndUpdate(user._id, { $inc: { tokens: tokenCost() } }, { new: true });
   if (refundedUser) timer.mark('token refunded', { tokensRemaining: refundedUser.tokens });
   return refundedUser || user;

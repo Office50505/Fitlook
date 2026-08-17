@@ -18,6 +18,12 @@ import { normalizeGenderPreference } from '../utils/genderPreference.js';
 import { enqueueJob, safeJobId } from '../utils/jobQueue.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { deleteStoredFile, readStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
+import {
+  isAllowedRasterImageUpload,
+  isDevelopmentModeAllowed,
+  normalizeRasterImageBuffer,
+  safeFetchBuffer
+} from '../utils/security.js';
 import { createTempSessionStore } from '../utils/tempSessions.js';
 
 const router = express.Router();
@@ -176,7 +182,7 @@ function isAvifBuffer(bytes) {
 }
 
 function isAllowedImageUpload(file) {
-  return String(file.mimetype || '').startsWith('image/') || isHeicUpload(file) || isAvifUpload(file);
+  return isAllowedRasterImageUpload(file) || isHeicUpload(file) || isAvifUpload(file);
 }
 
 const upload = multer({
@@ -278,14 +284,14 @@ async function generatedBytesFromUrl(url) {
     return { bytes, mimetype: metadata || imageMimeTypeFromBuffer(bytes) || 'image/png' };
   }
 
-  const response = await fetch(url, {
+  const { response, buffer: bytes } = await safeFetchBuffer(url, {
+    maxBytes: 12 * 1024 * 1024,
     headers: {
-      accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
       'user-agent': 'Mozilla/5.0 Lookmefy profile image fetcher'
     }
   });
   if (!response.ok) throw new Error('Could not download generated profile image');
-  const bytes = Buffer.from(await response.arrayBuffer());
   return { bytes, mimetype: imageMimeTypeFromResponse(response, bytes) };
 }
 
@@ -378,13 +384,17 @@ async function normalizeBodyPhotoUpload(file) {
 async function bodyPhotoFromUpload(file, { generateFullBody = true } = {}) {
   const normalized = await normalizeBodyPhotoUpload(file);
   const bytes = await fs.readFile(normalized.path);
-  const stored = await saveBuffer({
-    key: normalized.filename,
+  const image = await normalizeRasterImageBuffer({
     buffer: bytes,
-    mimetype: normalized.mimetype,
-    filename: normalized.filename
+    filename: normalized.filename || file.originalname || 'profile.jpg'
   });
-  if (useBunny()) await fs.unlink(normalized.path).catch(() => {});
+  const stored = await saveBuffer({
+    key: image.filename,
+    buffer: image.buffer,
+    mimetype: image.mimetype,
+    filename: image.filename
+  });
+  if (useBunny() || normalized.filename !== image.filename) await fs.unlink(normalized.path).catch(() => {});
   return {
     ...stored,
     status: generateFullBody ? 'generating' : 'ready',
@@ -576,6 +586,7 @@ router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) =
   const phoneSession = await signupOtpSessions.get(otpSession);
   if (!phone || !phoneSession || phoneSession.phone !== phone || !phoneSession.verified || phoneSession.expiresAt <= Date.now()) return res.status(400).json({ message: 'Verify your phone number first' });
   if (!name || !email || !password || !username || !genderPreference) return res.status(400).json({ message: 'Name, username, email, gender preference, and password are required' });
+  if (String(password).length < 12) return res.status(400).json({ message: 'Password must be at least 12 characters' });
   if (username.length < 3) return res.status(400).json({ message: 'Username must be at least 3 characters' });
   if (!req.file) return res.status(400).json({ message: 'Full-body photo is required' });
 
@@ -601,7 +612,7 @@ router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) =
       username,
       genderPreference,
       passwordHash,
-      devMode: parseBoolean(req.body.devMode),
+      devMode: isDevelopmentModeAllowed() && parseBoolean(req.body.devMode),
       bodyPhoto
     });
 
@@ -910,6 +921,7 @@ router.delete('/wishlist/:productId', requireUser, async (req, res) => {
 });
 
 router.patch('/dev-mode', requireUser, async (req, res) => {
+  if (!isDevelopmentModeAllowed()) return res.status(404).json({ message: 'Not found' });
   req.user.devMode = parseBoolean(req.body?.devMode);
   await req.user.save();
   res.json({ user: req.user.toClient() });

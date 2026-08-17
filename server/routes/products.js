@@ -14,6 +14,7 @@ import { enqueueJob, safeJobId } from '../utils/jobQueue.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
 import { requireAdmin } from '../utils/adminAccess.js';
 import { saveBuffer, useBunny } from '../utils/storage.js';
+import { isAllowedRasterImageUpload, normalizeRasterImageBuffer, safeFetchText } from '../utils/security.js';
 
 const router = express.Router();
 const readCacheTtlMs = Number(process.env.PRODUCT_READ_CACHE_TTL_MS || 5 * 60 * 1000);
@@ -65,7 +66,7 @@ const upload = multer({
   }),
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    cb(null, file.mimetype.startsWith('image/'));
+    cb(null, isAllowedRasterImageUpload(file));
   }
 });
 
@@ -852,16 +853,14 @@ function cleanDescription(value = '', bullets = []) {
 async function buildProductDraft(affiliateLink) {
   const url = cleanUrl(affiliateLink);
   if (!url) throw new Error('Affiliate link is required');
-  const response = await fetch(url, {
-    redirect: 'follow',
+  const { response, text: html, finalUrl } = await safeFetchText(url, {
+    maxBytes: 5 * 1024 * 1024,
     headers: {
       accept: 'text/html,application/xhtml+xml',
       'user-agent': 'Mozilla/5.0 Lookmefy product importer'
     }
   });
   if (!response.ok) throw new Error('Could not open that affiliate link');
-  const html = await response.text();
-  const finalUrl = response.url || url;
   const product = parseJsonLdProduct(html) || parseEmbeddedProduct(html) || {};
   const offer = productOffer(product);
   const aggregateRating = productAggregateRating(product);
@@ -1110,8 +1109,8 @@ router.post('/amazon-search', requireUser, amazonSearchLimiter, async (req, res)
 
     const searchQuery = genderedSearchQuery(query, genderPreference);
     const searchUrl = `${amazonSearchBaseUrl()}/s?k=${encodeURIComponent(searchQuery)}`;
-    const response = await fetch(searchUrl, {
-      redirect: 'follow',
+    const { response, text: html, finalUrl } = await safeFetchText(searchUrl, {
+      maxBytes: 5 * 1024 * 1024,
       headers: {
         accept: 'text/html,application/xhtml+xml',
         'accept-language': 'en-US,en;q=0.9',
@@ -1120,8 +1119,7 @@ router.post('/amazon-search', requireUser, amazonSearchLimiter, async (req, res)
     });
     if (!response.ok) throw new Error('Amazon search did not respond');
 
-    const html = await response.text();
-    const searchResults = extractAmazonSearchResults(html, response.url || searchUrl).slice(0, Math.max(limit * 2, 6));
+    const searchResults = extractAmazonSearchResults(html, finalUrl || searchUrl).slice(0, Math.max(limit * 2, 6));
     if (searchResults.length === 0) throw new Error('Amazon did not expose product results for this search');
 
     const settled = await Promise.allSettled(searchResults.map(async (searchResult) => {
@@ -1233,13 +1231,17 @@ router.post('/', requireAdmin, adminProductWriteLimiter, upload.single('image'),
 
   let image;
   if (req.file) {
-    image = await saveBuffer({
-      key: req.file.filename,
+    const normalized = await normalizeRasterImageBuffer({
       buffer: await fs.readFile(req.file.path),
-      mimetype: req.file.mimetype,
       filename: req.file.filename
     });
-    if (useBunny()) await fs.unlink(req.file.path).catch(() => {});
+    image = await saveBuffer({
+      key: normalized.filename,
+      buffer: normalized.buffer,
+      mimetype: normalized.mimetype,
+      filename: normalized.filename
+    });
+    if (useBunny() || normalized.filename !== req.file.filename) await fs.unlink(req.file.path).catch(() => {});
   } else if (req.body.remoteImageUrl) {
     image = { remoteUrl: cleanUrl(req.body.remoteImageUrl) };
   }

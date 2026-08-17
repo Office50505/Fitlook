@@ -19,6 +19,12 @@ import { enqueueJob, enqueueJobAndWait, safeJobId } from '../utils/jobQueue.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { readStoredFile, saveBuffer, storedFileSignature } from '../utils/storage.js';
 import {
+  developmentBillingBypass,
+  isAllowedRasterImageUpload,
+  normalizeRasterImageBuffer,
+  safeFetchBuffer
+} from '../utils/security.js';
+import {
   createPrunaPrediction,
   downloadPrunaOutput,
   fetchPrunaOutput,
@@ -64,6 +70,20 @@ const tryOnImageHourlyLimiter = createRateLimiter({
   keyGenerator: rateLimitKeys.user,
   message: 'AI try-on generation is temporarily limited for your account. Please try again later.'
 });
+const tryOnVideoBurstLimiter = createRateLimiter({
+  name: 'tryons:video-burst',
+  windowMs: 10 * 60 * 1000,
+  max: 3,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Too many video try-on requests. Please wait before generating another video.'
+});
+const tryOnVideoHourlyLimiter = createRateLimiter({
+  name: 'tryons:video-hour',
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Video try-on generation is temporarily limited for your account. Please try again later.'
+});
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 },
@@ -81,7 +101,7 @@ function isAvifUpload(file) {
 }
 
 function isAllowedImageUpload(file) {
-  return String(file.mimetype || '').startsWith('image/') || isAvifUpload(file);
+  return isAllowedRasterImageUpload(file) || isAvifUpload(file);
 }
 
 function tokenCost() {
@@ -95,7 +115,7 @@ function videoTokenCost() {
 }
 
 function devMode(user) {
-  return Boolean(user?.devMode);
+  return developmentBillingBypass(user);
 }
 
 function chargedTokenCost(user) {
@@ -259,6 +279,14 @@ function aiProvider() {
 
 function usePrunaProvider() {
   return aiProvider() === 'pruna';
+}
+
+function videoProvider() {
+  return String(process.env.TRYON_VIDEO_PROVIDER || 'pixverse').trim().toLowerCase();
+}
+
+function usePrunaVideoProvider() {
+  return videoProvider() === 'pruna';
 }
 
 function prunaTryOnModel() {
@@ -601,16 +629,17 @@ async function dataUriFromProduct(product, timer, options = {}) {
       let lastError;
       for (const url of candidateUrls) {
         try {
-          const response = await fetch(url, {
+          const { response, buffer: bytes } = await safeFetchBuffer(url, {
+            maxBytes: 12 * 1024 * 1024,
             headers: {
-              accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+              accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
               'user-agent': 'Mozilla/5.0 Lookmefy image fetcher'
             }
           });
           if (!response.ok) throw new Error('Could not fetch product image');
           const mimetype = response.headers.get('content-type') || 'image/jpeg';
           if (!mimetype.startsWith('image/')) throw new Error('Product image URL is not an image');
-          const bytes = Buffer.from(await response.arrayBuffer());
+          if (/svg/i.test(mimetype)) throw new Error('SVG product images are not allowed');
           const normalized = await normalizeAvifImage({
             bytes,
             mimetype,
@@ -651,16 +680,17 @@ async function filePartFromUpload(image, label, timer) {
 }
 
 async function filePartFromRemoteUrl(url, label, timer) {
-  const response = await fetch(url, {
+  const { response, buffer: bytes } = await safeFetchBuffer(url, {
+    maxBytes: 12 * 1024 * 1024,
     headers: {
-      accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
       'user-agent': 'Mozilla/5.0 Lookmefy image fetcher'
     }
   });
   if (!response.ok) throw new Error(`Could not fetch ${label} image`);
   const mimetype = response.headers.get('content-type') || 'image/jpeg';
   if (!mimetype.startsWith('image/')) throw new Error(`${label} image URL is not an image`);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  if (/svg/i.test(mimetype)) throw new Error('SVG images are not allowed');
   const normalized = await normalizeAvifImage({
     bytes,
     mimetype,
@@ -697,19 +727,15 @@ async function filePartFromProduct(product, timer) {
 
 async function filePartFromMemoryFile(file, label, timer) {
   if (!file?.buffer) throw new Error(`${label} image is missing`);
-  const mimetype = file.mimetype || 'image/jpeg';
-  const normalized = await normalizeAvifImage({
-    bytes: file.buffer,
-    mimetype,
-    filename: file.originalname,
-    label,
-    timer
+  const normalized = await normalizeRasterImageBuffer({
+    buffer: file.buffer,
+    filename: file.originalname || `${label}.jpg`
   });
-  timer?.mark(`${label} upload file prepared`, { kb: Math.round(normalized.bytes.length / 1024), mimetype: normalized.mimetype });
+  timer?.mark(`${label} upload file prepared`, { kb: Math.round(normalized.buffer.length / 1024), mimetype: normalized.mimetype });
   return {
-    bytes: normalized.bytes,
+    bytes: normalized.buffer,
     mimetype: normalized.mimetype,
-    filename: normalized.filename || file.originalname || `${label}${extensionFor(normalized.mimetype)}`
+    filename: normalized.filename || `${label}${extensionFor(normalized.mimetype)}`
   };
 }
 
@@ -1043,14 +1069,14 @@ async function generatedBytesFromUrl(url, timer) {
 
   let lastStatus = '';
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const response = await fetch(url, {
+    const { response, buffer: bytes } = await safeFetchBuffer(url, {
+      maxBytes: 12 * 1024 * 1024,
       headers: {
-        accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
         'user-agent': 'Mozilla/5.0 Lookmefy generated image fetcher'
       }
     });
     if (response.ok) {
-      const bytes = Buffer.from(await response.arrayBuffer());
       return {
         bytes,
         mimetype: imageMimeTypeFromResponse(response, bytes)
@@ -1085,14 +1111,14 @@ async function generatedVideoBytesFromUrl(url, timer) {
     };
   }
 
-  const response = await fetch(url, {
+  const { response, buffer: bytes } = await safeFetchBuffer(url, {
+    maxBytes: 120 * 1024 * 1024,
     headers: {
       accept: 'video/mp4,video/quicktime,video/*,*/*;q=0.8',
       'user-agent': 'Mozilla/5.0 Lookmefy generated video fetcher'
     }
   });
   if (!response.ok) throw new Error(`Could not download generated try-on video from ${shortUrlForLog(url)}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
   return {
     bytes,
     mimetype: videoMimeTypeFromResponse(response, bytes)
@@ -1228,8 +1254,11 @@ async function runVideoAttempt({ endpoint, payload, prompt, label, providerName,
     bytes,
     mimetype,
     prompt,
+    provider: providerName?.toLowerCase?.() || 'fal',
     model: endpoint,
-    quality: `${payload.resolution} ${payload.duration}s`
+    quality: `${payload.resolution} ${payload.duration}s`,
+    duration: payload.duration,
+    resolution: payload.resolution
   };
 }
 
@@ -1445,9 +1474,14 @@ async function callFalImageEdit({ user, product, garmentDataUri, prompt, timer }
   timer?.mark('fal result fetched');
   const generated = result.images?.[0];
   if (!generated?.url) throw new Error('FAL did not return an image');
-  const imageResponse = await fetch(generated.url);
+  const { response: imageResponse, buffer: bytes } = await safeFetchBuffer(generated.url, {
+    maxBytes: 12 * 1024 * 1024,
+    headers: {
+      accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      'user-agent': 'Mozilla/5.0 Lookmefy generated image fetcher'
+    }
+  });
   if (!imageResponse.ok) throw new Error('Could not download generated try-on image');
-  const bytes = Buffer.from(await imageResponse.arrayBuffer());
   const mimetype = imageMimeTypeFromResponse(imageResponse, bytes);
   timer?.mark('generated image downloaded', { outputKb: Math.round(bytes.length / 1024) });
   return {
@@ -1687,20 +1721,17 @@ async function saveGeneratedExternalTryOn({ user, product, timer }) {
 
 async function normalizeMemoryImageFile(file, label, timer) {
   if (!file?.buffer) return file;
-  const normalized = await normalizeAvifImage({
-    bytes: file.buffer,
-    mimetype: file.mimetype || 'image/jpeg',
-    filename: file.originalname,
-    label,
-    timer
+  const normalized = await normalizeRasterImageBuffer({
+    buffer: file.buffer,
+    filename: file.originalname || `${label}.jpg`
   });
-  if (normalized.bytes === file.buffer && normalized.mimetype === file.mimetype) return file;
+  timer?.mark(`${label} normalized`, { inputKb: Math.round(file.buffer.length / 1024), outputKb: Math.round(normalized.buffer.length / 1024) });
   return {
     ...file,
-    buffer: normalized.bytes,
+    buffer: normalized.buffer,
     mimetype: normalized.mimetype,
     originalname: normalized.filename || file.originalname,
-    size: normalized.bytes.length
+    size: normalized.buffer.length
   };
 }
 
@@ -1989,7 +2020,7 @@ router.post('/external', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLi
   }
 });
 
-router.post('/:productId/video', requireUser, async (req, res) => {
+router.post('/:productId/video', requireUser, tryOnVideoBurstLimiter, tryOnVideoHourlyLimiter, async (req, res) => {
   const forceGenerate = Boolean(req.body?.force || req.body?.refresh);
   const timer = createTimer('video', {
     userId: req.user._id.toString(),
@@ -2051,7 +2082,7 @@ router.post('/:productId/video', requireUser, async (req, res) => {
     reserved = true;
     req.user = chargedUser;
 
-    const generated = usePrunaProvider()
+    const generated = usePrunaVideoProvider()
       ? await callPrunaTryOnVideo({ tryOn: existing, product, user: req.user, timer })
       : await callPixverseTryOnVideo({ tryOn: existing, product, user: req.user, timer });
     const filename = `tryon-video-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;

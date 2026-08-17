@@ -6,7 +6,10 @@ function signupTokens() {
 }
 
 function defaultDevMode() {
-  return ['1', 'true', 'yes', 'on'].includes(String(process.env.SIGNUP_DEV_MODE_DEFAULT || '').toLowerCase());
+  const production = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+  const enabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.ENABLE_DEV_MODE || '').toLowerCase());
+  const defaultEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.SIGNUP_DEV_MODE_DEFAULT || '').toLowerCase());
+  return !production && enabled && defaultEnabled;
 }
 
 function storedPhotoUrl(photo, user) {

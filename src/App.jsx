@@ -576,6 +576,140 @@ const pageMeta = {
   '/accessibility': ['Accessibility', 'Accessibility matters at every step.', 'Accessibility goals cover navigation, forms, image alt text, contrast, and keyboard-friendly flows.', 'hero2.png']
 };
 
+const legalDetails = {
+  brand: 'Lookmefy',
+  legalEntity: 'Lookmefy',
+  registeredAddress: '164, Pakiza Greens, Khajrana, Indore',
+  supportEmail: 'support@lookmefy.com',
+  jurisdiction: 'Indore, Madhya Pradesh, India',
+  refundTimeline: '5-7 business days',
+  lastUpdated: '17 August 2026'
+};
+
+const policyPages = {
+  '/terms': {
+    badge: 'Required',
+    title: 'Terms and Conditions',
+    intro: `These Terms govern your access to ${legalDetails.brand}, including account features, AI try-on previews, wardrobe tools, token purchases, and shopping links.`,
+    sections: [
+      ['Who operates Lookmefy', [`${legalDetails.brand} is operated by ${legalDetails.legalEntity}. Registered address: ${legalDetails.registeredAddress}.`, 'By using Lookmefy, you agree to these Terms and any policy pages linked from them.']],
+      ['Accounts and eligibility', ['You are responsible for the information you provide during signup, including your name, phone number, email address, username, password, and try-on profile photo.', 'Do not create an account for someone else, upload photos you do not have rights to use, or use Lookmefy for unlawful, abusive, deceptive, or harmful purposes.']],
+      ['AI try-on and wardrobe features', ['AI try-on images, videos, body-photo processing, style suggestions, and wardrobe outputs are visual previews only. They may differ from actual product fit, colour, fabric, size, texture, lighting, and availability.', 'You must not upload intimate, illegal, exploitative, or non-consensual images. We may block, remove, or refuse generation requests that appear unsafe or violate these Terms.']],
+      ['Tokens, payments, and generation costs', ['Tokens are used for AI generation features. The token cost is shown in the app and may vary by feature, model, promotion, or plan.', 'If a generation fails and tokens were deducted without a usable output, Lookmefy may restore the applicable tokens after review. Tokens used for completed AI outputs are generally not refundable unless required by law.']],
+      ['Monthly membership', ['Lookmefy offers a monthly membership/token plan. Membership billing, renewal, mandate setup, and token crediting are shown in the payment flow before confirmation.', 'Cancelling a monthly membership stops future renewals according to the payment flow, but does not automatically refund tokens already credited, consumed, or used for completed generations.']],
+      ['Catalog and Amazon shopping links', ['Lookmefy redirects users to Amazon or other connected third-party stores for product checkout. Lookmefy is not the seller of those products and does not directly handle product fulfilment.', 'Amazon or the relevant seller controls the final price, stock, delivery, cancellation, return, refund, warranty, seller claims, and checkout terms. Always confirm final details on Amazon before purchase.']],
+      ['User content and licence', ['You retain ownership of photos and content you upload. You give Lookmefy a limited licence to process, store, display, transform, and use that content only to provide the app features, improve reliability and safety, comply with law, and support your account requests.', 'You confirm that you have all rights and permissions needed for uploaded photos, garments, names, product links, and other submitted materials.']],
+      ['Suspension and termination', ['We may limit, suspend, or terminate access if we reasonably believe an account violates these Terms, creates security risk, abuses tokens/promotions, attempts fraud, or harms other users or systems.', 'You may stop using the service at any time and request deletion of account data using the Data Deletion page.']],
+      ['Liability and governing law', [`To the maximum extent permitted by law, ${legalDetails.brand} is provided on an “as is” and “as available” basis. We do not guarantee uninterrupted access, perfect AI results, product availability, or Amazon/seller fulfilment.`, `These Terms are governed by the laws of India, and courts at Indore, Madhya Pradesh will have jurisdiction, subject to applicable law.`]]
+    ]
+  },
+  '/privacy': {
+    badge: 'Required',
+    title: 'Privacy Policy',
+    intro: `This Privacy Policy explains how ${legalDetails.brand} handles account data, uploaded photos, generated try-ons, wardrobe data, payment events, and usage activity.`,
+    sections: [
+      ['Data we collect', ['Account information such as name, username, email address, phone number, OTP verification status, password hash, gender/style preference, and account settings.', 'Photos and media you upload, including profile/body photos, garment uploads, wardrobe images, generated try-on images/videos, background-removed images, and related metadata.', 'Usage and device information such as product views, wishlist actions, search/filter events, token usage, generation history, approximate logs, IP-derived security information, and browser/session data.']],
+      ['How we use data', ['To create and secure your account, verify login, provide AI try-on/profile generation, store wardrobe items, personalize recommendations, operate credits/tokens, process payments, prevent abuse, debug failures, and provide support.', 'To improve reliability, safety, product ranking, model prompts, and app performance, using appropriate access controls and minimization where practical.']],
+      ['AI, payment, storage, and infrastructure providers', ['We may share necessary data with service providers that help run Lookmefy, including AI generation providers, image/video processing providers, hosting infrastructure, storage/CDN providers, analytics/observability tools, payment processors, SMS/OTP providers, and support tools.', 'Payment card/UPI/banking details are handled by the payment provider. Lookmefy stores payment status, order identifiers, token credit records, and limited transaction metadata needed for reconciliation and support.']],
+      ['Photos and generated media', ['Uploaded body photos and generated previews are sensitive to you. They are used to provide try-on, profile, wardrobe, and style features. Avoid uploading photos of other people without consent.', 'Generated previews may be stored so you can view history, compare looks, create videos, or restore prior outputs. You can request deletion using the Data Deletion page.']],
+      ['Retention and deletion', ['We keep account data while your account is active or as needed for service, security, legal, tax, fraud prevention, dispute resolution, and backup purposes.', 'When deletion is requested, we will delete or de-identify eligible account data and media, subject to legal, security, transaction, and backup-retention requirements. Some third-party providers may retain logs under their own policies.']],
+      ['Your choices and rights', ['You can update account details in profile settings, delete wishlist/wardrobe items where available, log out, and request account/media deletion.', 'You may contact us to access, correct, withdraw consent where applicable, or raise a privacy grievance. We will verify requests before acting on account or photo data.']],
+      ['Security', ['We use technical and organizational measures such as authentication, access controls, upload validation, storage controls, rate limiting, and monitoring. No online service can guarantee absolute security.', 'Keep your password and device secure. Tell us promptly if you suspect unauthorized account access.']],
+      ['Contact and support', [`Support and privacy requests can be sent to ${legalDetails.supportEmail}. Use your registered email/phone and include enough detail for us to verify and review the request.`]]
+    ]
+  },
+  '/shipping': {
+    badge: 'Required',
+    title: 'Shipping Policy',
+    intro: `${legalDetails.brand} helps you discover products and preview outfits. Product checkout and shipping are handled by Amazon or the seller where you complete checkout.`,
+    sections: [
+      ['Who ships the product', ['If you click through to Amazon, Amazon or the listed seller is responsible for shipping, delivery timelines, tracking, delivery charges, failed delivery, and logistics support.', 'Lookmefy may display catalog and price information for convenience, but the Amazon checkout page controls the final order terms.']],
+      ['Delivery timelines and charges', ['Estimated delivery dates, serviceable pincodes, shipping fees, cash-on-delivery availability, and express-delivery options may vary by Amazon, seller, warehouse, product, and address.', 'Always review the final Amazon checkout page before paying.']],
+      ['Tracking and delivery issues', ['Use the Amazon order/tracking page for live shipment updates. If you need help finding order support, contact Lookmefy support with the product link, order date, seller name, and any order reference available.', 'Delays caused by weather, address errors, courier disruption, seller stock issues, customs, strikes, or force majeure are outside Lookmefy control.']],
+      ['Digital products and tokens', ['Tokens, AI generations, account features, and other digital services are delivered inside the Lookmefy account and do not require physical shipping.']]
+    ]
+  },
+  '/returns': {
+    badge: 'Required',
+    title: 'Return and Refund Policy',
+    intro: 'This policy separates Amazon product returns from Lookmefy token, AI generation, membership, and digital-service refunds.',
+    sections: [
+      ['Product returns', ['For products bought on Amazon, Amazon’s and the listed seller’s return, exchange, replacement, and refund policy applies. Check size, hygiene exclusions, return window, tags, packaging, pickup availability, and refund method before purchase.', 'Lookmefy redirects users to Amazon and can help locate the product/order support path, but final approval is controlled by Amazon or the seller.']],
+      ['Token and AI generation refunds', ['Tokens used for completed AI outputs are generally non-refundable because the generation cost is incurred when the request is processed.', 'If tokens are deducted and generation fails without a usable output, Lookmefy may restore the deducted tokens after review. The primary remedy for failed generation is token restoration, not cash refund.']],
+      ['Monthly membership refunds', ['Monthly membership payments are charged through the payment flow shown in the app. Used tokens, credited tokens, and completed AI generations are generally not refundable.', 'If a duplicate charge, payment mismatch, or technical billing error is confirmed, an approved refund will be processed within 5-7 business days, subject to payment provider and bank timelines.']],
+      ['Payment refunds', ['Accepted refunds will normally be returned to the original payment method or credited as account tokens, depending on the case, payment processor rules, and applicable law.', `Approved Lookmefy refunds are initiated within ${legalDetails.refundTimeline}. Actual bank, card, UPI, or payment-app posting time may vary.`]],
+      ['Non-returnable cases', ['AI previews are not guarantees of exact fit, product quality, or Amazon/seller fulfilment. A difference between AI preview and real-world product appearance does not by itself make an Amazon product return eligible unless Amazon or the seller policy allows it.', 'Items marked final sale, hygiene-sensitive, customized, damaged after delivery, missing tags/packaging, or outside the return window may be refused by Amazon or sellers.']]
+    ]
+  },
+  '/cancellation': {
+    badge: 'Required',
+    title: 'Cancellation Policy',
+    intro: 'This policy explains cancellation for AI generation requests, token purchases, and third-party product orders.',
+    sections: [
+      ['AI generation cancellation', ['Image/video generation starts quickly after you submit a request. Once submitted to the AI provider, a generation request may not be cancellable because provider cost may already be incurred.', 'If the request fails and no usable output is delivered, token restoration may apply under the Return and Refund Policy.']],
+      ['Token purchase cancellation', ['Token top-ups and digital credits may be cancelled only before successful payment confirmation. After tokens are credited, cancellation/refund is handled under the Return and Refund Policy.', 'If a payment succeeds but tokens do not appear, contact support with the transaction reference so we can verify and credit or reverse as applicable.']],
+      ['Monthly membership cancellation', ['Monthly membership is available now. You can cancel future renewal/mandate billing through the payment or account flow when available, or by contacting support from your registered account email.', 'Cancelling future billing does not automatically refund already-used tokens, credited tokens, or completed AI generations. Confirmed duplicate or technical billing errors may be refunded under the Return and Refund Policy.']],
+      ['Amazon order cancellation', ['For products ordered on Amazon, cancellation is governed by Amazon’s and the seller’s policy and order status. Any cancellation charges or restrictions should be reviewed on Amazon before checkout.']]
+    ]
+  },
+  '/data-deletion': {
+    badge: 'Required',
+    title: 'Data Deletion Policy',
+    intro: `You can request deletion of eligible ${legalDetails.brand} account data, uploaded photos, generated try-ons, wardrobe media, and related profile information.`,
+    sections: [
+      ['How to request deletion', [`Email ${legalDetails.supportEmail} from your registered email address with the subject “Data deletion request”, or use the in-app support flow when available. Include your username, phone/email used for signup, and what you want deleted: account, body photo, generated media, wardrobe items, or specific records.`, 'We may ask for verification before deleting account-linked data or photos.']],
+      ['What we delete', ['Eligible account profile data, uploaded body/profile photos, generated try-on images/videos, wardrobe uploads, wishlist data, saved preferences, and non-essential usage history associated with your account.', 'We may also delete derived thumbnails, cached images, background-removed versions, and private stored media where technically feasible.']],
+      ['What may be retained', ['We may retain records required for legal, fraud prevention, payment reconciliation, tax/accounting, dispute resolution, security logs, backup integrity, or compliance obligations.', 'Backups and provider logs may take additional time to expire under normal retention cycles.']],
+      ['Timeline', ['We aim to acknowledge deletion requests within a reasonable period and complete eligible deletion after verification, subject to legal, security, payment, fraud-prevention, and backup-retention requirements.', 'If deletion is complex or legally restricted, we will explain the status or limitation where appropriate.']],
+      ['Effect of deletion', ['Deleting account or body-photo data may disable try-on history, profile previews, wardrobe features, recommendations, token history display, and support visibility for prior generations.']]
+    ]
+  },
+  '/ai-disclaimer': {
+    badge: 'Recommended',
+    title: 'AI Try-On Disclaimer',
+    intro: 'AI previews help you visualize styling, but they are not measurements, guarantees, medical/body advice, or seller promises.',
+    sections: [
+      ['Preview accuracy', ['Generated images and videos may differ from real product fit, size, drape, colour, fabric texture, transparency, lighting, logos, sleeves, collars, footwear, body proportions, and background.', 'Use previews as visual guidance only. Confirm size charts, seller photos, material details, reviews, and return rules before buying.']],
+      ['Body photos and identity', ['AI systems may alter pose, face, body shape, skin tone, hairstyle, clothing edges, shadows, or proportions. Use clear, consented photos and avoid uploading images of other people without permission.', 'Do not use AI try-on outputs for identity verification, health/body assessment, biometric decisions, or any high-stakes decision.']],
+      ['Product and brand information', ['Lookmefy may process third-party catalog images and Amazon links. AI outputs do not mean a brand, Amazon, or seller endorses the preview or guarantees availability.', 'Final purchase decisions remain between you and Amazon or the seller.']],
+      ['Safety limits', ['Some images or requests may be blocked or fail because of provider safety filters, image quality, product category, or technical limitations.']]
+    ]
+  },
+  '/accessibility': {
+    badge: 'Recommended',
+    title: 'Accessibility Statement',
+    intro: `${legalDetails.brand} aims to make product discovery, account flows, and AI try-on tools usable across devices, input methods, and assistive technologies.`,
+    sections: [
+      ['Our current approach', ['We aim for readable contrast, keyboard-reachable navigation, labelled controls, responsive layouts, alt text for meaningful images, form labels, focus states, and reduced-motion support where practical.', 'AI-generated and catalog images may still have limitations, especially when source metadata is incomplete.']],
+      ['Known areas to improve', ['Complex experiences such as image zoom, generated media previews, wardrobe editing, onboarding spotlight overlays, and Amazon/product embeds may need further testing with screen readers and keyboard-only flows.', 'Some third-party checkout, payment, seller, or provider pages are outside our direct control.']],
+      ['Feedback', [`If you face an accessibility issue, contact ${legalDetails.supportEmail} with the page URL, device/browser, assistive technology if any, and a description of the issue.`]],
+      ['Ongoing work', ['We will continue improving mobile spacing, text scaling, focus order, error messages, and media alternatives as the product evolves.']]
+    ]
+  },
+  '/contact': {
+    badge: 'Required',
+    title: 'Contact and Grievance Support',
+    intro: 'Use this page for account, payment, data, product-link, AI generation, and policy questions.',
+    sections: [
+      ['Customer support', [`Email: ${legalDetails.supportEmail}. Include your registered email/phone, username, product link or transaction ID if relevant, screenshots if helpful, and a short description of the issue.`]],
+      ['Support and policy contact', [`For support, privacy, grievance, and policy requests, email ${legalDetails.supportEmail}. Include enough detail for us to verify the account or request where needed.`]],
+      ['Typical request categories', ['Account access, OTP/login issues, token payment verification, failed generation, data deletion, privacy requests, seller/order guidance, safety reports, and accessibility feedback.']],
+      ['Response process', ['We will review requests, verify account ownership where needed, and route Amazon or seller order issues to the appropriate external support flow when Lookmefy is not the merchant of record.']]
+    ]
+  },
+  '/support': {
+    badge: 'Required',
+    title: 'Support Center',
+    intro: 'Find help for account access, AI try-on, tokens, product links, shipping, returns, and privacy requests.',
+    sections: [
+      ['Fastest way to get help', [`Email ${legalDetails.supportEmail} with your registered account details and issue type. For payments, include transaction/order reference. For Amazon products, include the product URL and seller name.`]],
+      ['AI generation help', ['If image or video generation fails, try a clear full-body profile photo, a wearable product image, and a stable connection. If tokens were deducted for a failed generation, contact support for review.']],
+      ['Shopping help', ['Lookmefy redirects shopping to Amazon. For delivery, cancellation, return, exchange, warranty, and final refund approval, follow Amazon’s and the seller’s policy.']],
+      ['Privacy and deletion', ['For privacy, correction, consent withdrawal, or deletion requests, use the Data Deletion Policy or email support with the subject line that matches your request.']]
+    ]
+  }
+};
+
 function normalizePath() {
   const path = window.location.pathname.replace(/\.html$/, '').replace(/\/$/, '');
   return path || '/';
@@ -596,7 +730,17 @@ function isWardrobeRoomPreview(value = '') {
 function safeWardrobeImageUrl(value = '') {
   const url = typeof value === 'string' ? value.trim() : '';
   if (!url || isWardrobeRoomPreview(url)) return '';
-  return url;
+  return protectedMediaUrl(url);
+}
+
+function protectedMediaUrl(value = '') {
+  const url = typeof value === 'string' ? value.trim() : '';
+  if (!url || /^(?:data:|blob:)/i.test(url)) return url;
+  if (!url.startsWith('/uploads/')) return url;
+  const token = sessionStorage.getItem('fitlook_token');
+  const separator = url.includes('?') ? '&' : '?';
+  const withToken = token ? `${url}${separator}token=${encodeURIComponent(token)}` : url;
+  return API_BASE_URL ? `${API_BASE_URL}${withToken}` : withToken;
 }
 
 function readRecentSearches() {
@@ -684,7 +828,7 @@ async function api(path, options = {}) {
   } = options;
   const method = String(requestOptions.method || 'GET').toUpperCase();
   const retryCount = retry === undefined ? (method === 'GET' ? 1 : 0) : Math.max(0, Number(retry) || 0);
-  const token = localStorage.getItem('fitlook_token');
+  const token = sessionStorage.getItem('fitlook_token');
   const headers = requestOptions.body instanceof FormData ? {} : { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   const requestPath = String(path || '').startsWith('/') ? String(path || '') : `/${path || ''}`;
@@ -767,7 +911,7 @@ async function generateQueuedTryOn(path, options = {}) {
 
 function recordEvent(type, payload = {}) {
   trackClientEvent(type, payload);
-  if (!localStorage.getItem('fitlook_token')) return;
+  if (!sessionStorage.getItem('fitlook_token')) return;
   api('/recommendations/events', {
     method: 'POST',
     body: JSON.stringify({ type, ...payload })
@@ -1063,7 +1207,7 @@ function Header({ user, setUser }) {
   const currentPath = normalizePath();
   const currentParams = new URLSearchParams(window.location.search);
   const logout = () => {
-    localStorage.removeItem('fitlook_token');
+    sessionStorage.removeItem('fitlook_token');
     setUser(null);
     setMenuOpen(false);
     window.history.pushState({}, '', '/');
@@ -1075,7 +1219,7 @@ function Header({ user, setUser }) {
     ['About', '/about'],
     ['Wardrobe', '/closet'],
     ['Custom Try On', '/custom-try-on'],
-    ['Wishlist', '/wishlist']
+    ['AI Stylist', user ? '/style-bot' : '/signup']
   ];
   const exactQueryActiveHref = navLinks.find(([, href]) => {
     if (!href.includes('?')) return false;
@@ -1282,27 +1426,31 @@ function SearchLandingPage() {
 }
 
 function Footer({ compact = false }) {
+  const socialLinks = [
+    { label: 'Instagram', href: 'https://instagram.com/', icon: 'instagram' },
+    { label: 'TikTok', href: 'https://www.tiktok.com/', icon: 'tiktok' },
+    { label: 'X', href: 'https://x.com/', icon: 'x' }
+  ];
+  const appLinks = [
+    { label: 'App Store', helper: 'Download on the', href: '/support', icon: 'apple' },
+    { label: 'Google Play', helper: 'Get it on', href: '/support', icon: 'play' }
+  ];
+
   if (compact) {
     return (
       <footer className="wishlist-compact-footer">
         <div className="wrap wishlist-compact-footer-inner">
           <div className="wishlist-compact-footer-grid">
-            <div className="wishlist-compact-brand"><a href="/">Lookmefy</a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div><a href="https://instagram.com/" target="_blank" rel="noreferrer">IG</a><a href="https://tiktok.com/" target="_blank" rel="noreferrer">TK</a><a href="https://x.com/" target="_blank" rel="noreferrer">X</a></div></div>
+            <div className="wishlist-compact-brand"><a href="/">Lookmefy</a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div className="wishlist-compact-social" aria-label="Social links">{socialLinks.map((item) => <a href={item.href} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label} key={item.label}><SocialLogo name={item.icon} /></a>)}</div></div>
             <div><h2>Shop</h2><a href="/categories">New in</a><a href="/categories?gender=women">Women</a><a href="/categories?gender=men">Men</a><a href="/categories?discounted=true">Sale</a></div>
-            <div><h2>Help</h2><a href="/support">Track order</a><a href="/support">Returns</a><a href="/support">Contact us</a><a href="/support">Shipping</a></div>
-            <div><h2>Download our App</h2><p>Get the Lookmefy app for your daily fashion edit.</p><a className="wishlist-app-link" href="/support">App Store</a><a className="wishlist-app-link" href="/support">Google Play</a></div>
+            <div><h2>Help</h2><a href="/support">Support</a><a href="/returns">Returns</a><a href="/contact">Contact us</a><a href="/shipping">Shipping</a></div>
+            <div><h2>Download our App</h2><p>Get the Lookmefy app for your daily fashion edit.</p><div className="wishlist-app-links">{appLinks.map((item) => <a className="wishlist-app-link" href={item.href} aria-label={item.label} key={item.label}><StoreLogo name={item.icon} /><span><small>{item.helper}</small><strong>{item.label}</strong></span></a>)}</div></div>
           </div>
           <div className="wishlist-compact-footer-bottom"><span>© 2026 Lookmefy. Curated by intelligence.</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a></div></div>
         </div>
       </footer>
     );
   }
-
-  const socialLinks = [
-    ['Instagram', 'https://instagram.com/'],
-    ['TikTok', 'https://www.tiktok.com/'],
-    ['X', 'https://x.com/']
-  ];
 
   return (
     <footer className="footer">
@@ -1312,16 +1460,59 @@ function Footer({ compact = false }) {
             <a className="footer-logo" href="/">Lookmefy</a>
             <p className="footer-about">Defining the intersection of personal styling and digital try-on. Curated for the modern wardrobe.</p>
             <div className="footer-social" aria-label="Social links">
-              {socialLinks.map(([label, href]) => <a href={href} key={label} target="_blank" rel="noreferrer" aria-label={label}>{label.slice(0, 2)}</a>)}
+              {socialLinks.map((item) => <a href={item.href} key={item.label} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label}><SocialLogo name={item.icon} /></a>)}
             </div>
           </div>
           <FooterCol title="Collections" links={[['New Arrivals', '/categories'], ["Men's Edit", '/categories?gender=men'], ["Women's Edit", '/categories?gender=women'], ['Accessories', '/categories/accessories'], ['Seasonal Sale', '/categories?discounted=true']]} />
-          <FooterCol title="Company" links={[['Journal', '/blog'], ['About', '/about'], ['Virtual Atelier', '/custom-try-on'], ['Contact', '/contact'], ['Shipping', '/support']]} />
-          <FooterCol title="Assurance" links={[['100% Secure Payment', '/support'], ['24/7 Dedicated Support', '/support'], ['30-Day Effortless Returns', '/support']]} />
+          <FooterCol title="Company" links={[['Journal', '/blog'], ['About', '/about'], ['Virtual Atelier', '/custom-try-on'], ['Contact', '/contact'], ['Shipping', '/shipping']]} />
+          <FooterCol title="Assurance" links={[['Secure Payment', '/support'], ['Support', '/support'], ['Returns & Refunds', '/returns'], ['Cancellation', '/cancellation']]} />
         </div>
-        <div className="footer-bottom"><div>© 2026 Lookmefy. All rights reserved.</div><div className="legal"><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/accessibility">Accessibility</a></div></div>
+        <div className="footer-bottom"><div>© 2026 Lookmefy. All rights reserved.</div><div className="legal"><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/data-deletion">Data Deletion</a><a href="/ai-disclaimer">AI Disclaimer</a><a href="/accessibility">Accessibility</a></div></div>
       </div>
     </footer>
+  );
+}
+
+function SocialLogo({ name }) {
+  if (name === 'instagram') {
+    return (
+      <svg className="brand-logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="4" y="4" width="16" height="16" rx="5" />
+        <circle cx="12" cy="12" r="3.7" />
+        <circle cx="17.2" cy="6.8" r="1" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+  if (name === 'tiktok') {
+    return (
+      <svg className="brand-logo-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M14.8 3.5c.3 2.3 1.6 3.8 3.9 4.2v3.2a7.1 7.1 0 0 1-3.8-1.2v5.8c0 3.1-2 5.1-5 5.1-2.9 0-5-1.9-5-4.6 0-2.9 2.3-4.8 5.6-4.5v3.2c-1.4-.3-2.3.3-2.3 1.3 0 .9.7 1.5 1.7 1.5 1.1 0 1.8-.7 1.8-2.1V3.5h3.1Z" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="brand-logo-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M15.1 10.6 21.2 3.5h-2.9l-4.5 5.2-3.6-5.2H3.1l6.4 9.1-6.7 7.9h2.9l5.1-5.9 4.1 5.9h7.1l-6.9-9.9Zm-2.1 2.5-1.3-1.8L7.8 5.7h1.4l3.2 4.6 1.3 1.8 4.2 6.1h-1.4L13 13.1Z" />
+    </svg>
+  );
+}
+
+function StoreLogo({ name }) {
+  if (name === 'apple') {
+    return (
+      <svg className="store-logo-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M17.4 12.7c0-1.9 1.5-2.9 1.6-3-1-1.4-2.4-1.6-2.9-1.6-1.2-.1-2.4.7-3 .7s-1.6-.7-2.7-.7c-1.4 0-2.8.8-3.5 2.1-1.5 2.5-.4 6.3 1.1 8.3.7 1 1.5 2.1 2.6 2.1 1 0 1.5-.7 2.7-.7 1.3 0 1.6.7 2.8.7 1.1 0 1.9-1 2.6-2 .8-1.1 1.1-2.3 1.1-2.3-.1 0-2.4-.9-2.4-3.6Z" />
+        <path d="M15.3 6.8c.6-.7 1-1.6.9-2.5-.8 0-1.8.5-2.4 1.2-.5.6-1 1.5-.9 2.4.9.1 1.8-.4 2.4-1.1Z" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="store-logo-icon play-logo-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#34a853" d="M4.5 3.6c-.3.3-.5.8-.5 1.4v14c0 .6.2 1.1.5 1.4l8.1-8.4-8.1-8.4Z" />
+      <path fill="#fbbc04" d="m15.3 9.2-2.7 2.8 2.7 2.8 3.4-1.9c1.1-.6 1.1-1.9 0-2.5l-3.4-1.2Z" />
+      <path fill="#4285f4" d="m4.5 3.6 8.1 8.4 2.7-2.8L6.7 4.3c-.8-.5-1.6-.7-2.2-.7Z" />
+      <path fill="#ea4335" d="m4.5 20.4c.6.1 1.4-.2 2.2-.7l8.6-4.9-2.7-2.8-8.1 8.4Z" />
+    </svg>
   );
 }
 
@@ -1336,36 +1527,6 @@ function FooterCol({ title, links }) {
       </button>
       <ul>{links.map(([label, href]) => <li key={label}><a href={href}>{label}</a></li>)}</ul>
     </div>
-  );
-}
-
-function FloatingStylistLauncher({ user, className = '' }) {
-  const openStylist = () => {
-    const href = user ? '/style-bot' : '/signup';
-    window.history.pushState({}, '', href);
-    window.dispatchEvent(new PopStateEvent('popstate'));
-  };
-
-  const handleKeyDown = (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      openStylist();
-    }
-  };
-
-  return (
-    <button
-      className={`ai-stylist-launcher ${className}`.trim()}
-      type="button"
-      aria-label="Open AI Stylist"
-      title="Open AI Stylist"
-      onClick={openStylist}
-      onKeyDown={handleKeyDown}
-    >
-      <span><SparkleLineIcon /></span>
-      <strong>AI Stylist</strong>
-      <small>Ask looks</small>
-    </button>
   );
 }
 
@@ -2735,9 +2896,11 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? `${Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}% OFF` : '';
   const productImage = product.imageUrl || asset('hero2.png');
-  const hasUsableTryOn = Boolean(tryOn?.imageUrl) && !tryOnImageFailed;
-  const hasTryOnVideo = Boolean(tryOn?.videoUrl) && hasUsableTryOn;
-  const image = hasUsableTryOn ? tryOn.imageUrl : productImage;
+  const tryOnImageUrl = protectedMediaUrl(tryOn?.imageUrl || '');
+  const tryOnVideoUrl = protectedMediaUrl(tryOn?.videoUrl || '');
+  const hasUsableTryOn = Boolean(tryOnImageUrl) && !tryOnImageFailed;
+  const hasTryOnVideo = Boolean(tryOnVideoUrl) && hasUsableTryOn;
+  const image = hasUsableTryOn ? tryOnImageUrl : productImage;
   const detailHref = `/product/${encodeURIComponent(product.id)}`;
   const brand = displayBrand(product);
 
@@ -2774,7 +2937,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
     <>
       <div className="product-media">
         {hasTryOnVideo ? (
-          <video src={tryOn.videoUrl} poster={tryOn.imageUrl} autoPlay muted loop playsInline />
+          <video src={tryOnVideoUrl} poster={tryOnImageUrl} autoPlay muted loop playsInline />
         ) : (
           <OptimizedImage
             src={image}
@@ -2816,7 +2979,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
             <a href={user ? detailHref : '/signup'}>{hasUsableTryOn ? 'Generate Again' : 'Try On'}</a>
           )}
           {hasUsableTryOn && onTryOnVideo && (
-            <button className="video-action" type="button" onClick={() => onTryOnVideo(product, { force: Boolean(tryOn?.videoUrl) })} disabled={tryOnVideoLoading || tryOnLoading}>
+            <button className="video-action" type="button" onClick={() => onTryOnVideo(product, { force: Boolean(tryOn?.videoUrl) })} disabled={tryOnVideoLoading}>
               {tryOnVideoLoading ? 'Video...' : tryOn?.videoUrl ? 'New Video' : 'Video Try-On'}
             </button>
           )}
@@ -4793,7 +4956,7 @@ function toggleWishlistProductId(productOrId) {
   if (saved && product) writeWishlistProductSnapshot(product);
   if (!saved) removeWishlistProductSnapshot(id);
   window.dispatchEvent(new CustomEvent('fitlook:wishlist-change', { detail: { id, saved } }));
-  if (localStorage.getItem('fitlook_token')) {
+  if (sessionStorage.getItem('fitlook_token')) {
     api(`/auth/wishlist/${encodeURIComponent(id)}`, { method: saved ? 'PUT' : 'DELETE' })
       .catch(() => announce('Wishlist saved on this device. Account sync will retry when the connection is available.', 'error'));
   }
@@ -5227,8 +5390,9 @@ function CustomClothingTryOn({ user, setUser }) {
   };
 
   const cancelGeneration = () => generationControllerRef.current?.abort();
-  const showingGeneratedPreview = previewMode === 'result' && Boolean(result?.imageUrl);
-  const selectedPreviewSrc = showingGeneratedPreview ? result.imageUrl : garmentPreview;
+  const resultImageUrl = protectedMediaUrl(result?.imageUrl || '');
+  const showingGeneratedPreview = previewMode === 'result' && Boolean(resultImageUrl);
+  const selectedPreviewSrc = showingGeneratedPreview ? resultImageUrl : garmentPreview;
   const selectedPreviewTitle = showingGeneratedPreview ? 'Generated Try-On' : 'Garment Preview';
   const selectedPreviewTone = showingGeneratedPreview ? 'AI Powered' : 'Original Upload';
   const mobilePreviewTone = showingGeneratedPreview ? 'AI generated result' : 'Original upload';
@@ -5276,21 +5440,21 @@ function CustomClothingTryOn({ user, setUser }) {
                 <strong>Generated Try-On</strong>
                 <span>AI Powered</span>
               </header>
-              <div className={`custom-preview result ${result?.imageUrl ? 'has-image' : ''}`}>
+              <div className={`custom-preview result ${resultImageUrl ? 'has-image' : ''}`}>
                 <TryOnGenerating active={loading} text="Rendering try-on" />
-                {result?.imageUrl ? (
+                {resultImageUrl ? (
                   <>
                     <ZoomableImage
-                      src={result.imageUrl}
+                      src={resultImageUrl}
                       alt="Generated custom try-on"
-                      onOpen={() => setFullscreenImage({ src: result.imageUrl, alt: 'Generated custom try-on', title: 'Custom Try-On' })}
+                      onOpen={() => setFullscreenImage({ src: resultImageUrl, alt: 'Generated custom try-on', title: 'Custom Try-On' })}
                     />
-                    <button className="fullscreen-button" type="button" aria-label="Open generated image full screen" title="Open full screen" onClick={() => setFullscreenImage({ src: result.imageUrl, alt: 'Generated custom try-on', title: 'Custom Try-On' })}><FullscreenIcon /></button>
+                    <button className="fullscreen-button" type="button" aria-label="Open generated image full screen" title="Open full screen" onClick={() => setFullscreenImage({ src: resultImageUrl, alt: 'Generated custom try-on', title: 'Custom Try-On' })}><FullscreenIcon /></button>
                   </>
                 ) : <span>Preview</span>}
-                <span className="custom-result-status">{loading ? 'Rendering preview' : result?.imageUrl ? 'Custom try-on ready' : 'Ready for rendering'}</span>
+                <span className="custom-result-status">{loading ? 'Rendering preview' : resultImageUrl ? 'Custom try-on ready' : 'Ready for rendering'}</span>
               </div>
-              {result?.imageUrl && <AiPreviewDisclaimer className="custom-ai-disclaimer" />}
+              {resultImageUrl && <AiPreviewDisclaimer className="custom-ai-disclaimer" />}
             </article>
           </div>
 
@@ -5301,7 +5465,7 @@ function CustomClothingTryOn({ user, setUser }) {
                 <span><span className="desktop-preview-label">{selectedPreviewTone}</span><span className="mobile-preview-label">{mobilePreviewTone}</span></span>
               </header>
               <div className={`custom-preview custom-review-preview ${showingGeneratedPreview ? 'result' : 'garment'} ${selectedPreviewSrc ? 'has-image' : ''}`}>
-                <TryOnGenerating active={loading && !result?.imageUrl} text="Rendering try-on" />
+                <TryOnGenerating active={loading && !resultImageUrl} text="Rendering try-on" />
                 {selectedPreviewSrc ? (
                   <>
                     <ZoomableImage
@@ -5318,7 +5482,7 @@ function CustomClothingTryOn({ user, setUser }) {
                     <small>Upload or generate to compare your result</small>
                   </span>
                 )}
-                {(loading || result?.imageUrl) && <span className="custom-result-status">{loading ? 'Rendering preview' : showingGeneratedPreview ? 'Custom try-on ready' : 'Original upload'}</span>}
+                {(loading || resultImageUrl) && <span className="custom-result-status">{loading ? 'Rendering preview' : showingGeneratedPreview ? 'Custom try-on ready' : 'Original upload'}</span>}
               </div>
               <div className="custom-preview-chooser" aria-label="Choose preview image">
                 <button className={previewMode === 'garment' ? 'active' : ''} type="button" disabled={!garmentPreview} onClick={() => setPreviewMode('garment')}>
@@ -5327,7 +5491,7 @@ function CustomClothingTryOn({ user, setUser }) {
                   <small>Original</small>
                 </button>
                 <button className={previewMode === 'result' ? 'active' : ''} type="button" disabled={!result?.imageUrl} onClick={() => setPreviewMode('result')}>
-                  <span>{result?.imageUrl ? <img src={result.imageUrl} alt="" /> : <SparkleLineIcon />}</span>
+                  <span>{resultImageUrl ? <img src={resultImageUrl} alt="" /> : <SparkleLineIcon />}</span>
                   <strong>Final</strong>
                   <small>{loading ? 'Rendering' : 'AI result'}</small>
                 </button>
@@ -5891,7 +6055,7 @@ function ProfilePage({ user, setUser }) {
   const hasAiProfile = user.bodyPhotoSource === 'fal-full-body' && Boolean(user.bodyPhotoUrl);
   const generatedProfilePhotoUrl = hasAiProfile ? user.bodyPhotoUrl : '';
   const uploadedProfilePhotoUrl = user.bodyPhotoOriginalUrl || user.bodyPhotoUrl;
-  const photoSrc = preview || generatedProfilePhotoUrl || uploadedProfilePhotoUrl;
+  const photoSrc = preview || protectedMediaUrl(generatedProfilePhotoUrl || uploadedProfilePhotoUrl);
   const photoFrameClass = hasAiProfile && !preview ? 'ai-full-body-ready' : '';
   const selectPhoto = (event) => {
     const file = event.currentTarget.files?.[0];
@@ -5945,7 +6109,7 @@ function ProfilePage({ user, setUser }) {
   const initials = (user.name || user.username || 'FL').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   const creditProgress = Math.min(100, Math.max(0, ((user.tokens || 0) / 2000) * 100));
   const logout = () => {
-    localStorage.removeItem('fitlook_token');
+    sessionStorage.removeItem('fitlook_token');
     setUser(null);
     window.history.pushState({}, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
@@ -6024,6 +6188,7 @@ function ProfilePage({ user, setUser }) {
             <button className="profile-reference-neutral-action" type="button" onClick={() => window.dispatchEvent(new CustomEvent('fitlook:replay-onboarding'))}><span>Replay platform tour</span><b>›</b></button>
             <a href="/terms"><span>Terms and conditions</span><b>›</b></a>
             <a href="/privacy"><span>Privacy policy</span><b>›</b></a>
+            <a href="/data-deletion"><span>Data deletion</span><b>›</b></a>
             <button type="button" onClick={logout}><span>Log out</span><b>›</b></button>
           </div>
         </section>
@@ -6294,15 +6459,17 @@ function ProductPage({ id, user, setUser }) {
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? `${Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}% off` : '';
   const productImage = product.imageUrl || asset('hero2.png');
-  const hasUsableTryOn = Boolean(tryOn?.imageUrl) && !tryOnImageFailed;
-  const hasTryOnVideo = Boolean(tryOn?.videoUrl) && hasUsableTryOn;
+  const tryOnImageUrl = protectedMediaUrl(tryOn?.imageUrl || '');
+  const tryOnVideoUrl = protectedMediaUrl(tryOn?.videoUrl || '');
+  const hasUsableTryOn = Boolean(tryOnImageUrl) && !tryOnImageFailed;
+  const hasTryOnVideo = Boolean(tryOnVideoUrl) && hasUsableTryOn;
   const showingTryOn = hasUsableTryOn && detailImageView !== 'product';
   const showingTryOnVideo = showingTryOn && hasTryOnVideo;
-  const image = showingTryOn ? tryOn.imageUrl : productImage;
+  const image = showingTryOn ? tryOnImageUrl : productImage;
   const swapPreview = hasUsableTryOn && product.imageUrl
     ? {
         label: showingTryOn ? 'Product photo' : 'AI Try-On',
-        src: showingTryOn ? product.imageUrl : tryOn.imageUrl,
+        src: showingTryOn ? product.imageUrl : tryOnImageUrl,
         alt: showingTryOn ? `${product.name} product photo` : `AI try-on for ${product.name}`,
         nextView: showingTryOn ? 'product' : 'tryon'
       }
@@ -6330,7 +6497,7 @@ function ProductPage({ id, user, setUser }) {
     hasUsableTryOn && {
       key: 'tryon',
       label: hasTryOnVideo ? 'AI Video' : 'AI Try-On',
-      src: tryOn.imageUrl,
+      src: tryOnImageUrl,
       active: showingTryOn,
       onSelect: () => setDetailImageView('tryon')
     }
@@ -6435,9 +6602,9 @@ function ProductPage({ id, user, setUser }) {
                   className="tryon-video-preview-button"
                   type="button"
                   aria-label={`Open video try-on for ${product.name} full screen`}
-                  onClick={() => setFullscreenImage({ type: 'video', src: tryOn.videoUrl, poster: tryOn.imageUrl, alt: `Video try-on for ${product.name}`, title: product.name })}
+                  onClick={() => setFullscreenImage({ type: 'video', src: tryOnVideoUrl, poster: tryOnImageUrl, alt: `Video try-on for ${product.name}`, title: product.name })}
                 >
-                  <video className="tryon-video-player" src={tryOn.videoUrl} poster={tryOn.imageUrl} autoPlay muted loop playsInline />
+                  <video className="tryon-video-player" src={tryOnVideoUrl} poster={tryOnImageUrl} autoPlay muted loop playsInline />
                   <span>Tap to preview</span>
                 </button>
               ) : (
@@ -6516,8 +6683,8 @@ function ProductPage({ id, user, setUser }) {
                 </button>
               ) : <a className="product-editorial-tryon" href="/signup">AI try-on</a>}
               {user ? (
-                <button className="product-editorial-video" type="button" onClick={generateProductTryOnVideo} disabled={tryOnLoading || tryOnVideoLoading} title="Generate an AI try-on video">
-                  {tryOnLoading ? 'Creating try-on...' : tryOnVideoLoading ? 'Making video...' : hasTryOnVideo ? 'Refresh video' : 'Generate video'}
+                <button className="product-editorial-video" type="button" onClick={generateProductTryOnVideo} disabled={tryOnVideoLoading} title="Generate an AI try-on video">
+                  {tryOnVideoLoading ? 'Making video...' : hasTryOnVideo ? 'Refresh video' : 'Generate video'}
                 </button>
               ) : <a className="product-editorial-video" href="/signup">Generate video</a>}
               {product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop now</a>}
@@ -6547,7 +6714,7 @@ function ProductPage({ id, user, setUser }) {
               </details>
               <details>
                 <summary>Delivery and returns</summary>
-                <p>Checkout, delivery, and return terms are managed by the linked brand store.</p>
+                <p>Checkout, delivery, and return terms are managed by Amazon or the linked seller.</p>
               </details>
             </div>
           </div>
@@ -6558,7 +6725,7 @@ function ProductPage({ id, user, setUser }) {
         <div>
           <p className="product-editorial-story-kicker">Considered by design</p>
           <h2>The details of<br /><em>modernity.</em></h2>
-          <p>{product.description || `${brand} brings a considered point of view to ${category.toLowerCase()}. Explore the product, preview it with your personal fit profile, and follow through to the live brand store when it feels right.`}</p>
+          <p>{product.description || `${brand} brings a considered point of view to ${category.toLowerCase()}. Explore the product, preview it with your personal fit profile, and follow through to Amazon when it feels right.`}</p>
         </div>
         <img src={editorialImage} alt={`${brand} ${category}`} />
       </section>
@@ -6569,11 +6736,6 @@ function ProductPage({ id, user, setUser }) {
           <div className="product-editorial-related-grid">{relatedProducts.map((item) => <EditorialRelatedProduct key={item.id} product={item} />)}</div>
         </section>
       )}
-      <div className="product-mobile-action-bar" aria-label="Product actions">
-        <span>{formatMoney(product.price || 0, product.currency)}</span>
-        {user ? <button type="button" onClick={generateProductTryOn} disabled={tryOnLoading}>{tryOnLoading ? 'Generating' : 'Try On'}</button> : <a href="/signup">Try On</a>}
-        {product.affiliateLink && <a className="product-mobile-shop-now" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop now</a>}
-      </div>
       {sizeRequestOpen && <SizeRequestPanel product={product} onClose={() => setSizeRequestOpen(false)} />}
       {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
     </main>
@@ -6683,7 +6845,7 @@ function HowItWorks({ user }) {
     },
     {
       title: 'Compare and shop',
-      copy: 'Open the generated image full screen, compare it with the product photo, then continue to the brand store when ready.',
+      copy: 'Open the generated image full screen, compare it with the product photo, then continue to Amazon when ready.',
       meta: 'Review, then buy'
     }
   ];
@@ -6908,6 +7070,9 @@ function AboutPage({ user }) {
 }
 
 function InfoPage({ meta, children, user, ctaLabel, ctaHref }) {
+  const policy = policyPages[normalizePath()];
+  if (policy && !children) return <PolicyContent policy={policy} />;
+
   const [kicker, title, lead, image] = meta;
   const actionLabel = ctaLabel || (user ? 'Browse Products' : 'Create Profile');
   const actionHref = ctaHref || (user ? '/search' : '/signup');
@@ -6917,6 +7082,28 @@ function InfoPage({ meta, children, user, ctaLabel, ctaHref }) {
       <section className="page-hero"><div className="wrap hero-grid"><div className="page-copy"><p className="kicker">{kicker}</p><h1>{title}</h1><p className="lead">{lead}</p><a className="button" href={actionHref}>{actionLabel}</a></div><div className="page-image"><OptimizedImage src={asset(image)} alt="" /></div></div></section>
       {children || <section className="section"><div className="wrap info-grid"><article className="info-card"><h3>AI try-on ready</h3><p>Preview selected products on your profile.</p></article><article className="info-card"><h3>Catalog shopping</h3><p>Explore styles, categories, and new arrivals.</p></article><article className="info-card"><h3>Token powered</h3><p>Use tokens only when generating previews.</p></article><article className="info-card"><h3>Privacy aware</h3><p>Your full-body photo is part of your personal profile.</p></article></div></section>}
     </>
+  );
+}
+
+function PolicyContent({ policy }) {
+  return (
+    <section className="section policy-page" aria-label={policy.title}>
+      <div className="wrap policy-shell">
+        <header className="policy-summary">
+          <h1>{policy.title}</h1>
+          <p>{policy.intro}</p>
+          <small>Last updated: {legalDetails.lastUpdated}</small>
+        </header>
+        <div className="policy-sections">
+          {policy.sections.map(([heading, paragraphs]) => (
+            <article className="policy-section" key={heading}>
+              <h3>{heading}</h3>
+              {paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -7037,8 +7224,8 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       visual: 'Save - Credit - Ask',
       target: 'Saved and credits',
       position: 'bottom-right',
-      selectors: ['.credits-pill', '.credit-button', 'a[href="/wishlist"]', '.ai-stylist-launcher', '.mobile-bottom-nav a[href="/style-bot"]'],
-      mobileSelectors: ['.mobile-bottom-nav a[href="/style-bot"]', '.mobile-bottom-nav a[href="/profile"]', '.header-credit-button', '.credits-pill', '.credit-button', '.ai-stylist-launcher', 'a[href="/wishlist"]'],
+      selectors: ['.site-header .nav a[href="/style-bot"]', '.site-header .nav a[href="/signup"]', '.credits-pill', '.credit-button', 'a[href="/wishlist"]', '.mobile-bottom-nav a[href="/style-bot"]'],
+      mobileSelectors: ['.mobile-bottom-nav a[href="/style-bot"]', '.site-header .nav a[href="/style-bot"]', '.site-header .nav a[href="/signup"]', '.mobile-bottom-nav a[href="/profile"]', '.header-credit-button', '.credits-pill', '.credit-button', 'a[href="/wishlist"]'],
       fallback: { x: 82, y: 18, radius: 80 },
       mobileFallback: { x: 80, y: 8, radius: 52 }
     },
@@ -7525,7 +7712,7 @@ function AuthPage({ mode, setUser }) {
         body: JSON.stringify({ phone: phoneValue, otp: otpValue, otpSession })
       });
       const destination = authReturnPath();
-      localStorage.setItem('fitlook_token', data.token);
+      sessionStorage.setItem('fitlook_token', data.token);
       setUser(data.user);
       window.history.pushState({}, '', destination);
       window.dispatchEvent(new PopStateEvent('popstate'));
@@ -7565,7 +7752,7 @@ function AuthPage({ mode, setUser }) {
       }
       const data = await api(isSignup ? '/auth/signup' : '/auth/login', { method: 'POST', body });
       const destination = authReturnPath();
-      localStorage.setItem('fitlook_token', data.token);
+      sessionStorage.setItem('fitlook_token', data.token);
       setUser(data.user);
       window.history.pushState({}, '', destination);
       window.dispatchEvent(new PopStateEvent('popstate'));
@@ -7707,7 +7894,7 @@ function AuthPage({ mode, setUser }) {
 
               <label className="signup-terms">
                 <input name="terms" type="checkbox" required />
-                <span>I agree to Lookmefy creating an AI try-on profile from my uploaded photo.</span>
+                <span>I agree to Lookmefy creating an AI try-on profile from my uploaded photo and accept the <a href="/terms">Terms</a>, <a href="/privacy">Privacy Policy</a>, and <a href="/ai-disclaimer">AI Disclaimer</a>.</span>
               </label>
               <button className="signup-submit-button" type="submit" disabled={isSubmitting} aria-busy={isSubmitting}>{isSubmitting ? 'Creating account...' : 'Sign up'}</button>
             </>
@@ -7874,8 +8061,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!localStorage.getItem('fitlook_token')) return;
-    api('/auth/me').then((data) => setUser(data.user)).catch(() => localStorage.removeItem('fitlook_token'));
+    if (!sessionStorage.getItem('fitlook_token')) return;
+    api('/auth/me').then((data) => setUser(data.user)).catch(() => sessionStorage.removeItem('fitlook_token'));
   }, []);
 
   useEffect(() => {
@@ -8025,7 +8212,6 @@ function App() {
       <div id="main-content" className="app-page-transition" tabIndex="-1" key={routeKey}>{page}</div>
       {!isOnline && <div className="network-status" role="status" aria-live="polite">You are offline. Changes will resume when you reconnect.</div>}
       {toast && <Toast toast={toast} onDismiss={dismissToast} />}
-      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && !isWardrobeWorkspace && <FloatingStylistLauncher user={user} />}
       {!shouldHideMobileBottomNav && <MobileBottomNav user={user} />}
       {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Footer compact={path === '/wishlist' || path === '/profile' || isProductPage} />}
       {shouldShowOnboarding && <OnboardingOverview user={user} onComplete={setUser} />}

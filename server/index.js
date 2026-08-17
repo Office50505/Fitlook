@@ -19,6 +19,7 @@ import { configureMongoSlowQueryLogging, observabilitySnapshot, requestLogger } 
 import { createRateLimiter, rateLimitKeys } from './utils/rateLimit.js';
 import { appRole, mongoConnectOptions, serviceMetadata } from './utils/runtime.js';
 import { validateServerEnv } from './utils/envValidation.js';
+import { securityHeaders, serveUploadedMedia } from './utils/security.js';
 
 dotenv.config();
 
@@ -95,6 +96,8 @@ function isLocalDevOrigin(origin) {
 }
 
 app.set('trust proxy', trustProxySetting());
+app.disable('x-powered-by');
+app.use(securityHeaders);
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins().includes(origin) || isLocalDevOrigin(origin)) return callback(null, true);
@@ -104,7 +107,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(requestLogger);
-app.use('/uploads', express.static(path.join(rootDir, 'uploads')));
+app.use('/uploads', serveUploadedMedia());
 app.use('/api', globalApiLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/closet', closetRoutes);
@@ -116,7 +119,7 @@ app.use('/api/images', imageRoutes);
 app.use('/api/jobs', jobRoutes);
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, mongo: mongoose.connection.readyState === 1 });
+  res.json({ ok: true });
 });
 
 app.get('/api/health/live', (_req, res) => {

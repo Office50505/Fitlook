@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { safeFetchBuffer } from './security.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -125,16 +126,19 @@ async function saveBuffer({ key, buffer, mimetype = 'application/octet-stream', 
 }
 
 async function readRemoteBuffer(url, label = 'image') {
-  const response = await fetch(url, {
+  const { response, buffer } = await safeFetchBuffer(url, {
+    maxBytes: 12 * 1024 * 1024,
     headers: {
-      accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
       'user-agent': `Mozilla/5.0 Lookmefy ${label} fetcher`
     }
   });
   if (!response.ok) throw new Error(`Could not fetch ${label} (${response.status})`);
+  const mimetype = response.headers.get('content-type')?.split(';')[0] || '';
+  if (/svg/i.test(mimetype)) throw new Error('SVG images are not allowed');
   return {
-    buffer: Buffer.from(await response.arrayBuffer()),
-    mimetype: response.headers.get('content-type')?.split(';')[0] || ''
+    buffer,
+    mimetype
   };
 }
 

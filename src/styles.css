@@ -2136,6 +2136,79 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
 .feature-title { margin: 0 0 3px; font-size: 12px; font-weight: 700; }
 .feature-copy { margin: 0; color: var(--muted); font-size: 10px; }
 
+.policy-page {
+  background: #fffdf8;
+}
+
+.policy-shell {
+  display: block;
+  max-width: 860px;
+  padding-top: clamp(34px, 5vw, 64px);
+  padding-bottom: clamp(44px, 6vw, 78px);
+}
+
+.policy-summary {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid rgba(41, 36, 33, .14);
+  padding-bottom: 18px;
+}
+
+.policy-summary h1,
+.policy-section h3 {
+  margin: 0;
+  color: #282320;
+}
+
+.policy-summary h1 {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 4.2vw, 52px);
+  font-weight: 400;
+  line-height: 1;
+}
+
+.policy-summary p,
+.policy-summary small,
+.policy-section p {
+  margin: 0;
+  color: #706861;
+  font-size: 13px;
+  line-height: 1.72;
+}
+
+.policy-summary small {
+  color: #958b84;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.policy-sections {
+  display: grid;
+  gap: 22px;
+}
+
+.policy-section {
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid rgba(41, 36, 33, .10);
+  padding-bottom: 22px;
+}
+
+.policy-section h3 {
+  font-family: var(--font-interface);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+
+.policy-confirmation {
+  border: 1px solid rgba(174, 80, 71, .18);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fff5f3;
+}
+
 .results-shell { display: grid; grid-template-columns: minmax(0, 1fr) 252px; gap: clamp(24px, 4vw, 62px); padding: 18px 0 44px; }
 .results-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
 .count { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
@@ -6467,6 +6540,11 @@ h2 { font-size: clamp(25px, 3vw, 34px); line-height: 1.08; }
   border-color: rgba(255, 255, 255, .36);
   background: rgba(255, 255, 255, .16);
   transform: translateY(-2px);
+}
+.footer-social .brand-logo-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
 }
 .footer h3 {
   margin: 0 0 16px;
@@ -18651,13 +18729,22 @@ main > section.wrap {
 .wishlist-compact-brand p,
 .wishlist-compact-footer-grid > div > p { max-width: 205px; margin: 4px 0 5px; color: #766e69; font-family: var(--font-interface); font-size: 10px; line-height: 1.5; }
 .wishlist-compact-brand > div { display: flex; gap: 9px; margin-top: 4px; }
-.wishlist-compact-brand > div a { display: grid; width: 19px; height: 19px; place-items: center; border: 1px solid #d8ceca; border-radius: 50%; color: #5b534f; font-family: var(--font-interface); font-size: 7px; font-weight: 700; text-decoration: none; }
-.wishlist-app-link { display: inline-flex; width: fit-content; min-height: 25px; align-items: center; border-radius: 3px; padding: 0 9px; background: #211e1c; color: #fff; font-family: var(--font-interface); font-size: 8px; font-weight: 700; text-decoration: none; }
+.wishlist-compact-brand > div a { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid #d8ceca; border-radius: 50%; color: #5b534f; text-decoration: none; }
+.wishlist-compact-social .brand-logo-icon { display: block; width: 14px; height: 14px; }
+.wishlist-app-links { display: grid; width: fit-content; gap: 6px; }
+.wishlist-app-link { display: inline-flex; width: 116px; min-height: 34px; align-items: center; gap: 7px; border-radius: 5px; padding: 0 9px; background: #211e1c; color: #fff; font-family: var(--font-interface); text-decoration: none; }
+.wishlist-app-link .store-logo-icon { flex: 0 0 auto; width: 17px; height: 17px; }
+.wishlist-app-link span { display: grid; gap: 1px; line-height: 1; }
+.wishlist-app-link small,
+.wishlist-app-link strong { display: block; color: inherit; font-family: var(--font-interface); letter-spacing: 0; line-height: 1; }
+.wishlist-app-link small { font-size: 7px; font-weight: 600; opacity: .78; }
+.wishlist-app-link strong { font-size: 11px; font-weight: 800; }
 .wishlist-compact-footer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: clamp(34px, 5vw, 58px); border-top: 1px solid #eee5e2; padding-top: 18px; color: #8a817c; font-family: var(--font-interface); font-size: 8px; }
 .wishlist-compact-footer-bottom > div { display: flex; gap: 16px; }
 .wishlist-compact-footer-bottom a { color: inherit; text-decoration: none; }
 
 @media (max-width: 620px) {
+  .wishlist-compact-footer-inner { padding-inline: 12px; }
   .wishlist-compact-footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 18px; }
   .wishlist-compact-brand { grid-column: 1 / -1; }
   .wishlist-compact-footer-bottom { align-items: flex-start; flex-direction: column; }
@@ -23064,62 +23151,6 @@ textarea { font: inherit; }
   cursor: pointer;
 }
 
-.product-mobile-action-bar {
-  position: fixed;
-  right: max(14px, env(safe-area-inset-right));
-  /* Sits directly above the fixed mobile bottom nav. Derive the offset from the
-     nav height instead of hardcoding 76px, so the two stay in sync. */
-  bottom: calc(var(--mobile-bottom-nav-height, 68px) + env(safe-area-inset-bottom) + 8px);
-  left: max(14px, env(safe-area-inset-left));
-  z-index: 70;
-  display: none;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid rgba(255, 255, 255, .55);
-  border-radius: 999px;
-  padding: 8px;
-  background: rgba(33, 30, 28, .88);
-  color: #fff;
-  box-shadow: 0 22px 48px rgba(0, 0, 0, .28);
-  backdrop-filter: blur(18px);
-}
-
-.product-mobile-action-bar span {
-  overflow: hidden;
-  padding-left: 12px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.product-mobile-action-bar button,
-.product-mobile-action-bar a {
-  display: inline-flex;
-  min-height: 44px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, .2);
-  border-radius: 999px;
-  padding: 0 16px;
-  background: #fff;
-  color: #211e1c;
-  font-weight: 700;
-}
-
-.product-mobile-action-bar button:first-of-type,
-.product-mobile-action-bar a {
-  background: #211e1c;
-  color: #fff;
-}
-
-.product-mobile-action-bar .product-mobile-shop-now {
-  border-color: rgba(174, 80, 71, .72) !important;
-  background: #ae5047 !important;
-  color: #fff !important;
-  box-shadow: 0 12px 28px rgba(174, 80, 71, .28);
-}
-
 .size-request-backdrop {
   position: fixed;
   inset: 0;
@@ -23450,9 +23481,6 @@ textarea { font: inherit; }
     grid-template-columns: 1fr !important;
   }
 
-  .product-mobile-action-bar {
-    display: grid;
-  }
 }
 
 /* Keep the desktop navigation aligned with the full-width home content bands. */
@@ -25631,99 +25659,6 @@ a.atelier-hero-orbit-wardrobe:hover {
   transform: scale(1.07);
 }
 
-.ai-stylist-launcher {
-  position: fixed !important;
-  right: max(28px, env(safe-area-inset-right)) !important;
-  bottom: max(28px, env(safe-area-inset-bottom)) !important;
-  z-index: 130 !important;
-  display: grid !important;
-  width: 86px !important;
-  height: 86px !important;
-  place-items: center !important;
-  grid-template-rows: auto auto auto !important;
-  gap: 3px !important;
-  border: 1px solid rgba(255, 255, 255, .62) !important;
-  border-radius: 999px !important;
-  padding: 10px !important;
-  background: #080806 !important;
-  color: #fff !important;
-  box-shadow: 0 22px 48px rgba(17, 16, 14, .22), inset 0 0 0 1px rgba(255, 255, 255, .08) !important;
-  cursor: pointer !important;
-  opacity: 1 !important;
-  touch-action: manipulation !important;
-  transform: none !important;
-  transition: box-shadow .18s ease, scale .18s ease !important;
-  user-select: none !important;
-}
-
-.ai-stylist-launcher:hover,
-.ai-stylist-launcher:focus-visible {
-  box-shadow: 0 26px 58px rgba(17, 16, 14, .28), 0 0 0 5px rgba(154, 81, 77, .12), inset 0 0 0 1px rgba(255, 255, 255, .14) !important;
-}
-
-.ai-stylist-launcher span {
-  display: grid !important;
-  width: 30px !important;
-  height: 30px !important;
-  place-items: center !important;
-  border-radius: 999px !important;
-  background: #fff !important;
-  color: #080806 !important;
-}
-
-.ai-stylist-launcher svg {
-  width: 15px !important;
-  height: 15px !important;
-  stroke-width: 1.9 !important;
-}
-
-.ai-stylist-launcher strong,
-.ai-stylist-launcher small {
-  display: block !important;
-  margin: 0 !important;
-  color: currentColor !important;
-  font-family: var(--font-interface) !important;
-  letter-spacing: 0 !important;
-  line-height: 1 !important;
-  text-align: center !important;
-  text-transform: none !important;
-  white-space: nowrap !important;
-}
-
-.ai-stylist-launcher strong {
-  font-size: 10px !important;
-  font-weight: 700 !important;
-}
-
-.ai-stylist-launcher small {
-  color: rgba(255, 255, 255, .72) !important;
-  font-size: 10px !important;
-  font-weight: 700 !important;
-}
-
-@media (max-width: 700px) {
-  .ai-stylist-launcher {
-    right: max(18px, env(safe-area-inset-right)) !important;
-    bottom: max(18px, env(safe-area-inset-bottom)) !important;
-    width: 76px !important;
-    height: 76px !important;
-    padding: 8px !important;
-  }
-
-  .ai-stylist-launcher span {
-    width: 26px !important;
-    height: 26px !important;
-  }
-
-  .ai-stylist-launcher strong {
-    font-size: 9px !important;
-  }
-
-  .ai-stylist-launcher small {
-    display: none !important;
-  }
-}
-
 /* Wardrobe interaction polish: stable auto toggle and image-led recommendations. */
 .wardrobe-stage-actions {
   grid-template-columns: minmax(184px, 280px) 50px !important;
@@ -27847,13 +27782,6 @@ a.atelier-hero-orbit-wardrobe:hover {
     max-width: calc(100vw - 36px) !important;
   }
 
-  .ai-stylist-launcher {
-    right: max(14px, env(safe-area-inset-right)) !important;
-    bottom: max(18px, env(safe-area-inset-bottom)) !important;
-    width: 74px !important;
-    height: 74px !important;
-  }
-
   .atelier-arrivals-rail,
   .atelier-category-audience-rail,
   .atelier-category-quick-rail {
@@ -28407,7 +28335,6 @@ a.atelier-hero-orbit-wardrobe:hover {
 
   .atelier-hero-editorial-orbits,
   .atelier-hero-editorial-dots,
-  .ai-stylist-launcher,
   .wardrobe-studio-page .wardrobe-stage-actions {
     max-width: calc(100% - 24px) !important;
   }
@@ -29238,10 +29165,6 @@ main,
     -webkit-backdrop-filter: blur(18px);
   }
 
-  .app-page-transition ~ .ai-stylist-launcher {
-    display: none !important;
-  }
-
   .mobile-bottom-nav a {
     display: grid;
     min-width: 0;
@@ -29459,17 +29382,6 @@ main,
   .wishlist-reference-card,
   .wishlist-recommendation-card {
     border-radius: 8px !important;
-  }
-
-  .ai-stylist-launcher {
-    right: max(12px, env(safe-area-inset-right)) !important;
-    bottom: calc(var(--mobile-bottom-nav-height) + max(14px, env(safe-area-inset-bottom))) !important;
-    width: 60px !important;
-    height: 60px !important;
-  }
-
-  .ai-stylist-launcher span {
-    font-size: 9px !important;
   }
 
   .footer,
@@ -31229,15 +31141,14 @@ main,
 }
 
 /* ── Bottom-right overlay stack ───────────────────────────────────────────
-   Six elements are anchored to the bottom-right corner: the mobile bottom nav
-   (z 120), the stylist launcher (z 130), and three transient message layers.
+   The mobile bottom nav and three transient message layers share this corner.
    The message layers previously sat at z 99-110 with bottom: 10-16px, which
    put them underneath the 68px nav on phones — the offline banner and every
    toast were invisible, and the wishlist Undo button could not be tapped.
 
    --overlay-base is the floor those three sit above; it grows to clear the
-   nav on phones and the launcher on desktop. --overlay-step stacks them when
-   more than one is on screen at once. */
+   nav on phones. --overlay-step stacks them when more than one is on screen at
+   once. */
 :root {
   --overlay-base: 16px;
   --overlay-step: 52px;
@@ -31246,12 +31157,6 @@ main,
 @media (max-width: 700px) {
   :root {
     --overlay-base: calc(var(--mobile-bottom-nav-height, 68px) + env(safe-area-inset-bottom) + 12px);
-  }
-}
-
-@media (min-width: 701px) {
-  body:has(.ai-stylist-launcher) {
-    --overlay-base: 130px;
   }
 }
 
@@ -31277,39 +31182,6 @@ body:has(.network-status) .wishlist-undo-toast {
 
 body:has(.network-status):has(.app-toast) .wishlist-undo-toast {
   bottom: calc(var(--overlay-base) + (2 * var(--overlay-step))) !important;
-}
-
-@media (min-width: 701px) {
-  body:has(.ai-stylist-launcher) {
-    --ai-stylist-inline-clearance: calc(86px + max(28px, env(safe-area-inset-right)) + 18px);
-  }
-
-  body:has(.ai-stylist-launcher) .credit-order-summary {
-    box-sizing: border-box !important;
-    margin-right: var(--ai-stylist-inline-clearance) !important;
-    padding-right: max(clamp(28px, 3.2vw, 44px), var(--ai-stylist-inline-clearance)) !important;
-  }
-
-  body:has(.ai-stylist-launcher) .profile-reference-section-head,
-  body:has(.ai-stylist-launcher) .profile-reference-payment-row,
-  body:has(.ai-stylist-launcher) .profile-reference-setting-list > a,
-  body:has(.ai-stylist-launcher) .profile-reference-setting-list > button {
-    box-sizing: border-box !important;
-    padding-right: var(--ai-stylist-inline-clearance) !important;
-    width: calc(100% - var(--ai-stylist-inline-clearance)) !important;
-  }
-}
-
-@media (min-width: 701px) and (max-width: 1100px) {
-  body:has(.ai-stylist-launcher) .atelier-category-page .atelier-category-filter-head,
-  body:has(.ai-stylist-launcher) .product-editorial-thumbnails,
-  body:has(.ai-stylist-launcher) .product-editorial-actions,
-  body:has(.ai-stylist-launcher) .product-size-assist,
-  body:has(.ai-stylist-launcher) .profile-reference-photo-tools {
-    box-sizing: border-box !important;
-    padding-right: var(--ai-stylist-inline-clearance) !important;
-    width: calc(100% - var(--ai-stylist-inline-clearance)) !important;
-  }
 }
 
 /* .atelier-category-nav is a 1px fixed strip at z 50 with a border and

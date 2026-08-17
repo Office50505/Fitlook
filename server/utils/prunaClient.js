@@ -1,3 +1,5 @@
+import { safeFetchBuffer, safeOutboundFetch } from './security.js';
+
 const DEFAULT_BASE_URL = 'https://api.pruna.ai';
 
 function prunaBaseUrl() {
@@ -123,13 +125,16 @@ async function waitForPrunaPrediction(prediction, options = {}) {
 }
 
 async function downloadPrunaOutput(url, accept = '*/*') {
-  const response = await fetchPrunaOutput(url, { accept });
+  const { response, buffer } = await safeFetchBuffer(absolutizePrunaUrl(url), {
+    maxBytes: 120 * 1024 * 1024,
+    headers: prunaHeaders({ accept })
+  });
   if (!response.ok) {
-    const detail = await response.text().catch(() => '');
+    const detail = buffer.toString('utf8');
     throw new Error(`Could not download Pruna output (${response.status})${detail ? `: ${detail.slice(0, 300)}` : ''}`);
   }
   return {
-    bytes: Buffer.from(await response.arrayBuffer()),
+    bytes: buffer,
     mimetype: response.headers.get('content-type')?.split(';')[0] || ''
   };
 }
@@ -137,7 +142,11 @@ async function downloadPrunaOutput(url, accept = '*/*') {
 async function fetchPrunaOutput(url, { accept = '*/*', range = '' } = {}) {
   const headers = prunaHeaders({ accept });
   if (range) headers.Range = range;
-  return fetch(absolutizePrunaUrl(url), { headers });
+  const { response } = await safeOutboundFetch(absolutizePrunaUrl(url), {
+    maxBytes: 120 * 1024 * 1024,
+    headers
+  });
+  return response;
 }
 
 function imagePrunaCostUsd({ turbo = true, garmentCount = 1 } = {}) {

@@ -146,10 +146,17 @@ test('hasUsableTransparency requires actual transparent pixels', async () => {
   assert.equal(await hasUsableTransparency(opaquePng), false);
 });
 
-test('removeBackground semantically preserves the real wardrobe model shirt and shoes', { timeout: 180000 }, async () => {
+test('removeBackground semantically preserves the real wardrobe model shirt and shoes', { timeout: 180000 }, async (t) => {
+  const file = 'uploads/users/6a5b86c6f3e4fc1ff38c68f3/closet-outfits/closet-outfit-1784384480376-95075246.jpg';
+  try {
+    await fs.access(file);
+  } catch {
+    t.skip(`Missing optional local fixture: ${file}`);
+    return;
+  }
+
   const previousProvider = process.env.BACKGROUND_REMOVAL_PROVIDER;
   process.env.BACKGROUND_REMOVAL_PROVIDER = 'semantic-rembg';
-  const file = 'uploads/users/6a5b86c6f3e4fc1ff38c68f3/closet-outfits/closet-outfit-1784384480376-95075246.jpg';
   const bytes = await fs.readFile(file);
   try {
     const result = await removeBackground({ imageBuffer: bytes, mimeType: 'image/jpeg' });

@@ -17,7 +17,6 @@
     "test": "node --test",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test",
     "db:create-indexes": "node scripts/create-indexes.js",
     "storage:migrate:bunny": "node scripts/migrate-uploads-to-bunny.js",
     "storage:migrate:bunny:apply": "node scripts/migrate-uploads-to-bunny.js --apply",
@@ -40,10 +39,11 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",
     "multer": "^2.2.0",
+    "nanoid": "^3.3.18",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "redis": "^6.1.0",
-    "sharp": "^0.33.5",
+    "sharp": "^0.35.3",
     "vite": "^6.0.7"
   },
   "devDependencies": {

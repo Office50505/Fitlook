@@ -6,7 +6,7 @@ const ADMIN_SESSION_KEY = 'fitlook_admin_session';
 
 function storedAdminSession() {
   try {
-    return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY) || 'null');
+    return JSON.parse(sessionStorage.getItem(ADMIN_SESSION_KEY) || 'null');
   } catch {
     return null;
   }
@@ -482,13 +482,13 @@ function AdminApp() {
   };
 
   const completeLogin = (session) => {
-    localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
+    sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
     setAdminSession(session);
     setAdminKey('');
   };
 
   const logout = () => {
-    localStorage.removeItem(ADMIN_SESSION_KEY);
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
     setAdminSession(null);
     setAdminKey('');
   };
