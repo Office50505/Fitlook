@@ -983,6 +983,14 @@ function sortFor(value) {
   return { isFeatured: -1, createdAt: -1 };
 }
 
+function temporaryExternalAmazonFilter() {
+  return {
+    catalogApproved: { $ne: true },
+    badge: 'Amazon',
+    $or: [{ sourceUrl: /amazon\.[a-z.]+\/dp\//i }, { affiliateLink: /amazon\.[a-z.]+\/dp\//i }]
+  };
+}
+
 function optionalNumber(value, fieldName) {
   if (value === undefined) return undefined;
   if (value === null || value === '') return null;
@@ -1041,7 +1049,7 @@ router.get('/', productReadLimiter, async (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 48, 96);
     const minPrice = Number(req.query.minPrice);
     const maxPrice = Number(req.query.maxPrice);
-    const botAmazonRecord = { badge: 'Amazon', $or: [{ sourceUrl: /amazon\.[a-z.]+\/dp\//i }, { affiliateLink: /amazon\.[a-z.]+\/dp\//i }] };
+    const botAmazonRecord = temporaryExternalAmazonFilter();
     const filter = { isActive: true, $nor: [botAmazonRecord] };
 
     if (q) filter.$text = { $search: q };
@@ -1144,7 +1152,7 @@ router.post('/amazon-search', requireUser, amazonSearchLimiter, async (req, res)
 });
 
 async function runProductRecategorizationJob() {
-  const botAmazonRecord = { badge: 'Amazon', $or: [{ sourceUrl: /amazon\.[a-z.]+\/dp\//i }, { affiliateLink: /amazon\.[a-z.]+\/dp\//i }] };
+  const botAmazonRecord = temporaryExternalAmazonFilter();
   const products = await Product.find({ isActive: true, $nor: [botAmazonRecord] });
   let updated = 0;
   const changes = [];
@@ -1355,4 +1363,4 @@ router.delete('/:id', requireAdmin, adminProductWriteLimiter, async (req, res) =
 });
 
 export default router;
-export { buildProductDraft, runProductRecategorizationJob };
+export { buildProductDraft, clearReadCachesAfterProductWrite, runProductRecategorizationJob, temporaryExternalAmazonFilter };

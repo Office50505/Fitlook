@@ -342,7 +342,7 @@ const PAGE_COPY = {
   settings: {
     kicker: 'Setup',
     title: 'Settings',
-    lead: 'Check system status, admin access, and your current login.'
+    lead: 'Check system status, admin key access, and your current session.'
   },
   'add-product': {
     kicker: 'Products',
@@ -365,6 +365,13 @@ function AdminApp() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [message, setMessage] = useState('');
   const [previewImage, setPreviewImage] = useState('');
+  const [fetchingDraft, setFetchingDraft] = useState(false);
+  const [creatingProduct, setCreatingProduct] = useState(false);
+  const [draftStatus, setDraftStatus] = useState({
+    tone: 'idle',
+    title: 'Ready to fetch',
+    detail: 'Paste a product link to prefill the draft, or complete the fields manually.'
+  });
   const [editingProduct, setEditingProduct] = useState(null);
   const [editMessage, setEditMessage] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
@@ -441,6 +448,8 @@ function AdminApp() {
       .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
   }, [state.facets.categoryCounts, state.products]);
   const pageCopy = PAGE_COPY[activePage] || PAGE_COPY.overview;
+  const adminDisplayName = adminSession?.admin?.method === 'admin-key' ? 'Admin key session' : 'Admin';
+  const createBusy = fetchingDraft || creatingProduct;
 
   useEffect(() => {
     const handleHashChange = () => setActivePage(pageFromHash());
@@ -491,12 +500,25 @@ function AdminApp() {
   };
 
   const previewAffiliate = async () => {
+    if (fetchingDraft || creatingProduct) return;
     const form = formRef.current;
-    const affiliateLink = form?.elements.namedItem('affiliateLink')?.value;
+    const affiliateLink = String(form?.elements.namedItem('affiliateLink')?.value || '').trim();
     if (!affiliateLink) {
+      setDraftStatus({
+        tone: 'error',
+        title: 'Affiliate link required',
+        detail: 'Paste a product page URL before fetching details.'
+      });
       setMessage('Paste an affiliate link first.');
       return;
     }
+    setFetchingDraft(true);
+    setPreviewImage('');
+    setDraftStatus({
+      tone: 'loading',
+      title: 'Fetching product details',
+      detail: 'Reading the source page, looking for product copy, price, and usable imagery.'
+    });
     setMessage('Fetching product details...');
     try {
       const data = await api('/products/preview-link', {
@@ -505,7 +527,7 @@ function AdminApp() {
         headers: { 'x-admin-key': adminKey }
       });
       const draft = data.draft || {};
-      [
+      const fieldNames = [
         'affiliateLink',
         'name',
         'brand',
@@ -520,28 +542,54 @@ function AdminApp() {
         'tags',
         'remoteImageUrl',
         'sourceUrl'
-      ].forEach((name) => setField(name, draft[name]));
+      ];
+      fieldNames.forEach((name) => setField(name, draft[name]));
       setField('garmentPlacement', draft.garmentPlacement || inferGarmentPlacement(draft));
       if (draft.remoteImageUrl) setPreviewImage(draft.remoteImageUrl);
+      const filledCount = fieldNames.filter((name) => {
+        const value = draft[name];
+        return Array.isArray(value) ? value.length > 0 : Boolean(value);
+      }).length;
+      setDraftStatus({
+        tone: 'success',
+        title: 'Draft details fetched',
+        detail: `Filled ${filledCount} fields${draft.remoteImageUrl ? ' and found a product image' : ''}. Review the draft before publishing.`
+      });
       setMessage('Draft filled. Review it, adjust anything missing, then save.');
     } catch (err) {
+      setDraftStatus({
+        tone: 'error',
+        title: 'Could not fetch details',
+        detail: err.message
+      });
       setMessage(err.message);
+    } finally {
+      setFetchingDraft(false);
     }
   };
 
   const submit = async (event) => {
     event.preventDefault();
+    if (fetchingDraft || creatingProduct) return;
     setMessage('Uploading product...');
+    setCreatingProduct(true);
     try {
       const form = event.currentTarget;
       await api('/products', { method: 'POST', body: new FormData(form), headers: { 'x-admin-key': adminKey } });
       form.reset();
       setPreviewImage('');
+      setDraftStatus({
+        tone: 'success',
+        title: 'Product published',
+        detail: 'The product is live in the catalog. You can fetch another link or create a manual draft.'
+      });
       setMessage('Product uploaded.');
       setRefresh((value) => value + 1);
       setOperationsRefresh((value) => value + 1);
     } catch (err) {
       setMessage(err.message);
+    } finally {
+      setCreatingProduct(false);
     }
   };
 
@@ -787,7 +835,7 @@ function AdminApp() {
             ))}
           </nav>
           <div className="sidebar-session">
-            <span>{adminSession.admin?.email || 'Admin'}</span>
+            <span>{adminDisplayName}</span>
             <button type="button" onClick={logout}>Logout</button>
           </div>
         </aside>
@@ -811,7 +859,7 @@ function AdminApp() {
               onPage={showPage}
             />
             <div className="admin-profile">
-              <span>{adminSession.admin?.email || 'Admin'}</span>
+              <span>{adminDisplayName}</span>
               <button type="button" onClick={logout}>Logout</button>
             </div>
           </header>
@@ -865,23 +913,27 @@ function AdminApp() {
           </section>}
 
           {(activePage === 'inventory' || activePage === 'add-product') && <section className={`admin-grid ${activePage === 'add-product' ? 'create-grid' : 'inventory-grid'}`}>
-            <form className="admin-card admin-form" onSubmit={submit} ref={formRef}>
+            <form className={`admin-card admin-form ${createBusy ? 'is-busy' : ''}`} onSubmit={submit} ref={formRef} aria-busy={createBusy}>
               <div className="card-head">
                 <div>
                   <h2>Create Product</h2>
                   <p>Fetch a draft, review the details, and publish to the catalog.</p>
                 </div>
-                <span>Draft to publish</span>
+                <span>{creatingProduct ? 'Publishing' : fetchingDraft ? 'Fetching draft' : 'Draft to publish'}</span>
               </div>
               <section className="form-section">
                 <div className="form-section-title"><strong>Import</strong><span>Start from an affiliate URL or fill manually.</span></div>
                 <div className="affiliate-import">
                   <label className="field">
                     <span>Affiliate link</span>
-                    <input name="affiliateLink" type="url" placeholder="https://brand.com/product-page" />
+                    <input name="affiliateLink" type="url" placeholder="https://brand.com/product-page" disabled={creatingProduct} />
                   </label>
-                  <button type="button" onClick={previewAffiliate}>Fetch Details</button>
+                  <button type="button" onClick={previewAffiliate} disabled={createBusy}>
+                    {fetchingDraft && <span className="button-spinner" aria-hidden="true" />}
+                    {fetchingDraft ? 'Fetching...' : 'Fetch Details'}
+                  </button>
                 </div>
+                <DraftFetchStatus status={draftStatus} />
               </section>
               <input name="remoteImageUrl" type="hidden" />
               <input name="sourceUrl" type="hidden" />
@@ -894,45 +946,48 @@ function AdminApp() {
               )}
               <section className="form-section">
                 <div className="form-section-title"><strong>Product Details</strong><span>Shown on product cards and detail pages.</span></div>
-                <label className="field"><span>Name</span><input name="name" required placeholder="Linen Blend Shirt" /></label>
-                <label className="field"><span>Brand</span><input name="brand" required placeholder="Zara" /></label>
+                <label className="field"><span>Name</span><input name="name" required placeholder="Linen Blend Shirt" disabled={creatingProduct} /></label>
+                <label className="field"><span>Brand</span><input name="brand" required placeholder="Zara" disabled={creatingProduct} /></label>
                 <div className="two-col">
-                  <label className="field"><span>Category</span><input name="category" required placeholder="shirts" /></label>
-                  <label className="field"><span>Gender</span><select name="gender" defaultValue="men"><option value="men">Men</option><option value="women">Women</option><option value="unisex">Unisex</option></select></label>
+                  <label className="field"><span>Category</span><input name="category" required placeholder="shirts" disabled={creatingProduct} /></label>
+                  <label className="field"><span>Gender</span><select name="gender" defaultValue="men" disabled={creatingProduct}><option value="men">Men</option><option value="women">Women</option><option value="unisex">Unisex</option></select></label>
                 </div>
-                <fieldset className="segmented-field">
+                <fieldset className="segmented-field" disabled={creatingProduct}>
                   <legend>Fit area</legend>
                   <label><input type="radio" name="garmentPlacement" value="top" defaultChecked /><span>Top</span></label>
                   <label><input type="radio" name="garmentPlacement" value="bottom" /><span>Bottom</span></label>
                 </fieldset>
-                <label className="field"><span>Description</span><textarea name="description" rows="4" placeholder="Short product description" /></label>
+                <label className="field"><span>Description</span><textarea name="description" rows="4" placeholder="Short product description" disabled={creatingProduct} /></label>
               </section>
               <section className="form-section">
                 <div className="form-section-title"><strong>Price and Tags</strong><span>Used for filters, product cards, and sorting.</span></div>
                 <div className="two-col">
-                  <label className="field"><span>Price</span><input name="price" type="number" step="0.01" min="0" required placeholder="29.99" /></label>
-                  <label className="field"><span>Compare price</span><input name="compareAtPrice" type="number" step="0.01" min="0" placeholder="49.99" /></label>
+                  <label className="field"><span>Price</span><input name="price" type="number" step="0.01" min="0" required placeholder="29.99" disabled={creatingProduct} /></label>
+                  <label className="field"><span>Compare price</span><input name="compareAtPrice" type="number" step="0.01" min="0" placeholder="49.99" disabled={creatingProduct} /></label>
                 </div>
                 <div className="two-col">
-                  <label className="field"><span>Rating</span><input name="rating" type="number" step="0.1" min="0" max="5" defaultValue="4.5" /></label>
-                  <label className="field"><span>Rating count</span><input name="ratingCount" type="number" min="0" defaultValue="0" /></label>
+                  <label className="field"><span>Rating</span><input name="rating" type="number" step="0.1" min="0" max="5" defaultValue="4.5" disabled={creatingProduct} /></label>
+                  <label className="field"><span>Rating count</span><input name="ratingCount" type="number" min="0" defaultValue="0" disabled={creatingProduct} /></label>
                 </div>
-                <label className="field"><span>Badge</span><input name="badge" placeholder="New" /></label>
-                <label className="field"><span>Tags</span><input name="tags" placeholder="linen, casual, summer" /></label>
-                <label className="field"><span>Colors</span><input name="colors" placeholder="#d9c8b4, #123323, white" /></label>
+                <label className="field"><span>Badge</span><input name="badge" placeholder="New" disabled={creatingProduct} /></label>
+                <label className="field"><span>Tags</span><input name="tags" placeholder="linen, casual, summer" disabled={creatingProduct} /></label>
+                <label className="field"><span>Colors</span><input name="colors" placeholder="#d9c8b4, #123323, white" disabled={creatingProduct} /></label>
               </section>
               <section className="form-section">
                 <div className="form-section-title"><strong>Media & Publish</strong><span>Upload an image only if affiliate fetch did not find one.</span></div>
                 <label className="upload-box">
-                  <input name="image" type="file" accept="image/*" />
+                  <input name="image" type="file" accept="image/*" disabled={creatingProduct} />
                   <span><span className="upload-icon">+</span><span className="upload-title">Upload product image</span><span className="upload-help">Optional if the affiliate link found an image.</span></span>
                 </label>
                 <div className="checks">
-                  <label><input name="isFeatured" type="checkbox" /> Featured</label>
-                  <label><input name="isNewArrival" type="checkbox" defaultChecked /> New arrival</label>
+                  <label><input name="isFeatured" type="checkbox" disabled={creatingProduct} /> Featured</label>
+                  <label><input name="isNewArrival" type="checkbox" defaultChecked disabled={creatingProduct} /> New arrival</label>
                 </div>
               </section>
-              <button className="submit">Upload Product</button>
+              <button className="submit" disabled={createBusy}>
+                {creatingProduct && <span className="button-spinner" aria-hidden="true" />}
+                {creatingProduct ? 'Publishing...' : fetchingDraft ? 'Finish fetch first' : 'Upload Product'}
+              </button>
               {message && <p className="form-message">{message}</p>}
             </form>
 
@@ -1009,23 +1064,23 @@ function AdminApp() {
                 catalogState={state}
                 recommendationState={recommendationStats}
                 adminSession={adminSession}
+                adminDisplayName={adminDisplayName}
               />
               <AuditLogPanel operationsState={operationsState} onRefresh={() => setOperationsRefresh((value) => value + 1)} />
               <section className="admin-card settings-panel">
                 <div className="section-head">
                   <div>
                     <h2>Admin Access</h2>
-                    <p>Only approved Gmail accounts with the admin key can log in.</p>
+                    <p>The admin key is the only credential required to enter this dashboard.</p>
                   </div>
                 </div>
                 <div className="settings-summary-card">
-                  <span>Current admin</span>
-                  <strong>{adminSession.admin?.email || 'Admin'}</strong>
+                  <span>Current session</span>
+                  <strong>{adminDisplayName}</strong>
                   <p>You are signed in on this browser.</p>
                 </div>
                 <div className="settings-list">
-                  <div><span>Allowlist</span><strong>server/config/admin-access.json</strong></div>
-                  <div><span>Login rule</span><strong>Approved Gmail + admin key</strong></div>
+                  <div><span>Login rule</span><strong>Admin key only</strong></div>
                   <div><span>Session duration</span><strong>12 hours</strong></div>
                 </div>
               </section>
@@ -1544,6 +1599,10 @@ function CatalogTableHeader() {
   );
 }
 
+function stopProductRowOpen(event) {
+  event.stopPropagation();
+}
+
 function HealthRow({ label, status, detail }) {
   return (
     <div className="health-row">
@@ -1557,7 +1616,7 @@ function HealthRow({ label, status, detail }) {
   );
 }
 
-function SystemHealthPanel({ systemHealth, catalogState, recommendationState, adminSession }) {
+function SystemHealthPanel({ systemHealth, catalogState, recommendationState, adminSession, adminDisplayName }) {
   const apiOk = Boolean(systemHealth.health?.ok);
   const mongoOk = Boolean(systemHealth.health?.mongo);
   const catalogOk = !catalogState.loading && !catalogState.error;
@@ -1585,7 +1644,7 @@ function SystemHealthPanel({ systemHealth, catalogState, recommendationState, ad
         <HealthRow
           label="Admin session"
           status={adminSession?.token ? 'ok' : 'down'}
-          detail={adminSession?.admin?.email || 'No active admin email found.'}
+          detail={adminSession?.token ? adminDisplayName : 'No active admin session found.'}
         />
         <HealthRow
           label="Catalog API"
@@ -1603,7 +1662,6 @@ function SystemHealthPanel({ systemHealth, catalogState, recommendationState, ad
 }
 
 function AdminLogin({ onLogin }) {
-  const [email, setEmail] = useState('');
   const [adminKey, setAdminKey] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1615,7 +1673,7 @@ function AdminLogin({ onLogin }) {
     try {
       const data = await api('/auth/admin-login', {
         method: 'POST',
-        body: JSON.stringify({ email, adminKey })
+        body: JSON.stringify({ adminKey })
       });
       onLogin(data);
     } catch (err) {
@@ -1631,8 +1689,8 @@ function AdminLogin({ onLogin }) {
         <div className="login-art">
           <div className="brand-mark">F</div>
           <span>Lookmefy Admin</span>
-          <h1>Catalog access for invited Gmail accounts.</h1>
-          <p>Use an approved Gmail and the admin key to enter the dashboard.</p>
+          <h1>Catalog access with your admin key.</h1>
+          <p>Enter the admin key to open the dashboard and manage Lookmefy operations.</p>
           <div className="login-metrics" aria-label="Admin capabilities">
             <div><strong>Catalog</strong><span>Upload and edit products</span></div>
             <div><strong>Activity</strong><span>See what users do</span></div>
@@ -1643,12 +1701,8 @@ function AdminLogin({ onLogin }) {
           <div>
             <p className="kicker">Secure login</p>
             <h2>Sign in</h2>
-            <p>Only approved Gmail accounts can enter this dashboard.</p>
+            <p>The admin key is required to enter this dashboard.</p>
           </div>
-          <label className="field">
-            <span>Gmail</span>
-            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@gmail.com" required />
-          </label>
           <label className="field">
             <span>Admin key</span>
             <input type="password" value={adminKey} onChange={(event) => setAdminKey(event.target.value)} placeholder="Enter admin key" required />
@@ -1658,6 +1712,30 @@ function AdminLogin({ onLogin }) {
         </form>
       </section>
     </main>
+  );
+}
+
+function DraftFetchStatus({ status }) {
+  const tone = status?.tone || 'idle';
+  const isLoading = tone === 'loading';
+
+  return (
+    <div className={`draft-fetch-status ${tone}`} role={tone === 'error' ? 'alert' : 'status'} aria-live="polite">
+      <span className="draft-status-icon" aria-hidden="true">
+        {isLoading ? <span className="button-spinner" /> : tone === 'success' ? 'OK' : tone === 'error' ? '!' : 'i'}
+      </span>
+      <div>
+        <strong>{status?.title || 'Ready to fetch'}</strong>
+        <span>{status?.detail || 'Paste a product link to prefill the draft.'}</span>
+        {isLoading && (
+          <div className="fetch-status-steps" aria-hidden="true">
+            <em />
+            <em />
+            <em />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1752,10 +1830,26 @@ function BulkActionBar({ selectedProducts, onFeature, onUnfeature, onNewArrival,
 }
 
 function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlacement, onRemove }) {
+  const openProduct = () => onEdit(product);
+  const openProductFromKeyboard = (event) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openProduct();
+    }
+  };
+
   return (
-    <article className={`admin-product ${selected ? 'selected' : ''}`}>
+    <article
+      className={`admin-product ${selected ? 'selected' : ''} ${qaFlags.length ? 'needs-review' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open product details for ${product.name}`}
+      onClick={openProduct}
+      onKeyDown={openProductFromKeyboard}
+    >
       <div className="product-cell product-identity-cell">
-        <label className="row-check" aria-label={`Select ${product.name}`}>
+        <label className="row-check" aria-label={`Select ${product.name}`} onClick={stopProductRowOpen}>
           <input type="checkbox" checked={selected} onChange={onSelect} />
         </label>
         <img src={mediaUrl(product.imageUrl)} alt={product.name} />
@@ -1780,8 +1874,8 @@ function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlace
       </div>
       <div className="product-cell product-link-cell">
         <div className="admin-row-links">
-          {product.affiliateLink && <a className="admin-affiliate" href={product.affiliateLink} target="_blank" rel="noreferrer">Affiliate</a>}
-          {product.sourceUrl && <a className="admin-affiliate" href={product.sourceUrl} target="_blank" rel="noreferrer">Source</a>}
+          {product.affiliateLink && <a className="admin-affiliate" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={stopProductRowOpen}>Affiliate</a>}
+          {product.sourceUrl && <a className="admin-affiliate" href={product.sourceUrl} target="_blank" rel="noreferrer" onClick={stopProductRowOpen}>Source</a>}
           {!product.affiliateLink && !product.sourceUrl && <span>No source</span>}
         </div>
         {qaFlags.length > 0 && (
@@ -1790,14 +1884,14 @@ function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlace
           </div>
         )}
       </div>
-      <div className="product-cell admin-product-actions">
+      <div className="product-cell admin-product-actions" onClick={stopProductRowOpen}>
         <div className="row-segmented" aria-label={`Fit area for ${product.name}`}>
           <button className={(product.garmentPlacement || 'top') === 'top' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'top')}>Top</button>
           <button className={product.garmentPlacement === 'bottom' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'bottom')}>Bottom</button>
         </div>
         <div className="row-actions">
           <a className="preview-action" href={productPublicUrl(product)} target="_blank" rel="noreferrer">Preview</a>
-          <button type="button" onClick={onEdit}>Edit</button>
+          <button type="button" onClick={openProduct}>Edit</button>
           <button className="danger-action" type="button" onClick={() => onRemove(product.id)}>Remove</button>
         </div>
       </div>
@@ -1813,7 +1907,7 @@ function ProductEditor({ product, message, saving, onClose, onSubmit }) {
       <aside className="product-editor" aria-label={`Edit ${product.name}`}>
         <div className="editor-head">
           <div>
-            <span>Edit Product</span>
+            <span>Product Details</span>
             <h2>{product.name}</h2>
           </div>
           <button type="button" onClick={onClose} aria-label="Close editor">Close</button>

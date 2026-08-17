@@ -63,6 +63,11 @@ const productSchema = new mongoose.Schema(
       size: Number
     },
     sourceUrl: { type: String, trim: true },
+    sourceProvider: { type: String, trim: true },
+    sourceProductId: { type: String, trim: true },
+    importBatchId: { type: String, trim: true },
+    catalogApproved: { type: Boolean, default: false, index: true },
+    lastSyncedAt: { type: Date },
     isFeatured: { type: Boolean, default: false },
     isNewArrival: { type: Boolean, default: true },
     isActive: { type: Boolean, default: true }
@@ -84,6 +89,16 @@ productSchema.index({ isActive: 1, category: 1, createdAt: -1 });
 productSchema.index({ isActive: 1, brand: 1, createdAt: -1 });
 productSchema.index({ isActive: 1, gender: 1, createdAt: -1 });
 productSchema.index({ isActive: 1, tags: 1, createdAt: -1 });
+productSchema.index(
+  { sourceProvider: 1, sourceProductId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      sourceProvider: { $type: 'string' },
+      sourceProductId: { $type: 'string' }
+    }
+  }
+);
 
 function productToClient(product) {
   return {

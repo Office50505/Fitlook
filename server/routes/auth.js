@@ -13,7 +13,7 @@ import Product, { productToClient } from '../models/Product.js';
 import TokenOrder from '../models/TokenOrder.js';
 import User from '../models/User.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
-import { isAllowedAdminEmail, normalizeEmail, requireAdmin, signAdminSession } from '../utils/adminAccess.js';
+import { requireAdmin, signAdminSession } from '../utils/adminAccess.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
 import { enqueueJob, safeJobId } from '../utils/jobQueue.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
@@ -688,13 +688,11 @@ router.post('/login/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(asy
 }));
 
 router.post('/admin-login', authIpLimiter, adminLoginLimiter, async (req, res) => {
-  const email = normalizeEmail(req.body?.email);
   const adminKey = String(req.body?.adminKey || '');
-  if (!email || !adminKey) return res.status(400).json({ message: 'Gmail and admin key are required' });
+  if (!adminKey) return res.status(400).json({ message: 'Admin key is required' });
   if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ message: 'Invalid admin key' });
-  if (!await isAllowedAdminEmail(email)) return res.status(403).json({ message: 'This Gmail is not allowed for admin access' });
-  const token = await signAdminSession(email);
-  res.json({ token, admin: { email } });
+  const token = await signAdminSession();
+  res.json({ token, admin: { method: 'admin-key' } });
 });
 
 router.get('/admin/users', requireAdmin, adminReadLimiter, async (req, res) => {
