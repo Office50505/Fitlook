@@ -1479,7 +1479,6 @@ function SearchLandingPage() {
 function Footer({ compact = false }) {
   const socialLinks = [
     { label: 'Instagram', href: 'https://instagram.com/', icon: 'instagram' },
-    { label: 'TikTok', href: 'https://www.tiktok.com/', icon: 'tiktok' },
     { label: 'X', href: 'https://x.com/', icon: 'x' }
   ];
   const appLinks = [
@@ -3553,9 +3552,9 @@ function ClosetPage({ user, setUser }) {
       .catch((err) => setState({ items: [], outfits: [], stats: {}, suggestions: [], loading: false, error: err.message }));
   };
 
+  const processedBodyPhotoUrl = safeWardrobeImageUrl(user?.bodyPhotoUrl);
   const uploadedBodyPhotoUrl = safeWardrobeImageUrl(user?.bodyPhotoOriginalUrl);
-  const generatedBodyPhotoUrl = user?.bodyPhotoSource === 'fal-full-body' ? safeWardrobeImageUrl(user?.bodyPhotoUrl) : '';
-  const userBodyPhotoUrl = generatedBodyPhotoUrl || uploadedBodyPhotoUrl || safeWardrobeImageUrl(user?.bodyPhotoUrl);
+  const userBodyPhotoUrl = processedBodyPhotoUrl || uploadedBodyPhotoUrl;
 
   useEffect(() => {
     loadCloset();
