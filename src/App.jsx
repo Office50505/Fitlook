@@ -6457,6 +6457,33 @@ function CartPage() {
   );
 }
 
+function AutoPlayingTryOnVideo({ src, poster }) {
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !src) return;
+    video.muted = true;
+    video.playsInline = true;
+    video.currentTime = 0;
+    const playPromise = video.play();
+    if (playPromise?.catch) playPromise.catch(() => {});
+  }, [src]);
+
+  return (
+    <video
+      ref={videoRef}
+      className="tryon-video-player"
+      src={src}
+      poster={poster}
+      autoPlay
+      muted
+      loop
+      playsInline
+    />
+  );
+}
+
 function ProductPage({ id, user, setUser }) {
   const { product, loading, error } = useProduct(id);
   const related = useSimilarProducts(id, 4);
@@ -6530,15 +6557,16 @@ function ProductPage({ id, user, setUser }) {
   const badge = displayProductBadge(product);
   const hasUsableTryOn = Boolean(tryOnImageUrl) && !tryOnImageFailed;
   const hasTryOnVideo = Boolean(tryOnVideoUrl) && hasUsableTryOn;
-  const showingTryOn = hasUsableTryOn && detailImageView !== 'product';
-  const showingTryOnVideo = showingTryOn && hasTryOnVideo;
+  const showingTryOnVideo = hasTryOnVideo && detailImageView === 'video';
+  const showingTryOn = hasUsableTryOn && (detailImageView === 'tryon' || showingTryOnVideo);
+  const showingTryOnImage = hasUsableTryOn && detailImageView === 'tryon';
   const image = showingTryOn ? tryOnImageUrl : productImage;
   const swapPreview = hasUsableTryOn && product.imageUrl
     ? {
-        label: showingTryOn ? 'Product photo' : 'AI Try-On',
-        src: showingTryOn ? product.imageUrl : tryOnImageUrl,
-        alt: showingTryOn ? `${product.name} product photo` : `AI try-on for ${product.name}`,
-        nextView: showingTryOn ? 'product' : 'tryon'
+        label: detailImageView === 'product' ? 'AI Try-On' : 'Product photo',
+        src: detailImageView === 'product' ? tryOnImageUrl : product.imageUrl,
+        alt: detailImageView === 'product' ? `AI try-on for ${product.name}` : `${product.name} product photo`,
+        nextView: detailImageView === 'product' ? 'tryon' : 'product'
       }
     : null;
   const brand = displayBrand(product);
@@ -6563,10 +6591,18 @@ function ProductPage({ id, user, setUser }) {
     },
     hasUsableTryOn && {
       key: 'tryon',
-      label: hasTryOnVideo ? 'AI Video' : 'AI Try-On',
+      label: 'AI Try-On',
       src: tryOnImageUrl,
-      active: showingTryOn,
+      active: showingTryOnImage,
       onSelect: () => setDetailImageView('tryon')
+    },
+    hasTryOnVideo && {
+      key: 'video',
+      label: 'AI Video',
+      src: tryOnImageUrl,
+      videoUrl: tryOnVideoUrl,
+      active: showingTryOnVideo,
+      onSelect: () => setDetailImageView('video')
     }
   ].filter(Boolean);
 
@@ -6641,7 +6677,7 @@ function ProductPage({ id, user, setUser }) {
         body: regenerate ? JSON.stringify({ force: true }) : undefined
       });
       setTryOn(data.tryOn);
-      setDetailImageView('tryon');
+      setDetailImageView('video');
       recordEvent('try_on', { productId: product.id, metadata: { video: true, regenerated: regenerate } });
       if (data.user) {
         setUser((current) => {
@@ -6671,7 +6707,7 @@ function ProductPage({ id, user, setUser }) {
                   aria-label={`Open video try-on for ${product.name} full screen`}
                   onClick={() => setFullscreenImage({ type: 'video', src: tryOnVideoUrl, poster: tryOnImageUrl, alt: `Video try-on for ${product.name}`, title: product.name })}
                 >
-                  <video className="tryon-video-player" src={tryOnVideoUrl} poster={tryOnImageUrl} autoPlay muted loop playsInline />
+                  <AutoPlayingTryOnVideo src={tryOnVideoUrl} poster={tryOnImageUrl} />
                   <span>Tap to preview</span>
                 </button>
               ) : (
@@ -6725,8 +6761,9 @@ function ProductPage({ id, user, setUser }) {
             {showingTryOn && <AiPreviewDisclaimer className="product-ai-disclaimer product-gallery-disclaimer" />}
             <div className="product-editorial-thumbnails" aria-label="Product image gallery">
               {galleryItems.map((item) => (
-                <button className={item.active ? 'active' : ''} type="button" key={item.key} onClick={item.onSelect} aria-label={`Show ${item.label}`} title={item.label}>
-                  <img src={item.src} alt="" />
+                <button className={`${item.active ? 'active' : ''} ${item.videoUrl ? 'video-thumb' : ''}`.trim()} type="button" key={item.key} onClick={item.onSelect} aria-label={`Show ${item.label}`} title={item.label}>
+                  {item.videoUrl ? <video src={item.videoUrl} poster={item.src} muted playsInline preload="metadata" /> : <img src={item.src} alt="" />}
+                  {item.videoUrl && <span aria-hidden="true">▶</span>}
                 </button>
               ))}
             </div>
