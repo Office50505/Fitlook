@@ -799,6 +799,11 @@ function displayCategory(product) {
   return cleanDisplayText(product?.category, 'Products');
 }
 
+function displayProductBadge(product) {
+  const badge = cleanDisplayText(product?.badge, '');
+  return badge.toLowerCase() === 'affiliate' ? '' : badge;
+}
+
 function usableBrands(brands = []) {
   return brands.map((brand) => cleanDisplayText(brand, '')).filter(Boolean);
 }
@@ -1317,7 +1322,7 @@ function Header({ user, setUser }) {
       <header className="site-header" ref={headerRef}>
         <div className="wrap header-inner">
           <div className="header-left">
-            <a className="brand" href="/home">Lookmefy</a>
+            <a className="brand" href="/home"><BrandLogo /></a>
             <nav className="nav" aria-label="Primary navigation">
               {navLinks.map(([label, href], index) => {
                 const active = isActiveLink(href, index);
@@ -1441,7 +1446,7 @@ function Footer({ compact = false }) {
       <footer className="wishlist-compact-footer">
         <div className="wrap wishlist-compact-footer-inner">
           <div className="wishlist-compact-footer-grid">
-            <div className="wishlist-compact-brand"><a href="/">Lookmefy</a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div className="wishlist-compact-social" aria-label="Social links">{socialLinks.map((item) => <a href={item.href} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label} key={item.label}><SocialLogo name={item.icon} /></a>)}</div></div>
+            <div className="wishlist-compact-brand"><a href="/"><BrandLogo /></a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div className="wishlist-compact-social" aria-label="Social links">{socialLinks.map((item) => <a href={item.href} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label} key={item.label}><SocialLogo name={item.icon} /></a>)}</div></div>
             <div><h2>Shop</h2><a href="/categories">New in</a><a href="/categories?gender=women">Women</a><a href="/categories?gender=men">Men</a><a href="/categories?discounted=true">Sale</a></div>
             <div><h2>Help</h2><a href="/support">Support</a><a href="/returns">Returns</a><a href="/contact">Contact us</a><a href="/shipping">Shipping</a></div>
             <div><h2>Download our App</h2><p>Get the Lookmefy app for your daily fashion edit.</p><div className="wishlist-app-links">{appLinks.map((item) => <a className="wishlist-app-link" href={item.href} aria-label={item.label} key={item.label}><StoreLogo name={item.icon} /><span><small>{item.helper}</small><strong>{item.label}</strong></span></a>)}</div></div>
@@ -1457,7 +1462,7 @@ function Footer({ compact = false }) {
       <div className="wrap">
         <div className="footer-grid">
           <div className="footer-brand-block">
-            <a className="footer-logo" href="/">Lookmefy</a>
+            <a className="footer-logo" href="/"><BrandLogo /></a>
             <p className="footer-about">Defining the intersection of personal styling and digital try-on. Curated for the modern wardrobe.</p>
             <div className="footer-social" aria-label="Social links">
               {socialLinks.map((item) => <a href={item.href} key={item.label} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label}><SocialLogo name={item.icon} /></a>)}
@@ -1471,6 +1476,10 @@ function Footer({ compact = false }) {
       </div>
     </footer>
   );
+}
+
+function BrandLogo() {
+  return <img className="brand-logo-image" src={asset('lookmefy-logo.svg')} alt="Lookmefy" />;
 }
 
 function SocialLogo({ name }) {
@@ -1624,11 +1633,12 @@ function AtelierProductRailCard({ product }) {
   const discount = hasDiscount ? Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100) : 0;
   const rating = Number(product.rating || 0);
   const ratingCount = Number(product.ratingCount || product.reviewsCount || product.reviewCount || 0);
+  const badge = displayProductBadge(product);
 
   return (
     <article className="atelier-product">
       <a className="atelier-product-image" href={`/product/${encodeURIComponent(product.id)}`} aria-label={`Open ${product.name}`}>
-        {(product.badge || discount > 0) && <span className="atelier-best-seller">{product.badge || `${discount}% off`}</span>}
+        {(badge || discount > 0) && <span className="atelier-best-seller">{badge || `${discount}% off`}</span>}
         <OptimizedImage src={product.imageUrl} alt={product.name} />
         <span className="atelier-product-quick-link">View Product</span>
       </a>
@@ -2895,6 +2905,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
   const [isWishlisted, setIsWishlisted] = useState(() => readWishlistProductIds().includes(String(product.id)));
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? `${Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}% OFF` : '';
+  const badge = displayProductBadge(product);
   const productImage = product.imageUrl || asset('hero2.png');
   const tryOnImageUrl = protectedMediaUrl(tryOn?.imageUrl || '');
   const tryOnVideoUrl = protectedMediaUrl(tryOn?.videoUrl || '');
@@ -2948,7 +2959,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
             }}
           />
         )}
-        {product.badge && <span className="badge">{product.badge}</span>}
+        {badge && <span className="badge">{badge}</span>}
         {hasUsableTryOn && <span className="badge tryon-badge">{hasTryOnVideo ? 'Video Try-On' : 'AI Try-On'}</span>}
         <TryOnGenerating active={tryOnLoading || tryOnVideoLoading} text={tryOnVideoLoading ? 'Generating video' : 'Generating try-on'} />
       </div>
@@ -6461,6 +6472,7 @@ function ProductPage({ id, user, setUser }) {
   const productImage = product.imageUrl || asset('hero2.png');
   const tryOnImageUrl = protectedMediaUrl(tryOn?.imageUrl || '');
   const tryOnVideoUrl = protectedMediaUrl(tryOn?.videoUrl || '');
+  const badge = displayProductBadge(product);
   const hasUsableTryOn = Boolean(tryOnImageUrl) && !tryOnImageFailed;
   const hasTryOnVideo = Boolean(tryOnVideoUrl) && hasUsableTryOn;
   const showingTryOn = hasUsableTryOn && detailImageView !== 'product';
@@ -6624,7 +6636,7 @@ function ProductPage({ id, user, setUser }) {
                   }}
                 />
               )}
-              {product.badge && <span className="badge">{product.badge}</span>}
+              {badge && <span className="badge">{badge}</span>}
               {showingTryOn && <span className="badge tryon-badge">{showingTryOnVideo ? 'Video Try-On' : 'AI Try-On'}</span>}
               {hasUsableTryOn && !showingTryOnVideo && (
                 <button

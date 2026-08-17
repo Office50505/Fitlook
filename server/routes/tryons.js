@@ -70,20 +70,6 @@ const tryOnImageHourlyLimiter = createRateLimiter({
   keyGenerator: rateLimitKeys.user,
   message: 'AI try-on generation is temporarily limited for your account. Please try again later.'
 });
-const tryOnVideoBurstLimiter = createRateLimiter({
-  name: 'tryons:video-burst',
-  windowMs: 10 * 60 * 1000,
-  max: 3,
-  keyGenerator: rateLimitKeys.user,
-  message: 'Too many video try-on requests. Please wait before generating another video.'
-});
-const tryOnVideoHourlyLimiter = createRateLimiter({
-  name: 'tryons:video-hour',
-  windowMs: 60 * 60 * 1000,
-  max: 10,
-  keyGenerator: rateLimitKeys.user,
-  message: 'Video try-on generation is temporarily limited for your account. Please try again later.'
-});
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 },
@@ -2020,7 +2006,7 @@ router.post('/external', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLi
   }
 });
 
-router.post('/:productId/video', requireUser, tryOnVideoBurstLimiter, tryOnVideoHourlyLimiter, async (req, res) => {
+router.post('/:productId/video', requireUser, async (req, res) => {
   const forceGenerate = Boolean(req.body?.force || req.body?.refresh);
   const timer = createTimer('video', {
     userId: req.user._id.toString(),
