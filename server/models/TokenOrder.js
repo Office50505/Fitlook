@@ -14,8 +14,12 @@ const tokenOrderSchema = new mongoose.Schema(
       index: true
     },
     amount: { type: Number, required: true },
+    dueTodayAmount: { type: Number },
+    recurringAmount: { type: Number },
+    billingFrequency: { type: String, trim: true },
     currency: { type: String, trim: true, uppercase: true, default: 'INR' },
     tokens: { type: Number, required: true },
+    idempotencyKey: { type: String, trim: true },
     mandateId: { type: String, trim: true },
     parentOrderId: { type: String, trim: true },
     billingCycle: { type: Number, default: 0 },
@@ -37,6 +41,10 @@ const tokenOrderSchema = new mongoose.Schema(
 );
 
 tokenOrderSchema.index({ user: 1, createdAt: -1 });
+tokenOrderSchema.index(
+  { user: 1, idempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } }
+);
 tokenOrderSchema.index({ createdAt: -1 });
 tokenOrderSchema.index({ status: 1, createdAt: -1 });
 
@@ -49,6 +57,9 @@ tokenOrderSchema.methods.toClient = function toClient() {
     planName: this.planName,
     orderType: this.orderType,
     amount: this.amount,
+    dueTodayAmount: this.dueTodayAmount,
+    recurringAmount: this.recurringAmount,
+    billingFrequency: this.billingFrequency,
     currency: this.currency,
     tokens: this.tokens,
     mandateId: this.mandateId,

@@ -22968,6 +22968,336 @@ textarea { font: inherit; }
 }
 .skip-link:focus { transform: translateY(0); }
 
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  padding: 0 !important;
+  margin: -1px !important;
+}
+
+.header-auth-loading,
+.header-credit-button.auth-pending {
+  cursor: wait;
+}
+
+.header-auth-skeleton {
+  width: 18px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(17, 16, 14, .08), rgba(17, 16, 14, .18), rgba(17, 16, 14, .08));
+  background-size: 180% 100%;
+  animation: fitlook-skeleton 1.2s ease-in-out infinite;
+}
+
+.mobile-menu-auth-loading {
+  display: flex;
+  min-height: var(--fl-touch);
+  align-items: center;
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #756b65;
+  font-family: var(--font-interface);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mobile-search-page-form {
+  position: relative;
+}
+
+.mobile-search-clear {
+  display: grid;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #6f6963;
+}
+
+.mobile-search-clear svg {
+  width: 15px;
+  height: 15px;
+}
+
+.empty-products {
+  min-height: 220px;
+  align-content: center;
+}
+
+.empty-products-suggestions,
+.empty-products-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.empty-products-suggestions span {
+  flex-basis: 100%;
+  color: #8a6a62;
+  font-family: var(--font-interface);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.empty-products-suggestions a,
+.empty-products-actions a:not(.button) {
+  min-height: 36px;
+  border: 1px solid rgba(34, 30, 27, .12);
+  border-radius: 999px;
+  padding: 9px 13px;
+  background: #fff;
+  color: #2c2927;
+  font-family: var(--font-interface);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.button.secondary {
+  border-color: rgba(34, 30, 27, .18) !important;
+  background: #fff !important;
+  color: #292421 !important;
+}
+
+.auth-gate-page,
+.not-found-page {
+  display: grid;
+  min-height: calc(100svh - 160px);
+  align-items: center;
+  background: #faf7f4;
+}
+
+.auth-gate-panel,
+.not-found-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, .72fr);
+  gap: clamp(24px, 5vw, 72px);
+  align-items: center;
+  padding-block: clamp(44px, 7vw, 96px);
+}
+
+.auth-gate-copy,
+.not-found-panel > div {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-gate-copy > p,
+.not-found-panel p {
+  margin: 0;
+  color: #9b514d;
+  font-family: var(--font-interface);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.auth-gate-copy h1,
+.not-found-panel h1 {
+  max-width: 680px;
+  margin: 0;
+  color: #211e1c;
+  font-family: var(--font-display);
+  font-size: clamp(40px, 7vw, 76px);
+  font-weight: 400;
+  line-height: .92;
+}
+
+.auth-gate-copy > span,
+.not-found-panel > div > span {
+  max-width: 520px;
+  color: #706863;
+  font-family: var(--font-interface);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.auth-gate-actions,
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.auth-gate-loading {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  color: #706863;
+  font-family: var(--font-interface);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.auth-gate-loading i {
+  width: 34px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(17, 16, 14, .08), rgba(17, 16, 14, .18), rgba(17, 16, 14, .08));
+  background-size: 180% 100%;
+  animation: fitlook-skeleton 1.2s ease-in-out infinite;
+}
+
+.auth-gate-visual {
+  overflow: hidden;
+  aspect-ratio: 4 / 5;
+  border-radius: 8px;
+  background: #efe8e3;
+}
+
+.auth-gate-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.not-found-categories {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.not-found-categories a {
+  min-height: 52px;
+  border: 1px solid rgba(34, 30, 27, .12);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fff;
+  color: #292421;
+  font-family: var(--font-interface);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.product-detail-skeleton .product-summary {
+  min-height: 420px;
+}
+
+.product-tryon-credit-panel {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 6px;
+  border: 1px solid rgba(34, 30, 27, .10);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fffaf8;
+  color: #4f4742;
+  font-family: var(--font-interface);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.product-tryon-credit-panel strong {
+  color: #211e1c;
+  font-size: 12px;
+}
+
+.garment-upload-guidance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.garment-upload-guidance > div {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-content: start;
+  border: 1px solid rgba(34, 30, 27, .10);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, .54);
+}
+
+.garment-upload-guidance strong {
+  flex-basis: 100%;
+  color: #2a2522;
+  font-family: var(--font-interface);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.garment-upload-guidance span {
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(34, 30, 27, .06);
+  color: #615851;
+  font-family: var(--font-interface);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.wardrobe-empty-state {
+  position: absolute;
+  z-index: 4;
+  right: clamp(16px, 4vw, 42px);
+  bottom: clamp(92px, 12vw, 142px);
+  display: grid;
+  max-width: min(360px, calc(100% - 32px));
+  gap: 10px;
+  border: 1px solid rgba(34, 30, 27, .12);
+  border-radius: 8px;
+  padding: 18px;
+  background: rgba(255, 253, 252, .94);
+  box-shadow: 0 18px 40px rgba(34, 30, 27, .12);
+}
+
+.wardrobe-empty-state h2,
+.wardrobe-empty-state p {
+  margin: 0;
+}
+
+.wardrobe-empty-state h2 {
+  color: #211e1c;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.wardrobe-empty-state p,
+.wardrobe-empty-state span {
+  color: #706863;
+  font-family: var(--font-interface);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.credit-pack-option.selected::before {
+  content: "Selected";
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #211e1c;
+  color: #fff;
+  font-family: var(--font-interface);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+@keyframes fitlook-skeleton {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
 .status-panel {
   display: flex;
   min-height: 84px;
@@ -23019,6 +23349,38 @@ textarea { font: inherit; }
   :target { scroll-margin-top: 72px; }
   .status-panel { min-height: 0; align-items: flex-start; flex-direction: column; }
   .status-panel button { width: 100%; }
+  .auth-gate-panel,
+  .not-found-panel {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+  .auth-gate-visual {
+    max-height: 320px;
+  }
+  .not-found-categories,
+  .garment-upload-guidance {
+    grid-template-columns: 1fr;
+  }
+  .empty-products-actions,
+  .empty-products-suggestions,
+  .auth-gate-actions,
+  .not-found-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .empty-products-actions a,
+  .empty-products-suggestions a,
+  .auth-gate-actions a,
+  .not-found-actions a {
+    justify-content: center;
+    text-align: center;
+  }
+  .wardrobe-empty-state {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    margin: 10px 14px;
+  }
 }
 
 /* Shared interaction feedback, layered over the established editorial UI. */
@@ -25469,10 +25831,10 @@ a.atelier-hero-orbit-wardrobe:hover {
 .wardrobe-sidebar-head h1,
 .wardrobe-recommendations-head h2 {
   min-width: 0 !important;
-  overflow: hidden !important;
+  overflow: visible !important;
   font-size: clamp(20px, 1.35vw, 25px) !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
 }
 
 .wardrobe-recommendations-head h2 {
@@ -31896,22 +32258,22 @@ body:has(.network-status):has(.app-toast) .wishlist-undo-toast {
 /* Wardrobe recommendations: keep narrow cards readable and stop CTA overlap. */
 .wardrobe-recommendations-head {
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-columns: minmax(0, 1fr) !important;
   align-items: center !important;
   gap: 12px !important;
 }
 
 .wardrobe-recommendations-head h2 {
   min-width: 0 !important;
-  overflow: hidden !important;
-  font-size: clamp(24px, 2vw, 34px) !important;
-  line-height: 1 !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
+  overflow: visible !important;
+  font-size: clamp(20px, 1.35vw, 25px) !important;
+  line-height: 1.05 !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
 }
 
 .wardrobe-recommendations-head .wardrobe-refresh-button {
-  flex: 0 0 auto !important;
+  justify-self: start !important;
   white-space: nowrap !important;
 }
 
@@ -33713,6 +34075,14 @@ label,
   text-decoration: none !important;
 }
 
+.site-header .brand {
+  position: relative !important;
+  width: clamp(118px, 9vw, 132px) !important;
+  height: clamp(52px, 4.8vw, 64px) !important;
+  justify-content: center !important;
+  overflow: visible !important;
+}
+
 .brand-logo-image {
   display: block;
   width: auto;
@@ -33722,7 +34092,11 @@ label,
 }
 
 .site-header .brand .brand-logo-image {
-  height: clamp(66px, 6.4vw, 96px);
+  width: clamp(170px, 12.8vw, 188px);
+  height: auto;
+  max-width: none;
+  object-fit: contain;
+  transform: translateY(12px);
 }
 
 .footer-logo .brand-logo-image {
@@ -33734,12 +34108,30 @@ label,
 }
 
 @media (max-width: 820px) {
+  .site-header .brand {
+    width: clamp(88px, 22vw, 112px) !important;
+    height: 54px !important;
+  }
+
   .site-header .brand .brand-logo-image {
-    height: 56px;
+    width: clamp(128px, 19vw, 150px);
+    height: auto;
+    transform: translateY(7px);
   }
 
   .footer-logo .brand-logo-image {
     height: 50px;
+  }
+}
+
+@media (max-width: 520px) {
+  .site-header .brand {
+    width: 88px !important;
+  }
+
+  .site-header .brand .brand-logo-image {
+    width: 104px;
+    transform: translateY(1px);
   }
 }
 
@@ -34156,5 +34548,85 @@ label,
   .wardrobe-model-tools.right {
     top: calc(112px + min(250px, 31svh)) !important;
     z-index: 22 !important;
+  }
+}
+
+/* Final mobile credit QA: prevent card text collisions and partial side cards. */
+@media (max-width: 700px) {
+  .credit-purchase-page .credit-pack-grid,
+  .credit-purchase-page .credit-pack-grid.overview-grid,
+  .credit-purchase-page .credit-pack-grid.topup-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    overflow: visible !important;
+  }
+
+  .credit-purchase-page .credit-pack-option {
+    width: 100% !important;
+    min-height: 0 !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    padding: 44px 18px 18px !important;
+  }
+
+  .credit-purchase-page .credit-pack-option > strong,
+  .credit-purchase-page .credit-pack-option > b,
+  .credit-purchase-page .credit-pack-option > span,
+  .credit-purchase-page .credit-pack-option > i,
+  .credit-purchase-page .credit-pack-option .credit-pack-rate {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+    max-width: 100% !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .credit-purchase-page .credit-pack-option > strong {
+    font-size: clamp(34px, 11vw, 48px) !important;
+    line-height: 1.02 !important;
+  }
+
+  .credit-purchase-page .credit-pack-option > b {
+    font-size: 15px !important;
+    line-height: 1.25 !important;
+  }
+
+  .credit-purchase-page .credit-pack-option > span,
+  .credit-purchase-page .credit-pack-option > i {
+    font-size: 12px !important;
+  }
+
+  .credit-purchase-page .credit-pack-option.selected::before {
+    top: 12px !important;
+    left: 14px !important;
+  }
+}
+
+/* Final header QA: desktop keeps the full nav; tablet and mobile use the drawer. */
+@media (min-width: 1181px) {
+  .site-header .nav {
+    display: flex !important;
+  }
+
+  .site-header .menu-toggle {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  .site-header .menu-toggle[aria-expanded="true"] {
+    position: fixed !important;
+    top: max(18px, env(safe-area-inset-top)) !important;
+    right: max(18px, env(safe-area-inset-right)) !important;
+    z-index: 94 !important;
+    background: #fffdfc !important;
+    box-shadow: 0 16px 34px rgba(17, 16, 14, .16) !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .product-editorial-summary h1 {
+    font-size: clamp(30px, 9vw, 38px) !important;
+    line-height: 1.08 !important;
   }
 }

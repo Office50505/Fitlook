@@ -489,7 +489,7 @@ Hardcoded UI/editorial data exists for:
 - audience/category visual mappings
 - feature/benefit copy
 - some default recommendation prompts
-- demo/test OTP is returned as `devOtp`
+- mock OTP delivery is limited to server-local automation storage and is blocked in production
 
 Backend product data is used for actual catalog cards and detail pages. Hardcoded editorial data is acceptable as presentation content, but any product/count display should continue to prefer backend facets.
 
@@ -500,7 +500,7 @@ Backend product data is used for actual catalog cards and detail pages. Hardcode
 - The frontend does not expose provider secrets directly.
 - `.env.example` and Terraform examples contain placeholder secret names only.
 - `deploy/aws/terraform/terraform.tfvars.save` exists and should be checked carefully before commits/deploys to ensure real secrets are not present.
-- OTP endpoints currently return `devOtp`, which is useful for local testing but must not be enabled in production.
+- OTP endpoints return only opaque session state to the browser; production must use `OTP_DELIVERY_PROVIDER=webhook` with a server-only webhook URL.
 
 ## Technical Debt
 
@@ -520,7 +520,7 @@ Backend product data is used for actual catalog cards and detail pages. Hardcode
 ## Recommended Implementation Order
 
 1. Stabilize scripts and quality gates: add lint for root app, decide whether the root app remains JS or migrates selected shared utilities to TS, and separate slow/provider tests from fast unit tests.
-2. Align auth contract: make phone OTP the real backend signup/login contract, remove fabricated email/password from the frontend, and stop returning `devOtp` in production.
+2. Keep auth contract aligned around phone OTP signup/login and verify the production webhook provider before launch.
 3. Split `src/App.jsx` into route/page modules without changing behavior.
 4. Extract design-system primitives: Button, IconButton, TextField, Select, Sheet/Dialog, Toast, ProductCard, ProductRail, FilterBar, EmptyState, Skeleton.
 5. Consolidate responsive breakpoints and layout tokens.

@@ -52,7 +52,8 @@ async function createOtpChallenge({ sessions, currentSessions, purpose, phone, m
   }));
   await currentSessions.create({ otpSession, phone }, phoneScopeId(purpose, phone));
 
-  return { otpSession, otp };
+  const session = await sessions.get(otpSession);
+  return { otpSession, otp, expiresAt: session?.expiresAt };
 }
 
 async function currentSessionMatches({ currentSessions, purpose, phone, otpSession }) {

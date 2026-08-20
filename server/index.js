@@ -14,11 +14,11 @@ import imageRoutes from './routes/images.js';
 import jobRoutes from './routes/jobs.js';
 import { requireAdmin } from './utils/adminAccess.js';
 import { closeRedisClient, getRedisClient } from './utils/cache.js';
-import { closeJobQueues } from './utils/jobQueue.js';
+import { closeJobQueues, queueEnabled } from './utils/jobQueue.js';
 import { configureMongoSlowQueryLogging, observabilitySnapshot, requestLogger } from './utils/observability.js';
 import { createRateLimiter, rateLimitKeys } from './utils/rateLimit.js';
 import { appRole, mongoConnectOptions, serviceMetadata } from './utils/runtime.js';
-import { validateServerEnv } from './utils/envValidation.js';
+import { configurationReadiness, validateServerEnv } from './utils/envValidation.js';
 import { securityHeaders, serveUploadedMedia } from './utils/security.js';
 
 dotenv.config();
@@ -133,7 +133,19 @@ app.get('/api/health/ready', async (_req, res) => {
     redis = Boolean(await getRedisClient());
   }
   const ready = !shuttingDown && mongo && redis;
-  res.status(ready ? 200 : 503).json({ ok: ready, ready, mongo, redis, shuttingDown, ...service });
+  const config = configurationReadiness();
+  res.status(ready ? 200 : 503).json({
+    ok: ready,
+    ready,
+    database: mongo ? 'ready' : 'not_ready',
+    redis: redis ? 'ready' : 'not_ready',
+    queue: queueEnabled() ? 'ready' : 'disabled',
+    otpProvider: config.otpProvider,
+    otpProviderType: config.otpProviderType,
+    phonePe: config.phonePe,
+    shuttingDown,
+    ...service
+  });
 });
 
 app.get('/api/admin/metrics', requireAdmin, adminMetricsLimiter, async (_req, res, next) => {

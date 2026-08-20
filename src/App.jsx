@@ -23,6 +23,8 @@ const AI_IMAGE_TIMEOUT_MS = 180000;
 const AI_VIDEO_TIMEOUT_MS = 300000;
 const PRODUCT_CACHE_TTL_MS = 30_000;
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const AUTH_TOKEN_KEY = 'fitlook_token';
+const ENABLE_TEST_OTP_HELPER = import.meta.env.DEV && import.meta.env.VITE_ENABLE_TEST_OTP_HELPER !== 'false';
 const productListCache = new Map();
 const productDetailLocalCache = new Map();
 const EMPTY_PRODUCT_FACETS = { brands: [], categories: [], categoryCounts: [] };
@@ -438,6 +440,9 @@ const categories = [
   ['Innerwear', 'arrival-6.jpg', 'innerwear'],
   ['Sleepwear', 'arrival-5.jpg', 'sleepwear']
 ];
+const featuredSearchCategories = categories.slice(0, 8);
+const popularSearchTerms = ['shirts', 'jeans', 'innerwear', 'ethnic wear', 'shoes', 'sleepwear'];
+const suggestedSearchTerms = ['shirts', 't-shirts', 'dresses', 'jeans', 'shoes', 'accessories'];
 
 function categorySlug(value) {
   return String(value || 'uncategorized').trim().toLowerCase();
@@ -742,11 +747,55 @@ function normalizePath() {
 }
 
 function authReturnPath() {
-  return '/home';
+  const value = new URLSearchParams(window.location.search).get('return') || '';
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/home';
+  try {
+    const url = new URL(value, window.location.origin);
+    if (url.origin !== window.location.origin) return '/home';
+    return `${url.pathname}${url.search}${url.hash}` || '/home';
+  } catch {
+    return '/home';
+  }
+}
+
+function requiresAuthentication(path = normalizePath()) {
+  return path === '/profile'
+    || path === '/style-bot'
+    || path === '/custom-try-on'
+    || path === '/try-on'
+    || path === '/closet'
+    || path.startsWith('/closet/');
+}
+
+function readAuthToken() {
+  const persistent = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (persistent) return persistent;
+  const legacy = sessionStorage.getItem(AUTH_TOKEN_KEY);
+  if (legacy) {
+    localStorage.setItem(AUTH_TOKEN_KEY, legacy);
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+  return legacy || '';
+}
+
+function writeAuthToken(token) {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+  sessionStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+function clearAuthToken() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  sessionStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
 function currentSearchValue() {
-  return new URLSearchParams(window.location.search).get('q') || '';
+  return normalizeSearchQuery(new URLSearchParams(window.location.search).get('q') || '');
+}
+
+function normalizeSearchQuery(value = '') {
+  let query = String(value || '').trim().replace(/\s+/g, ' ');
+  query = query.replace(/^[`"'“”‘’]+|[`"'“”‘’]+$/g, '').trim().replace(/\s+/g, ' ');
+  return query;
 }
 
 function isWardrobeRoomPreview(value = '') {
@@ -763,23 +812,24 @@ function protectedMediaUrl(value = '') {
   const url = typeof value === 'string' ? value.trim() : '';
   if (!url || /^(?:data:|blob:)/i.test(url)) return url;
   if (!url.startsWith('/uploads/')) return url;
-  const token = sessionStorage.getItem('fitlook_token');
+  const token = readAuthToken();
+  if (!token || /(?:[?&])token=/.test(url)) return API_BASE_URL ? `${API_BASE_URL}${url}` : url;
   const separator = url.includes('?') ? '&' : '?';
-  const withToken = token ? `${url}${separator}token=${encodeURIComponent(token)}` : url;
+  const withToken = `${url}${separator}token=${encodeURIComponent(token)}`;
   return API_BASE_URL ? `${API_BASE_URL}${withToken}` : withToken;
 }
 
 function readRecentSearches() {
   try {
     const stored = JSON.parse(localStorage.getItem('fitlook_recent_searches') || '[]');
-    return Array.isArray(stored) ? stored.filter((value) => typeof value === 'string' && value.trim()).slice(0, 6) : [];
+    return Array.isArray(stored) ? stored.map(normalizeSearchQuery).filter(Boolean).slice(0, 6) : [];
   } catch {
     return [];
   }
 }
 
 function saveRecentSearch(search) {
-  const value = String(search || '').trim().replace(/\s+/g, ' ');
+  const value = normalizeSearchQuery(search);
   if (!value) return readRecentSearches();
   const next = [value, ...readRecentSearches().filter((item) => item.toLowerCase() !== value.toLowerCase())].slice(0, 6);
   try {
@@ -859,7 +909,7 @@ async function api(path, options = {}) {
   } = options;
   const method = String(requestOptions.method || 'GET').toUpperCase();
   const retryCount = retry === undefined ? (method === 'GET' ? 1 : 0) : Math.max(0, Number(retry) || 0);
-  const token = sessionStorage.getItem('fitlook_token');
+  const token = readAuthToken();
   const headers = requestOptions.body instanceof FormData ? {} : { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   const requestPath = String(path || '').startsWith('/') ? String(path || '') : `/${path || ''}`;
@@ -948,7 +998,7 @@ async function generateQueuedTryOn(path, options = {}) {
 
 function recordEvent(type, payload = {}) {
   trackClientEvent(type, payload);
-  if (!sessionStorage.getItem('fitlook_token')) return;
+  if (!readAuthToken()) return;
   api('/recommendations/events', {
     method: 'POST',
     body: JSON.stringify({ type, ...payload })
@@ -1255,17 +1305,19 @@ function MobileBottomNav({ user }) {
   );
 }
 
-function Header({ user, setUser }) {
+function Header({ user, setUser, authChecked = true }) {
   const tokenLabel = user ? `${user.tokens} Tokens` : 'Tokens';
   const [menuOpen, setMenuOpen] = useState(false);
   const [wishlistCount, setWishlistCount] = useState(() => user?.wishlistCount || readWishlistProductIds().length);
+  const [desktopSearch, setDesktopSearch] = useState(currentSearchValue);
   const headerRef = useRef(null);
   const desktopSearchRef = useRef(null);
   const [recentSearches, setRecentSearches] = useState(readRecentSearches);
   const currentPath = normalizePath();
   const currentParams = new URLSearchParams(window.location.search);
+  const searchValueFromUrl = currentSearchValue();
   const logout = () => {
-    sessionStorage.removeItem('fitlook_token');
+    clearAuthToken();
     setUser(null);
     setMenuOpen(false);
     window.history.pushState({}, '', '/');
@@ -1318,6 +1370,10 @@ function Header({ user, setUser }) {
   }, [menuOpen]);
 
   useEffect(() => {
+    setDesktopSearch(searchValueFromUrl);
+  }, [currentPath, searchValueFromUrl]);
+
+  useEffect(() => {
     setWishlistCount(user?.wishlistCount || readWishlistProductIds().length);
   }, [user?.wishlistCount]);
 
@@ -1348,20 +1404,29 @@ function Header({ user, setUser }) {
         focusSearch();
       }
       if (event.key === 'Escape' && element === desktopSearchRef.current) {
-        element.blur();
+        if (desktopSearch) setDesktopSearch('');
+        else element.blur();
       }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [desktopSearch]);
 
   const rememberSearch = (event) => {
-    const query = new FormData(event.currentTarget).get('q');
+    const query = normalizeSearchQuery(new FormData(event.currentTarget).get('q'));
+    const field = event.currentTarget.elements.q;
+    if (field) field.value = query;
+    if (!query) {
+      event.preventDefault();
+      setDesktopSearch('');
+      desktopSearchRef.current?.focus();
+      return;
+    }
     setRecentSearches(saveRecentSearch(query));
     setMenuOpen(false);
   };
-  const clearSearch = (target) => {
-    if (desktopSearchRef.current) desktopSearchRef.current.value = '';
+  const clearSearch = () => {
+    setDesktopSearch('');
     desktopSearchRef.current?.focus();
   };
 
@@ -1386,22 +1451,22 @@ function Header({ user, setUser }) {
           <div className="header-search" role="search">
             <form className="search-form" action="/categories" onSubmit={rememberSearch}>
               <button className="search-submit" type="submit" aria-label="Search"><SearchIcon /></button>
-              <input ref={desktopSearchRef} name="q" type="search" list="fitlook-recent-searches" placeholder="Search curated collections..." defaultValue={currentSearchValue()} aria-label="Search products" aria-keyshortcuts="Control+K Meta+K" title="Search (Ctrl+K)" />
-              <button className="search-clear" type="button" aria-label="Clear search" onClick={() => clearSearch('desktop')}><CloseIcon /></button>
+              <input ref={desktopSearchRef} name="q" type="search" list="fitlook-recent-searches" placeholder="Search curated collections..." value={desktopSearch} onChange={(event) => setDesktopSearch(event.currentTarget.value)} aria-label="Search products" aria-keyshortcuts="Control+K Meta+K" title="Search (Ctrl+K)" />
+              {desktopSearch && <button className="search-clear" type="button" aria-label="Clear search" onClick={clearSearch}><CloseIcon /></button>}
             </form>
           </div>
           <div className="header-actions">
             <a className="icon-button mobile-search-trigger" href="/search" aria-label="Open search"><SearchIcon /></a>
-            <a className="header-credit-button" href="/tokens" aria-label={user ? `Buy credits. ${tokenLabel} available` : 'Buy credits'}><SparkleLineIcon /><span>Credits</span>{user && <strong>{user.tokens}</strong>}</a>
+            <a className={`header-credit-button ${!authChecked ? 'auth-pending' : ''}`} href="/tokens" aria-label={user ? `Buy credits. ${tokenLabel} available` : 'Buy credits'}><SparkleLineIcon /><span>Credits</span>{user && <strong>{user.tokens}</strong>}{!authChecked && <strong className="header-auth-skeleton" aria-hidden="true" />}</a>
             <a className="icon-button header-count-button" href="/wishlist" aria-label={`${wishlistCount} wishlist items`}><HeartIcon />{wishlistCount > 0 && <strong>{wishlistCount}</strong>}</a>
-            {user ? <a className="icon-button" href="/profile" aria-label="Profile"><UserIcon /></a> : <a className="icon-button" href="/signup" aria-label="Account"><UserIcon /></a>}
+            {!authChecked ? <span className="icon-button header-auth-loading" role="status" aria-label="Checking account"><UserIcon /></span> : user ? <a className="icon-button" href="/profile" aria-label="Profile"><UserIcon /></a> : <a className="icon-button" href="/signup" aria-label="Account"><UserIcon /></a>}
             {user && <button className="text-button" onClick={logout}>Log out</button>}
             <button className="icon-button menu-toggle" type="button" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-controls="mobile-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
               {menuOpen ? <CloseIcon /> : <MenuIcon />}
             </button>
           </div>
         </div>
-        <button className={`mobile-menu-overlay ${menuOpen ? 'open' : ''}`} type="button" aria-label="Close menu" tabIndex={menuOpen ? 0 : -1} onClick={() => setMenuOpen(false)} />
+        <button className={`mobile-menu-overlay ${menuOpen ? 'open' : ''}`} type="button" aria-hidden="true" tabIndex="-1" onClick={() => setMenuOpen(false)} />
         {/* The closed drawer is not display:none — a later rule slides it off-canvas
             with translateX while leaving it visible, so its 10 controls stayed in
             the tab order and were announced by screen readers. `inert` removes it
@@ -1413,7 +1478,7 @@ function Header({ user, setUser }) {
               return <a className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} href={href} key={label} onClick={() => setMenuOpen(false)}>{label}</a>;
             })}
             <a href="/tokens" onClick={() => setMenuOpen(false)}>Credits{user ? ` (${user.tokens})` : ''}</a>
-            <a href={user ? '/profile' : '/signup'} onClick={() => setMenuOpen(false)}>{user ? 'Profile' : 'Account'}</a>
+            {!authChecked ? <span className="mobile-menu-auth-loading" role="status">Checking account...</span> : <a href={user ? '/profile' : '/signup'} onClick={() => setMenuOpen(false)}>{user ? 'Profile' : 'Account'}</a>}
             {user && <button type="button" onClick={logout}>Log out</button>}
           </div>
         </div>
@@ -1427,17 +1492,26 @@ function Header({ user, setUser }) {
 
 function SearchLandingPage() {
   const searchInputRef = useRef(null);
+  const [query, setQuery] = useState(currentSearchValue);
   const [recentSearches, setRecentSearches] = useState(readRecentSearches);
-  const quickSearches = ['shirts', 'jeans', 'innerwear', 'ethnic wear', 'sneakers', 'sleepwear'];
-  const featuredCategories = categories.slice(0, 8);
+  const quickSearches = popularSearchTerms;
+  const featuredCategories = featuredSearchCategories;
 
   useEffect(() => {
     window.requestAnimationFrame(() => searchInputRef.current?.focus());
   }, []);
 
   const rememberSearch = (event) => {
-    const query = new FormData(event.currentTarget).get('q');
-    setRecentSearches(saveRecentSearch(query));
+    const nextQuery = normalizeSearchQuery(new FormData(event.currentTarget).get('q'));
+    const field = event.currentTarget.elements.q;
+    if (field) field.value = nextQuery;
+    if (!nextQuery) {
+      event.preventDefault();
+      setQuery('');
+      searchInputRef.current?.focus();
+      return;
+    }
+    setRecentSearches(saveRecentSearch(nextQuery));
   };
 
   return (
@@ -1447,7 +1521,8 @@ function SearchLandingPage() {
         <h1 id="mobile-search-title">Search Lookmefy</h1>
         <form className="mobile-search-page-form" action="/categories" role="search" onSubmit={rememberSearch}>
           <SearchIcon />
-          <input ref={searchInputRef} name="q" type="search" list="fitlook-recent-searches" placeholder="Search products..." defaultValue={currentSearchValue()} aria-label="Search products" />
+          <input ref={searchInputRef} name="q" type="search" list="fitlook-recent-searches" placeholder="Search products..." value={query} onChange={(event) => setQuery(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === 'Escape') setQuery(''); }} aria-label="Search products" />
+          {query && <button className="mobile-search-clear" type="button" aria-label="Clear search" onClick={() => { setQuery(''); searchInputRef.current?.focus(); }}><CloseIcon /></button>}
           <button type="submit">Search</button>
         </form>
         {recentSearches.length > 0 && (
@@ -2512,7 +2587,8 @@ function categoryPageHref(category, gender = '') {
 }
 
 function AtelierCategoriesPage() {
-  const initialParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const routeSearch = window.location.search;
+  const initialParams = useMemo(() => new URLSearchParams(routeSearch), [routeSearch]);
   const initialGender = productGenderForPreference(initialParams.get('gender') || '');
   const initialCategoryFilter = initialParams.get('category') ? categorySlug(initialParams.get('category')) : 'all';
   const initialBrandFilter = initialParams.get('brand') || 'all';
@@ -2636,6 +2712,10 @@ function AtelierCategoriesPage() {
     setSortFilter('newest');
     setFilterPanelOpen(false);
   }, [activeAudience]);
+
+  useEffect(() => {
+    setActiveAudience(initialGender || 'all');
+  }, [initialGender]);
 
   const resetCategoryFilters = () => {
     setCategoryFilter('all');
@@ -3507,7 +3587,7 @@ function RoomScene({ modelSource, alt, generating, onOpen, onEmpty }) {
             src={visibleSrc}
             alt={imageAlt}
             eager
-            fallbackSrc=""
+            fallbackSrc={asset('wardrobe-default-model.png')}
             style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', objectPosition: 'center center' }}
           />
         </button>
@@ -4004,7 +4084,7 @@ function ClosetPage({ user, setUser }) {
         <section className="wardrobe-model-stage" aria-label="Wardrobe model preview" style={{ background: '#d7d7d5', backgroundImage: 'none' }}>
           <div className="wardrobe-mobile-category-rail" aria-label="Wardrobe quick controls">
             <button type="button" onClick={() => setStagePreviewMode('model')}>
-              <span>{bodyPhotoPreview ? <OptimizedImage src={bodyPhotoPreview} fallbackSrc="" alt="" /> : <UserIcon />}</span>
+              <span>{bodyPhotoPreview ? <OptimizedImage src={bodyPhotoPreview} fallbackSrc={asset('wardrobe-default-model.png')} alt="" /> : <UserIcon />}</span>
               <small>Model</small>
             </button>
             {mobileWardrobeSections.map((section) => {
@@ -4027,6 +4107,14 @@ function ClosetPage({ user, setUser }) {
             </button>
           </div>
           <a className="wardrobe-mobile-add-item" href="/closet/add">+ Add Item</a>
+          {!state.loading && closetItems.length === 0 && (
+            <section className="wardrobe-empty-state" aria-labelledby="wardrobe-empty-title">
+              <h2 id="wardrobe-empty-title">Your wardrobe is empty</h2>
+              <p>Add a garment to start creating AI looks.</p>
+              <a className="button" href="/closet/add">Add First Item</a>
+              <span>Use garment-only photos with the full item visible on a plain, well-lit background.</span>
+            </section>
+          )}
           {activeMobileWardrobeSection && (
             <div className="wardrobe-mobile-picker-backdrop" role="presentation" onClick={() => setMobileWardrobePicker(null)}>
               <section className="wardrobe-mobile-picker" aria-label={`Choose ${activeMobileWardrobeSection.label}`} onClick={(event) => event.stopPropagation()}>
@@ -4067,7 +4155,7 @@ function ClosetPage({ user, setUser }) {
 
           <div className="wardrobe-model-tools left">
             <button type="button" onClick={() => setStagePreviewMode('model')}>
-              <span>{bodyPhotoPreview ? <OptimizedImage src={bodyPhotoPreview} fallbackSrc="" alt="" /> : <UserIcon />}</span>
+              <span>{bodyPhotoPreview ? <OptimizedImage src={bodyPhotoPreview} fallbackSrc={asset('wardrobe-default-model.png')} alt="" /> : <UserIcon />}</span>
               <small>Model</small>
             </button>
             <button type="button" onClick={() => applyAccessorySlot('cap', 'Cap')}>
@@ -4534,6 +4622,17 @@ function ClosetAddPage({ user, setUser }) {
 
   if (!user) return <AuthPage mode="signup" setUser={setUser} />;
 
+  const validateClosetUpload = (file) => {
+    if (!file) return 'Upload a garment image before continuing.';
+    const name = String(file.name || '');
+    const type = String(file.type || '').toLowerCase();
+    const supported = type.startsWith('image/') || /\.(?:avif|heic|heif|jpe?g|png|webp)$/i.test(name);
+    if (!supported || type === 'image/svg+xml' || /\.svg$/i.test(name)) return 'Upload a JPG, PNG, WebP, AVIF, HEIC, or HEIF garment photo.';
+    if (file.size > MAX_BODY_PHOTO_BYTES) return 'This garment photo is too large. Choose an image under 8 MB.';
+    if (file.size === 0) return 'This garment photo appears corrupted. Choose a different image.';
+    return '';
+  };
+
   const applyDetectedDetails = (details = {}) => {
     const form = formRef.current;
     if (!form) return;
@@ -4579,6 +4678,15 @@ function ClosetAddPage({ user, setUser }) {
 
   const selectUpload = (event) => {
     const file = event.currentTarget.files?.[0];
+    const validationError = validateClosetUpload(file);
+    if (file && validationError) {
+      setUploadPreview('');
+      setDetectedProfile(null);
+      setAnalyzing(false);
+      setMessage(validationError);
+      event.currentTarget.value = '';
+      return;
+    }
     setUploadPreview(file ? URL.createObjectURL(file) : '');
     setDetectedProfile(null);
     const runId = analysisRunRef.current + 1;
@@ -4595,8 +4703,9 @@ function ClosetAddPage({ user, setUser }) {
     const form = new FormData(event.currentTarget);
     const chosenFile = form.get('item');
     const file = chosenFile?.name ? chosenFile : cameraRef.current?.files?.[0] || fileRef.current?.files?.[0];
-    if (!file || !file.name) {
-      setMessage('Upload a clothing photo first.');
+    const validationError = validateClosetUpload(file?.name ? file : null);
+    if (validationError) {
+      setMessage(validationError);
       return;
     }
     if (!form.get('name')) form.set('name', file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '));
@@ -4662,8 +4771,12 @@ function ClosetAddPage({ user, setUser }) {
           <div className="atelier-closet-upload-column">
             <label className={`atelier-closet-upload-zone ${uploadPreview ? 'has-preview' : ''}`}>
               <input ref={fileRef} name="item" type="file" accept="image/*" onChange={selectUpload} />
-              {uploadPreview ? <img src={uploadPreview} alt="Closet item preview" /> : <span className="atelier-closet-upload-copy"><span className="atelier-closet-upload-icon"><SparkleLineIcon /></span><strong>Upload Clothing Photo</strong><small>Drag and drop or click to browse</small><em>Optimal: Neutral background, flat lay or ghost mannequin</em></span>}
+              {uploadPreview ? <img src={uploadPreview} alt="Closet item preview" /> : <span className="atelier-closet-upload-copy"><span className="atelier-closet-upload-icon"><SparkleLineIcon /></span><strong>Upload a garment photo</strong><small>Garment only, entire item visible, plain background</small><em>Avoid people wearing it, folded or cropped items, blur, and multiple garments</em></span>}
             </label>
+            <div className="garment-upload-guidance closet-guidance" aria-label="Wardrobe garment photo guidance">
+              <div><strong>Good photo</strong><span>Garment only</span><span>Entire garment visible</span><span>Plain background</span><span>Good lighting</span></div>
+              <div><strong>Avoid</strong><span>Person wearing garment</span><span>Folded item</span><span>Cropped item</span><span>Blurry photo</span></div>
+            </div>
             <input ref={cameraRef} className="camera-input" type="file" accept="image/*" capture="environment" onChange={selectUpload} />
             {savedItems.length > 0 && <div className="atelier-closet-recent"><span>Recently added</span>{savedItems.slice(0, 3).map((item) => <a href="/closet/items" key={item.id}><img src={item.imageUrl} alt={item.name} /></a>)}</div>}
           </div>
@@ -4735,7 +4848,8 @@ function ProductGridSkeleton({ count = 8 }) {
 
 function ProductDetailSkeleton() {
   return (
-    <main className="product-page">
+    <main className="product-page" aria-busy="true">
+      <p className="sr-only" role="status">Loading product...</p>
       <section className="wrap product-detail">
         <div className="product-detail-grid product-detail-skeleton" aria-hidden="true">
           <div className="skeleton-detail-media" />
@@ -4747,6 +4861,8 @@ function ProductDetailSkeleton() {
             <div className="product-detail-facts">
               {Array.from({ length: 4 }).map((_, index) => <span className="skeleton-box" key={index} />)}
             </div>
+            <span className="skeleton-line wide" />
+            <span className="skeleton-line medium" />
           </div>
         </div>
       </section>
@@ -4756,7 +4872,7 @@ function ProductDetailSkeleton() {
 
 function SearchPage({ user, setUser, tryOnMode = false }) {
   const params = new URLSearchParams(window.location.search);
-  const q = params.get('q') || '';
+  const q = normalizeSearchQuery(params.get('q') || '');
   const tag = params.get('tag') || '';
   const category = params.get('category') || '';
   const brand = params.get('brand') || '';
@@ -5028,7 +5144,7 @@ function toggleWishlistProductId(productOrId) {
   if (saved && product) writeWishlistProductSnapshot(product);
   if (!saved) removeWishlistProductSnapshot(id);
   window.dispatchEvent(new CustomEvent('fitlook:wishlist-change', { detail: { id, saved } }));
-  if (sessionStorage.getItem('fitlook_token')) {
+  if (readAuthToken()) {
     api(`/auth/wishlist/${encodeURIComponent(id)}`, { method: saved ? 'PUT' : 'DELETE' })
       .catch(() => announce('Wishlist saved on this device. Account sync will retry when the connection is available.', 'error'));
   }
@@ -5209,6 +5325,7 @@ function WishlistPage({ user }) {
   return (
     <main className="wishlist-page wishlist-reference-page">
       <section className="wrap wishlist-reference-shell" aria-label="Wishlist">
+        {!showWishlistTools && <h1 className="sr-only">My Wishlist</h1>}
         {showWishlistTools && (
           <header className="wishlist-reference-head">
             <div>
@@ -5348,8 +5465,18 @@ function CustomClothingTryOn({ user, setUser }) {
     if (garmentPreview.startsWith('blob:')) URL.revokeObjectURL(garmentPreview);
   }, [garmentPreview]);
 
-  const isValidImageFile = (file) => Boolean(file)
-    && (String(file.type || '').startsWith('image/') || /\.(?:avif|gif|heic|heif|jpe?g|png|svg|webp)$/i.test(file.name || ''));
+  const validateGarmentFile = (file) => {
+    if (!file) return 'Upload a garment image before continuing.';
+    const name = String(file.name || '');
+    const type = String(file.type || '').toLowerCase();
+    const supported = type.startsWith('image/') || /\.(?:avif|gif|heic|heif|jpe?g|png|webp)$/i.test(name);
+    if (!supported || type === 'image/svg+xml' || /\.svg$/i.test(name)) return 'Upload a JPG, PNG, WebP, AVIF, HEIC, or HEIF garment photo.';
+    if (file.size > MAX_BODY_PHOTO_BYTES) return 'This garment photo is too large. Choose an image under 8 MB.';
+    if (file.size === 0) return 'This garment photo appears corrupted. Choose a different image.';
+    return '';
+  };
+
+  const isValidImageFile = (file) => !validateGarmentFile(file);
 
   const clearFileInput = () => {
     if (fileRef.current) fileRef.current.value = '';
@@ -5385,10 +5512,11 @@ function CustomClothingTryOn({ user, setUser }) {
       clearFileInput();
       return;
     }
-    if (!isValidImageFile(file)) {
+    const validationError = validateGarmentFile(file);
+    if (validationError) {
       setGarmentFile(null);
       setGarmentPreview('');
-      setMessage('Upload a valid image file.');
+      setMessage(validationError);
       clearFileInput();
       return;
     }
@@ -5416,11 +5544,12 @@ function CustomClothingTryOn({ user, setUser }) {
     if (generationInFlightRef.current) return;
     const file = garmentFile || fileRef.current?.files?.[0];
     if (!file) {
-      setMessage('Upload a clothing photo first.');
+      setMessage('Upload a garment image before continuing.');
       return;
     }
-    if (!isValidImageFile(file)) {
-      setMessage('Upload a valid image file.');
+    const validationError = validateGarmentFile(file);
+    if (validationError) {
+      setMessage(validationError);
       clearFileInput();
       return;
     }
@@ -5428,7 +5557,7 @@ function CustomClothingTryOn({ user, setUser }) {
     const generationRun = generationRunRef.current + 1;
     generationRunRef.current = generationRun;
     setLoading(true);
-    setMessage('Generating custom try-on...');
+    setMessage('Preparing your try-on...');
     setResult(null);
     setPreviewMode('garment');
     const controller = new AbortController();
@@ -5447,11 +5576,11 @@ function CustomClothingTryOn({ user, setUser }) {
           return { ...data.user, tokens: Math.min(current.tokens, data.user.tokens) };
         });
       }
-      setMessage('Custom try-on ready.');
+      setMessage(`Custom try-on ready. ${Number(data.user?.tokens ?? user?.tokens ?? 0)} credits remaining.`);
     } catch (err) {
       if (generationRunRef.current !== generationRun) return;
       if (err.name === 'AbortError') setMessage('Generation canceled. Your garment photo is ready to try again.');
-      else setMessage(err.message);
+      else setMessage('We couldn\'t create this try-on. Try a clearer garment-only photo.');
     } finally {
       if (generationControllerRef.current === controller) {
         generationControllerRef.current = null;
@@ -5484,11 +5613,15 @@ function CustomClothingTryOn({ user, setUser }) {
             <input ref={fileRef} name="garment" type="file" accept="image/*" onChange={chooseGarment} />
             <span className="custom-upload-content">
               <span className="upload-icon"><UploadCloudIcon /></span>
-              <span className="upload-title">Upload clothing photo</span>
-              <span className="upload-help">Drag and drop your high-resolution garment image here</span>
+              <span className="upload-title">Upload a garment photo</span>
+              <span className="upload-help">Garment only, entire item visible, plain background, good lighting and sharp image</span>
               <span className="upload-action">Browse files</span>
             </span>
           </label>
+          <div className="garment-upload-guidance" aria-label="Garment photo guidance">
+            <div><strong>Good photo</strong><span>Garment only</span><span>Entire garment visible</span><span>Plain background</span><span>Good lighting</span><span>Sharp image</span></div>
+            <div><strong>Avoid</strong><span>Person wearing garment</span><span>Folded item</span><span>Cropped item</span><span>Blurry photo</span><span>Multiple garments</span></div>
+          </div>
           {garmentPreview && <button className="custom-upload-remove" type="button" onClick={clearGarment} disabled={loading}>Remove upload</button>}
           <div className="custom-tryon-mobile-action">
             <button className="submit" type="submit" disabled={loading}>{loading ? 'Generating...' : 'Generate Custom Try-On'}</button>
@@ -5829,6 +5962,7 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
   const [selectedPackId, setSelectedPackId] = useState(isTopUpPage ? 'topup_50_tokens' : 'monthly_150_tokens');
   const [message, setMessage] = useState('');
   const verifiedOrderRef = useRef('');
+  const checkoutIdempotencyRef = useRef(new Map());
   const params = new URLSearchParams(window.location.search);
   const returnedOrderId = params.get('merchantOrderId') || params.get('orderId') || '';
   const subscription = user?.subscription;
@@ -5867,12 +6001,17 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
     setCheckoutLoading(true);
     setMessage('Opening secure PhonePe checkout...');
     try {
+      const idempotencyKey = checkoutIdempotencyRef.current.get(pack.id)
+        || (window.crypto?.randomUUID?.() || `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      checkoutIdempotencyRef.current.set(pack.id, idempotencyKey);
       const data = await api('/payments/checkout', {
         method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({ planId: pack.planId || pack.id })
       });
       window.location.assign(data.redirectUrl);
     } catch (err) {
+      checkoutIdempotencyRef.current.delete(pack.id);
       setMessage(err.message);
       setCheckoutLoading(false);
     }
@@ -5896,7 +6035,10 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
     featured: true,
     payable: true
   };
-  const topUpPacks = TOP_UP_PLANS.map((plan) => ({
+  const bestTopUpValue = Math.min(...TOP_UP_PLANS.map((plan) => Number(plan.dueTodayAmount || plan.amount || 0) / Math.max(Number(plan.tokens || 1), 1)));
+  const topUpPacks = TOP_UP_PLANS.map((plan) => {
+    const value = Number(plan.dueTodayAmount || plan.amount || 0) / Math.max(Number(plan.tokens || 1), 1);
+    return {
     id: plan.id,
     planId: plan.id,
     plan,
@@ -5912,8 +6054,10 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
         ? 'Better value for product batches and style exploration.'
         : 'One-time refill for extra image try-ons and videos.',
     cta: user ? 'Buy top-up' : 'Create profile',
+    badge: value === bestTopUpValue ? 'Best Value' : '',
     payable: true
-  }));
+  };
+  });
   const overviewPacks = [
     subscriptionPack,
     {
@@ -5965,7 +6109,7 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
                 const className = `credit-pack-option ${selectedPack.id === pack.id ? 'selected' : ''} ${pack.featured ? 'featured' : ''}`;
                 const content = (
                   <>
-                    {pack.featured && <span className="credit-pack-badge">Focused</span>}
+                    {pack.badge && <span className="credit-pack-badge">{pack.badge}</span>}
                     <small>{pack.label}</small>
                     <strong>{pack.headline}</strong>
                     <b>{pack.tokensLabel}</b>
@@ -6147,7 +6291,7 @@ function ProfilePage({ user, setUser }) {
   const initials = (user.name || user.username || 'FL').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   const creditProgress = Math.min(100, Math.max(0, ((user.tokens || 0) / 2000) * 100));
   const logout = () => {
-    sessionStorage.removeItem('fitlook_token');
+    clearAuthToken();
     setUser(null);
     window.history.pushState({}, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
@@ -6260,9 +6404,10 @@ function ActiveFilterChips({ values }) {
 function searchHref(values, overrides = {}) {
   const params = new URLSearchParams();
   Object.entries({ ...values, ...overrides }).forEach(([name, value]) => {
-    if (value) params.set(name, value);
+    const normalized = name === 'q' ? normalizeSearchQuery(value) : String(value || '').trim();
+    if (normalized) params.set(name, normalized);
   });
-  return `/search${params.toString() ? `?${params}` : ''}`;
+  return `/categories${params.toString() ? `?${params}` : ''}`;
 }
 
 function ListingCategoryChips({ facets, values }) {
@@ -6463,8 +6608,10 @@ function ProductPage({ id, user, setUser }) {
   const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const [tryOnLoading, setTryOnLoading] = useState(false);
   const [tryOnVideoLoading, setTryOnVideoLoading] = useState(false);
+  const [tryOnSlow, setTryOnSlow] = useState(false);
   const [tryOnError, setTryOnError] = useState('');
   const [tryOnVideoError, setTryOnVideoError] = useState('');
+  const [tryOnCreditNotice, setTryOnCreditNotice] = useState('');
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [detailImageView, setDetailImageView] = useState('tryon');
   const [sizeRequestOpen, setSizeRequestOpen] = useState(false);
@@ -6505,6 +6652,15 @@ function ProductPage({ id, user, setUser }) {
     if (product) updateProductSeo(product);
   }, [product]);
 
+  useEffect(() => {
+    if (!tryOnLoading && !tryOnVideoLoading) {
+      setTryOnSlow(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setTryOnSlow(true), 12000);
+    return () => window.clearTimeout(timer);
+  }, [tryOnLoading, tryOnVideoLoading]);
+
   if (loading) {
     return <ProductDetailSkeleton />;
   }
@@ -6513,9 +6669,12 @@ function ProductPage({ id, user, setUser }) {
     return (
       <main className="wrap product-page">
         <div className="empty-products">
-          <h3>Product not found.</h3>
-          <p>This item may have been removed from the catalog.</p>
-          <a className="button" href="/categories">Back to Shop</a>
+          <h3>We couldn't load this product.</h3>
+          <p>This item may have moved, or the catalog request may need another try.</p>
+          <div className="empty-products-actions">
+            <button className="button" type="button" onClick={() => window.location.reload()}>Retry</button>
+            <a className="button secondary" href="/categories">Back to Explore</a>
+          </div>
         </div>
       </main>
     );
@@ -6532,6 +6691,9 @@ function ProductPage({ id, user, setUser }) {
   const showingTryOnVideo = hasTryOnVideo && detailImageView === 'video';
   const showingTryOn = hasUsableTryOn && (detailImageView === 'tryon' || showingTryOnVideo);
   const showingTryOnImage = hasUsableTryOn && detailImageView === 'tryon';
+  const profilePreviewUrl = protectedMediaUrl(user?.bodyPhotoUrl || user?.bodyPhotoOriginalUrl || '');
+  const tryOnCost = 1;
+  const creditBalance = Number(user?.tokens || 0);
   const image = showingTryOn ? tryOnImageUrl : productImage;
   const swapPreview = hasUsableTryOn && product.imageUrl
     ? {
@@ -6588,6 +6750,7 @@ function ProductPage({ id, user, setUser }) {
     const regenerate = Boolean(tryOn?.imageUrl);
     setTryOnLoading(true);
     setTryOnError('');
+    setTryOnCreditNotice('');
     try {
       const data = await generateQueuedTryOn(`/tryons/${product.id}`, {
         method: 'POST',
@@ -6603,9 +6766,10 @@ function ProductPage({ id, user, setUser }) {
           if (!current) return data.user;
           return { ...data.user, tokens: Math.min(current.tokens, data.user.tokens) };
         });
+        setTryOnCreditNotice(`${tryOnCost} credit used. ${Number(data.user.tokens || 0)} credits remaining.`);
       }
     } catch (err) {
-      setTryOnError(err.message);
+      setTryOnError('We couldn\'t create this try-on.');
     } finally {
       setTryOnLoading(false);
     }
@@ -6616,6 +6780,7 @@ function ProductPage({ id, user, setUser }) {
     const needsImageTryOn = !tryOn?.imageUrl || tryOnImageFailed;
     setTryOnVideoLoading(true);
     setTryOnVideoError('');
+    setTryOnCreditNotice('');
     if (needsImageTryOn) {
       setTryOnLoading(true);
       setTryOnError('');
@@ -6658,7 +6823,7 @@ function ProductPage({ id, user, setUser }) {
         });
       }
     } catch (err) {
-      setTryOnVideoError(err.message);
+      setTryOnVideoError('We couldn\'t create this try-on.');
     } finally {
       if (needsImageTryOn) setTryOnLoading(false);
       setTryOnVideoLoading(false);
@@ -6716,7 +6881,7 @@ function ProductPage({ id, user, setUser }) {
                   <FullscreenIcon />
                 </button>
               )}
-              <TryOnGenerating active={tryOnLoading || tryOnVideoLoading} text={tryOnVideoLoading ? 'Generating video' : 'Generating try-on'} />
+              <TryOnGenerating active={tryOnLoading || tryOnVideoLoading} text={tryOnVideoLoading ? 'Creating your look...' : 'Creating your look...'} />
               {swapPreview && (
                 <button
                   className="original-product-preview"
@@ -6753,9 +6918,16 @@ function ProductPage({ id, user, setUser }) {
             </div>
 
             <div className="product-editorial-actions">
+              <div className="product-tryon-credit-panel" aria-live="polite">
+                <strong>AI Try-On</strong>
+                <span>Selected product: {product.name}</span>
+                <span>Selected portrait: {profilePreviewUrl ? 'Ready' : 'Add one in Profile'}</span>
+                <span>Cost: {tryOnCost} credit</span>
+                <span>Balance: {creditBalance} credits</span>
+              </div>
               {user ? (
                 <button className="product-editorial-tryon" type="button" onClick={generateProductTryOn} disabled={tryOnLoading}>
-                  {tryOnLoading ? 'Generating...' : hasUsableTryOn ? 'Refresh try-on' : tryOnImageFailed ? 'Try again' : 'AI try-on'}
+                  {tryOnLoading ? 'Creating your look...' : hasUsableTryOn ? 'Refresh try-on' : tryOnImageFailed ? 'Try Again' : 'Generate Try-On'}
                 </button>
               ) : <a className="product-editorial-tryon" href="/signup">AI try-on</a>}
               {user ? (
@@ -6765,6 +6937,8 @@ function ProductPage({ id, user, setUser }) {
               ) : <a className="product-editorial-video" href="/signup">Generate video</a>}
               {product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop now</a>}
             </div>
+            {(tryOnLoading || tryOnVideoLoading) && <p className="form-message" role="status">{tryOnSlow ? 'This is taking a little longer than usual.' : 'Preparing your try-on...'}</p>}
+            {tryOnCreditNotice && <p className="form-message">{tryOnCreditNotice}</p>}
             <div className="product-editorial-ship"><span>Shipping</span><strong>Live catalog item</strong></div>
             <div className="product-editorial-benefits">
               <div><strong>AI fit preview</strong><span>Built from your Lookmefy profile</span></div>
@@ -6893,12 +7067,91 @@ function Toast({ toast, onDismiss }) {
 }
 
 function EmptyProducts({ search }) {
+  const query = normalizeSearchQuery(search);
   return (
     <div className="empty-products">
-      <h3>No real products yet.</h3>
-      <p>{search ? `Nothing matched "${search}". Try a different search or browse the latest products.` : 'Products will appear here as soon as the catalog is available.'}</p>
-      <a className="button" href="/categories">Browse Products</a>
+      <h3>{query ? `No exact matches for "${query}"` : 'No styles available yet.'}</h3>
+      <p>{query ? 'Try a related style, browse popular categories, or return to Explore.' : 'Products will appear here as soon as the catalog is available.'}</p>
+      {query && (
+        <div className="empty-products-suggestions" aria-label="Suggested searches">
+          <span>Suggested searches</span>
+          {suggestedSearchTerms.map((term) => <a href={`/categories?q=${encodeURIComponent(term)}`} key={term}>{term}</a>)}
+        </div>
+      )}
+      <div className="empty-products-actions">
+        {featuredSearchCategories.slice(0, 4).map(([label, , value]) => <a href={`/categories/${encodeURIComponent(categorySlug(value))}`} key={value}>{label}</a>)}
+        <a className="button" href="/categories">Back to Explore</a>
+      </div>
     </div>
+  );
+}
+
+function ProtectedRouteGate({ path, authChecked }) {
+  const details = path.startsWith('/closet')
+    ? {
+      title: 'Sign in to access your wardrobe',
+      copy: 'Save garments, create looks and use AI styling.',
+      image: 'wardrobe-stage-room.png'
+    }
+    : path === '/profile'
+      ? {
+        title: 'Sign in to view your profile',
+        copy: 'Manage your try-on photo, credits and account details.',
+        image: 'hero2.png'
+      }
+      : {
+        title: 'Sign in to continue',
+        copy: 'Create a profile to use AI try-on tools and saved account features.',
+        image: 'hero2.png'
+      };
+  const returnPath = `${path || '/'}${window.location.search || ''}`;
+  const authHref = `/signup?return=${encodeURIComponent(returnPath)}`;
+
+  return (
+    <main className="auth-gate-page">
+      <section className="wrap auth-gate-panel" aria-labelledby="auth-gate-title" aria-busy={!authChecked}>
+        <div className="auth-gate-copy">
+          <p>{authChecked ? 'Account required' : 'Checking account'}</p>
+          <h1 id="auth-gate-title">{authChecked ? details.title : 'Checking your account...'}</h1>
+          <span>{authChecked ? details.copy : 'We are confirming whether you are already signed in.'}</span>
+          {authChecked ? (
+            <div className="auth-gate-actions">
+              <a className="button" href={authHref}>Continue with Phone</a>
+              <a className="button secondary" href="/categories">Back to Explore</a>
+            </div>
+          ) : (
+            <div className="auth-gate-loading" role="status" aria-live="polite">
+              <i aria-hidden="true" />
+              <span>Loading account state...</span>
+            </div>
+          )}
+        </div>
+        <div className="auth-gate-visual" aria-hidden="true">
+          <OptimizedImage src={asset(details.image)} alt="" />
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function NotFoundPage() {
+  return (
+    <main className="not-found-page">
+      <section className="wrap not-found-panel" aria-labelledby="not-found-title">
+        <div>
+          <p>404</p>
+          <h1 id="not-found-title">We couldn't find that page.</h1>
+          <span>The page may have moved or no longer exists.</span>
+          <div className="not-found-actions">
+            <a className="button" href="/categories">Explore Styles</a>
+            <a className="button secondary" href="/home">Back Home</a>
+          </div>
+        </div>
+        <nav className="not-found-categories" aria-label="Popular categories">
+          {featuredSearchCategories.slice(0, 6).map(([label, , value]) => <a href={`/categories/${encodeURIComponent(categorySlug(value))}`} key={value}>{label}</a>)}
+        </nav>
+      </section>
+    </main>
   );
 }
 
@@ -7154,16 +7407,16 @@ function InfoPage({ meta, children, user, ctaLabel, ctaHref }) {
   const actionHref = ctaHref || (user ? '/search' : '/signup');
 
   return (
-    <>
+    <main className="info-page-main">
       <section className="page-hero"><div className="wrap hero-grid"><div className="page-copy"><p className="kicker">{kicker}</p><h1>{title}</h1><p className="lead">{lead}</p><a className="button" href={actionHref}>{actionLabel}</a></div><div className="page-image"><OptimizedImage src={asset(image)} alt="" /></div></div></section>
       {children || <section className="section"><div className="wrap info-grid"><article className="info-card"><h3>AI try-on ready</h3><p>Preview selected products on your profile.</p></article><article className="info-card"><h3>Catalog shopping</h3><p>Explore styles, categories, and new arrivals.</p></article><article className="info-card"><h3>Token powered</h3><p>Use tokens only when generating previews.</p></article><article className="info-card"><h3>Privacy aware</h3><p>Your full-body photo is part of your personal profile.</p></article></div></section>}
-    </>
+    </main>
   );
 }
 
 function PolicyContent({ policy }) {
   return (
-    <section className="section policy-page" aria-label={policy.title}>
+    <main className="section policy-page" aria-label={policy.title}>
       <div className="wrap policy-shell">
         <header className="policy-summary">
           <h1>{policy.title}</h1>
@@ -7179,7 +7432,7 @@ function PolicyContent({ policy }) {
           ))}
         </div>
       </div>
-    </section>
+    </main>
   );
 }
 
@@ -7287,18 +7540,18 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
       mobileFallback: { x: 72, y: 92, radius: 54 }
     },
     {
-      eyebrow: 'Personalize',
-      title: 'Use Wishlist, Credits, and Concierge',
-      body: 'Save favorites, manage credits, and ask AI Stylist when you need outfit help.',
-      gain: 'Keep decisions organized in one place.',
-      mobileEyebrow: 'AI Stylist and credits',
-      mobileTitle: 'Use AI Stylist and Credits',
-      mobileBody: 'Ask AI Stylist for outfit ideas and manage credits for try-ons.',
+      eyebrow: 'AI Stylist',
+      title: 'Ask AI Stylist for outfit help',
+      body: 'Get outfit ideas from AI Stylist, then use Wishlist and credits to save favorites and keep try-ons moving.',
+      gain: 'Keep outfit help and saved decisions in one place.',
+      mobileEyebrow: 'AI Stylist',
+      mobileTitle: 'Ask AI Stylist',
+      mobileBody: 'Get outfit ideas, then use Wishlist and credits to save favorites and keep try-ons moving.',
       mobileGain: 'Keep outfit help one tap away on mobile.',
       mobileTarget: 'AI Stylist',
-      icon: <HeartIcon />,
-      visual: 'Save - Credit - Ask',
-      target: 'Saved and credits',
+      icon: <SparkleLineIcon />,
+      visual: 'Ask - Save - Credits',
+      target: 'AI Stylist',
       position: 'bottom-right',
       selectors: ['.site-header .nav a[href="/style-bot"]', '.site-header .nav a[href="/signup"]', '.credits-pill', '.credit-button', 'a[href="/wishlist"]', '.mobile-bottom-nav a[href="/style-bot"]'],
       mobileSelectors: ['.mobile-bottom-nav a[href="/style-bot"]', '.site-header .nav a[href="/style-bot"]', '.site-header .nav a[href="/signup"]', '.mobile-bottom-nav a[href="/profile"]', '.header-credit-button', '.credits-pill', '.credit-button', 'a[href="/wishlist"]'],
@@ -7694,6 +7947,13 @@ function isLikelyIndianMobile(phone = '') {
   return /^[6-9]\d{9}$/.test(local);
 }
 
+function normalizePhoneEntry(phone = '') {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length > 10 && digits.startsWith('91')) return digits.slice(2, 12);
+  if (digits.length > 10 && digits.startsWith('0')) return digits.slice(1, 11);
+  return digits.slice(0, 10);
+}
+
 function OtpCodeFields({ idPrefix, value, onChange, disabled }) {
   const inputRefs = useRef([]);
   const digits = String(value || '').slice(0, 6).padEnd(6, ' ').split('');
@@ -7752,6 +8012,7 @@ function AuthPage({ mode, setUser }) {
   const [otpValue, setOtpValue] = useState('');
   const [otpSession, setOtpSession] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
+  const [localOtpLoading, setLocalOtpLoading] = useState(false);
   const [bodyPhotoFile, setBodyPhotoFile] = useState(null);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
   const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
@@ -7767,6 +8028,7 @@ function AuthPage({ mode, setUser }) {
     setCapsLock(false);
     setIsSubmitting(false);
     setOtpLoading(false);
+    setLocalOtpLoading(false);
     setPhoneValue('');
     setOtpValue('');
     setOtpSession('');
@@ -7811,7 +8073,7 @@ function AuthPage({ mode, setUser }) {
   const updatePhoneEntry = (purpose, nextPhone) => {
     const session = otpSession;
     const phone = phoneValue;
-    setPhoneValue(nextPhone);
+    setPhoneValue(normalizePhoneEntry(nextPhone));
     setOtpSession('');
     setOtpValue('');
     if (session) void cancelOtpSession(purpose, session, phone);
@@ -7895,7 +8157,7 @@ function AuthPage({ mode, setUser }) {
         body: JSON.stringify({ phone: phoneValue, otp: otpValue, otpSession })
       });
       const destination = authReturnPath();
-      sessionStorage.setItem('fitlook_token', data.token);
+      writeAuthToken(data.token);
       setUser(data.user);
       window.history.pushState({}, '', destination);
       window.dispatchEvent(new PopStateEvent('popstate'));
@@ -7903,6 +8165,22 @@ function AuthPage({ mode, setUser }) {
       setMessage(err.message);
     } finally {
       setOtpLoading(false);
+    }
+  };
+
+  const fillLocalOtp = async (purpose) => {
+    if (!ENABLE_TEST_OTP_HELPER || !otpSession || localOtpLoading) return;
+    setLocalOtpLoading(true);
+    setMessage('');
+    try {
+      const params = new URLSearchParams({ purpose, phone: phoneValue, otpSession });
+      const data = await api(`/auth/test-otp?${params.toString()}`, { retry: 0 });
+      setOtpValue(String(data.otp || '').replace(/\D/g, '').slice(0, 6));
+      setMessage('Local code filled.');
+    } catch (err) {
+      setMessage(err.message || 'Local code is not available.');
+    } finally {
+      setLocalOtpLoading(false);
     }
   };
 
@@ -7935,7 +8213,7 @@ function AuthPage({ mode, setUser }) {
       }
       const data = await api(isSignup ? '/auth/signup' : '/auth/login', { method: 'POST', body });
       const destination = authReturnPath();
-      sessionStorage.setItem('fitlook_token', data.token);
+      writeAuthToken(data.token);
       setUser(data.user);
       window.history.pushState({}, '', destination);
       window.dispatchEvent(new PopStateEvent('popstate'));
@@ -7981,13 +8259,14 @@ function AuthPage({ mode, setUser }) {
             <form className="auth-login-form" onSubmit={(event) => event.preventDefault()} aria-busy={otpLoading}>
               <label className="signup-field">
                 <span>Mobile number</span>
-                <input name="loginPhone" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('login', event.target.value)} />
+                <input name="loginPhone" type="tel" inputMode="numeric" pattern="[0-9]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('login', event.target.value)} />
               </label>
               <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestLoginOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend code' : 'Send OTP'}</button>
               {otpSession && (
                 <div className="auth-signup-reference-fields">
                   <p className="signup-otp-hint">We sent a 6-digit code to {maskedPhoneForOtp(phoneValue)}.</p>
                   <OtpCodeFields idPrefix="login-otp" value={otpValue} onChange={setOtpValue} disabled={otpLoading} />
+                  {ENABLE_TEST_OTP_HELPER && <button className="signup-back-step" type="button" disabled={localOtpLoading} onClick={() => fillLocalOtp('login')}>{localOtpLoading ? 'Loading local code...' : 'Use local code'}</button>}
                   <button className="signup-back-step" type="button" onClick={() => clearOtpEntry('login')}>Change number</button>
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifyLoginOtp}>{otpLoading ? 'Verifying...' : 'Verify & login'}</button>
                 </div>
@@ -7995,7 +8274,7 @@ function AuthPage({ mode, setUser }) {
               <p className="auth-login-switch-inline">New to Lookmefy? <a href="/signup">Sign up</a></p>
               <p className="auth-login-switch-inline"><a href="/categories">Explore without login</a></p>
             </form>
-            {message && <p className={`auth-login-message form-message ${/OTP sent|Logging in|Working/.test(message) ? '' : 'error-message'}`}>{message}</p>}
+            {message && <p className={`auth-login-message form-message ${/OTP sent|Local code filled|Logging in|Working/.test(message) ? '' : 'error-message'}`}>{message}</p>}
           </div>
         </section>
       </main>
@@ -8017,7 +8296,7 @@ function AuthPage({ mode, setUser }) {
               <div className="auth-signup-reference-fields">
                 <label className="signup-field">
                   <span>Mobile number</span>
-                  <input name="phoneDisplay" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('signup', event.target.value)} />
+                  <input name="phoneDisplay" type="tel" inputMode="numeric" pattern="[0-9]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('signup', event.target.value)} />
                 </label>
               </div>
               <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestSignupOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend code' : 'Send OTP'}</button>
@@ -8025,6 +8304,7 @@ function AuthPage({ mode, setUser }) {
                 <div className="auth-signup-reference-fields">
                   <p className="signup-otp-hint">We sent a 6-digit code to {maskedPhoneForOtp(phoneValue)}.</p>
                   <OtpCodeFields idPrefix="signup-otp" value={otpValue} onChange={setOtpValue} disabled={otpLoading} />
+                  {ENABLE_TEST_OTP_HELPER && <button className="signup-back-step" type="button" disabled={localOtpLoading} onClick={() => fillLocalOtp('signup')}>{localOtpLoading ? 'Loading local code...' : 'Use local code'}</button>}
                   <button className="signup-back-step" type="button" onClick={() => clearOtpEntry('signup')}>Change number</button>
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifySignupOtp}>{otpLoading ? 'Verifying...' : 'Verify & continue'}</button>
                 </div>
@@ -8079,7 +8359,7 @@ function AuthPage({ mode, setUser }) {
             </>
           )}
 
-          {message && <p className={`signup-message form-message ${/OTP sent|Creating account/.test(message) ? '' : 'error-message'}`}>{message}</p>}
+          {message && <p className={`signup-message form-message ${/OTP sent|Local code filled|Creating account/.test(message) ? '' : 'error-message'}`}>{message}</p>}
           <p className="signup-switch">Already have an account? <a href="/login">Log in</a></p>
           <p className="signup-switch"><a href="/categories">Explore without login</a></p>
         </form>
@@ -8124,6 +8404,7 @@ function App() {
   const [path, setPath] = useState(normalizePath());
   const [routeKey, setRouteKey] = useState(() => `${window.location.pathname}${window.location.search}${window.location.hash}`);
   const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(() => !readAuthToken());
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [toast, setToast] = useState(null);
   const [replayTourOpen, setReplayTourOpen] = useState(false);
@@ -8227,7 +8508,8 @@ function App() {
       const search = new URLSearchParams(target.search);
       new FormData(form).forEach((value, key) => {
         if (typeof value !== 'string') return;
-        if (value.trim()) search.set(key, value);
+        const normalized = key === 'q' ? normalizeSearchQuery(value) : value.trim();
+        if (normalized) search.set(key, normalized);
         else search.delete(key);
       });
       target.search = search.toString();
@@ -8240,8 +8522,31 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!sessionStorage.getItem('fitlook_token')) return;
-    api('/auth/me').then((data) => setUser(data.user)).catch(() => sessionStorage.removeItem('fitlook_token'));
+    if (!readAuthToken()) {
+      setAuthChecked(true);
+      return;
+    }
+    api('/auth/me')
+      .then((data) => setUser(data.user))
+      .catch(() => clearAuthToken())
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  useEffect(() => {
+    const syncAuthAcrossTabs = (event) => {
+      if (event.key !== AUTH_TOKEN_KEY) return;
+      if (!event.newValue) {
+        setUser(null);
+        setAuthChecked(true);
+        return;
+      }
+      api('/auth/me')
+        .then((data) => setUser(data.user))
+        .catch(() => clearAuthToken())
+        .finally(() => setAuthChecked(true));
+    };
+    window.addEventListener('storage', syncAuthAcrossTabs);
+    return () => window.removeEventListener('storage', syncAuthAcrossTabs);
   }, []);
 
   useEffect(() => {
@@ -8286,6 +8591,7 @@ function App() {
   const page = useMemo(() => {
     const productMatch = path.match(/^\/product\/([^/]+)$/);
     const categoryMatch = path.match(/^\/categories\/([^/]+)$/);
+    if (requiresAuthentication(path) && !user) return <ProtectedRouteGate path={path} authChecked={authChecked} />;
     if (path === '/') return <Home user={user} />;
     if (path === '/home') return <AtelierHome user={user} />;
     if (path === '/categories' || path === '/explore') return <CategoriesPage key={routeKey} user={user} />;
@@ -8310,8 +8616,8 @@ function App() {
     if (path === '/how-it-works') return <HowItWorks user={user} />;
     if (path === '/about') return <AboutPage user={user} />;
     if (pageMeta[path]) return <InfoPage meta={pageMeta[path]} user={user} />;
-    return <InfoPage meta={['Not Found', 'This page is not available yet.', 'Use the navigation to continue shopping with Lookmefy.', 'hero2.png']} user={user} ctaLabel="Back to Shop" ctaHref="/search" />;
-  }, [path, routeKey, user]);
+    return <NotFoundPage />;
+  }, [authChecked, path, routeKey, user]);
 
   useEffect(() => {
     const revealSelectors = [
@@ -8387,7 +8693,7 @@ function App() {
   return (
     <>
       {!isStandaloneAuth && !isOpeningPage && <a className="skip-link" href="#main-content">Skip to main content</a>}
-      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Header user={user} setUser={setUser} />}
+      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Header user={user} setUser={setUser} authChecked={authChecked} />}
       <div id="main-content" className="app-page-transition" tabIndex="-1" key={routeKey}>{page}</div>
       {!isOnline && <div className="network-status" role="status" aria-live="polite">You are offline. Changes will resume when you reconnect.</div>}
       {toast && <Toast toast={toast} onDismiss={dismissToast} />}

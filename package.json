@@ -15,6 +15,7 @@
     "catalog:import": "node scripts/import-products.mjs",
     "catalog:import:dry": "node scripts/import-products.mjs --dry-run",
     "test": "node --test",
+    "test:browser": "node node_modules/@playwright/test/cli.js test",
     "build": "vite build",
     "preview": "vite preview",
     "db:create-indexes": "node scripts/create-indexes.js",
@@ -47,6 +48,7 @@
     "vite": "^6.0.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "nodemon": "^3.1.9"
   }
 }

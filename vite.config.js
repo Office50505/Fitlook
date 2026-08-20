@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const apiTarget = process.env.VITE_DEV_PROXY_TARGET || 'http://localhost:5050';
+
 export default defineConfig({
   plugins: [react()],
   build: {
@@ -18,8 +20,8 @@ export default defineConfig({
       ignored: ['**/.venv/**', '**/.venv-rembg/**', '**/.model-cache/**']
     },
     proxy: {
-      '/api': 'http://localhost:5050',
-      '/uploads': 'http://localhost:5050'
+      '/api': apiTarget,
+      '/uploads': apiTarget
     }
   }
 });

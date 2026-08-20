@@ -17,7 +17,7 @@ test('validateServerEnv reports partial feature configuration without failing st
   assert.match(report.warnings[0], /PhonePe payments/);
 });
 
-test('validateServerEnv warns when OTP webhook delivery is incomplete', () => {
+test('validateServerEnv warns when OTP webhook delivery is incomplete outside production', () => {
   const report = validateServerEnv({
     MONGODB_URI: 'mongodb://localhost:27017/fitlook',
     JWT_SECRET: 'secret',
@@ -28,15 +28,38 @@ test('validateServerEnv warns when OTP webhook delivery is incomplete', () => {
   assert.match(report.warnings[0], /OTP delivery webhook/);
 });
 
-test('validateServerEnv warns when mock OTP delivery is unsafe or incomplete', () => {
+test('validateServerEnv fails production startup when OTP delivery is not a safe webhook', () => {
+  assert.throws(
+    () => validateServerEnv({
+      NODE_ENV: 'production',
+      MONGODB_URI: 'mongodb://localhost:27017/fitlook',
+      JWT_SECRET: 'secret',
+      OTP_DELIVERY_PROVIDER: 'mock',
+      OTP_MOCK_STORE_PATH: '/tmp/otp.jsonl'
+    }),
+    /Production requires OTP_DELIVERY_PROVIDER=webhook/
+  );
+
+  assert.throws(
+    () => validateServerEnv({
+      NODE_ENV: 'production',
+      MONGODB_URI: 'mongodb://localhost:27017/fitlook',
+      JWT_SECRET: 'secret',
+      OTP_DELIVERY_PROVIDER: 'webhook',
+      OTP_DELIVERY_WEBHOOK_URL: 'http://localhost:3000/otp'
+    }),
+    /HTTPS|localhost/
+  );
+});
+
+test('validateServerEnv warns when mock OTP delivery is incomplete outside production', () => {
   const report = validateServerEnv({
     MONGODB_URI: 'mongodb://localhost:27017/fitlook',
     JWT_SECRET: 'secret',
-    NODE_ENV: 'production',
+    NODE_ENV: 'test',
     OTP_DELIVERY_PROVIDER: 'mock'
   });
 
-  assert.equal(report.warnings.length, 2);
-  assert.match(report.warnings.join(' '), /Mock OTP delivery is not allowed in production/);
+  assert.equal(report.warnings.length, 1);
   assert.match(report.warnings.join(' '), /OTP_MOCK_STORE_PATH/);
 });

@@ -55,6 +55,9 @@ dump.rdb
 tmp/
 temp/
 coverage/
+playwright-report/
+test-results/
+tests/browser/screenshots/
 
 # Platform and editor noise
 .DS_Store
@@ -67,6 +70,7 @@ Thumbs.db
 .netlify/
 *.tfvars
 *.tfvars.json
+*.tfvars.save
 **/.terraform/
 terraform.tfstate
 terraform.tfstate.*

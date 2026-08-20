@@ -1,4 +1,5 @@
 import express from 'express';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import ClosetOutfit from '../models/ClosetOutfit.js';
 import CustomTryOn from '../models/CustomTryOn.js';
 import TokenOrder from '../models/TokenOrder.js';
@@ -12,6 +13,7 @@ import {
   TOP_UP_PLANS,
   planById
 } from '../../shared/pricing.js';
+import { isProductionEnv, validateConfiguredHttpsUrl } from '../utils/urlValidation.js';
 
 const router = express.Router();
 const paymentCreateLimiter = createRateLimiter({
@@ -94,7 +96,12 @@ function startShortPolling(merchantOrderId) {
 }
 
 function clientOrigin(req) {
-  return process.env.CLIENT_ORIGIN || req.get('origin') || `${req.protocol}://${req.get('host')}`;
+  const configured = process.env.CLIENT_ORIGIN || (!isProductionEnv() ? req.get('origin') || `${req.protocol}://${req.get('host')}` : '');
+  return validateConfiguredHttpsUrl(configured, {
+    name: 'CLIENT_ORIGIN',
+    env: process.env,
+    requireHttpsInProduction: true
+  }).origin;
 }
 
 function publicPlan(plan) {
@@ -118,8 +125,12 @@ function checkoutMessage(plan) {
 }
 
 function configuredRedirectUrl(req, merchantOrderId, planId) {
-  const base = process.env.PHONEPE_REDIRECT_URL || `${clientOrigin(req)}/tokens`;
-  const url = new URL(base, clientOrigin(req));
+  const approvedOrigin = clientOrigin(req);
+  const base = process.env.PHONEPE_REDIRECT_URL || `${approvedOrigin}/tokens`;
+  const url = validateConfiguredHttpsUrl(base, { name: 'PHONEPE_REDIRECT_URL', env: process.env });
+  if (isProductionEnv() && url.origin !== approvedOrigin) {
+    throw new Error('PHONEPE_REDIRECT_URL must use the approved CLIENT_ORIGIN in production');
+  }
   url.searchParams.set('merchantOrderId', merchantOrderId);
   url.searchParams.set('plan', planId);
   return url.toString();
@@ -135,6 +146,29 @@ function requirePhonePeConfig() {
   const missing = ['PHONEPE_CLIENT_ID', 'PHONEPE_CLIENT_SECRET', 'PHONEPE_CLIENT_VERSION']
     .filter((key) => !process.env[key]);
   if (missing.length) throw new Error(`${missing.join(', ')} missing on the server`);
+}
+
+function requirePhonePeCallbackConfig() {
+  const missing = ['PHONEPE_CALLBACK_USERNAME', 'PHONEPE_CALLBACK_PASSWORD']
+    .filter((key) => !process.env[key]);
+  if (missing.length) throw new Error(`${missing.join(', ')} missing on the server`);
+}
+
+function safeCompareHex(left, right) {
+  const a = Buffer.from(String(left || '').trim().toLowerCase(), 'hex');
+  const b = Buffer.from(String(right || '').trim().toLowerCase(), 'hex');
+  return a.length > 0 && a.length === b.length && timingSafeEqual(a, b);
+}
+
+function calculatePhonePeCallbackAuthorization(username, password) {
+  return createHash('sha256').update(`${username}:${password}`).digest('hex');
+}
+
+function validatePhonePeCallbackAuth(authorization, env = process.env) {
+  const username = String(env.PHONEPE_CALLBACK_USERNAME || '');
+  const password = String(env.PHONEPE_CALLBACK_PASSWORD || '');
+  if (!username || !password) return false;
+  return safeCompareHex(authorization, calculatePhonePeCallbackAuthorization(username, password));
 }
 
 function readablePhonePeError(value, fallback = 'PhonePe request failed') {
@@ -205,6 +239,26 @@ async function phonePeFetch(path, options = {}) {
   return data;
 }
 
+function amountForPlan(plan) {
+  return Number(plan.dueTodayAmount || plan.amount);
+}
+
+function recurringAmountForPlan(plan) {
+  return Number(plan.mandate?.recurringAmount || 0) || null;
+}
+
+function billingFrequencyForPlan(plan) {
+  return plan.mandate?.frequency || plan.billing || '';
+}
+
+function statusFromPhonePeState(state) {
+  const normalized = String(state || '').toUpperCase();
+  if (normalized === 'COMPLETED') return 'completed';
+  if (['FAILED', 'CANCELLED', 'CANCELED', 'EXPIRED', 'TIMEOUT', 'TIMED_OUT'].includes(normalized)) return 'failed';
+  if (normalized === 'PENDING') return 'pending';
+  return '';
+}
+
 function createMerchantOrderId(userId) {
   const userPart = userId.toString().slice(-8);
   const random = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -212,24 +266,58 @@ function createMerchantOrderId(userId) {
 }
 
 async function createPhonePePayment({ req, user, plan = SUBSCRIPTION_PLAN }) {
+  const idempotencyKey = checkoutIdempotencyKey(req);
+  if (idempotencyKey) {
+    const existingOrder = await TokenOrder.findOne({ user: user._id, idempotencyKey });
+    if (existingOrder) {
+      if (existingOrder.status === 'failed') {
+        const error = new Error('Previous checkout attempt failed. Please start checkout again.');
+        error.statusCode = 409;
+        throw error;
+      }
+      return existingOrder;
+    }
+  }
+
   const merchantOrderId = createMerchantOrderId(user._id);
   const redirectUrl = configuredRedirectUrl(req, merchantOrderId, plan.id);
-  const order = await TokenOrder.create({
+  const orderPayload = {
     user: user._id,
     merchantOrderId,
     planId: plan.id,
     planName: plan.name,
     orderType: plan.orderType,
-    amount: plan.amount,
+    amount: amountForPlan(plan),
+    dueTodayAmount: amountForPlan(plan),
+    recurringAmount: recurringAmountForPlan(plan),
+    billingFrequency: billingFrequencyForPlan(plan),
     currency: plan.currency,
     tokens: plan.tokens,
-    redirectUrl
-  });
+    redirectUrl,
+    idempotencyKey
+  };
+  let order;
+  try {
+    order = await TokenOrder.create(orderPayload);
+  } catch (error) {
+    if (error.code === 11000 && idempotencyKey) {
+      const existingOrder = await TokenOrder.findOne({ user: user._id, idempotencyKey });
+      if (existingOrder) {
+        if (existingOrder.status === 'failed') {
+          const conflict = new Error('Previous checkout attempt failed. Please start checkout again.');
+          conflict.statusCode = 409;
+          throw conflict;
+        }
+        return existingOrder;
+      }
+    }
+    throw error;
+  }
 
   try {
     const payload = {
       merchantOrderId,
-      amount: plan.amount,
+      amount: amountForPlan(plan),
       expireAfter: Number(process.env.PHONEPE_ORDER_EXPIRE_SECONDS || 1200),
       paymentFlow: {
         type: 'PG_CHECKOUT',
@@ -333,22 +421,52 @@ async function reconcileOrder(order) {
 
   order.providerState = state || order.providerState;
   order.providerResponse = status;
-  if (state === 'FAILED') order.status = 'failed';
-  else if (state === 'PENDING') order.status = 'pending';
+  order.status = statusFromPhonePeState(state) || order.status;
   await order.save();
   return { order, user: await User.findById(order.user) };
 }
 
 function orderIdFromCallback(req) {
+  const payload = req.callbackPayload || req.body || {};
   const candidates = [
     req.query?.merchantOrderId,
-    req.body?.merchantOrderId,
-    req.body?.merchantOrderID,
-    req.body?.eventPayload?.merchantOrderId,
-    req.body?.payload?.merchantOrderId,
-    req.body?.data?.merchantOrderId
+    payload?.merchantOrderId,
+    payload?.merchantOrderID,
+    payload?.orderId,
+    payload?.eventPayload?.merchantOrderId,
+    payload?.eventPayload?.orderId,
+    payload?.payload?.merchantOrderId,
+    payload?.payload?.orderId,
+    payload?.data?.merchantOrderId,
+    payload?.data?.orderId
   ];
   return candidates.map((value) => String(value || '').trim()).find(Boolean) || '';
+}
+
+function checkoutIdempotencyKey(req) {
+  const value = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
+  if (!value) return '';
+  if (!/^[A-Za-z0-9._:-]{12,120}$/.test(value)) {
+    const error = new Error('Invalid checkout idempotency key');
+    error.statusCode = 400;
+    throw error;
+  }
+  return value;
+}
+
+function callbackAuthorizationHeader(req) {
+  return String(req.get('authorization') || req.get('x-phonepe-authorization') || '').trim();
+}
+
+async function findOrderFromCallback(req) {
+  const id = orderIdFromCallback(req);
+  if (!id) return null;
+  return TokenOrder.findOne({
+    $or: [
+      { merchantOrderId: id },
+      { phonePeOrderId: id }
+    ]
+  });
 }
 
 router.get('/plans', (_req, res) => {
@@ -492,10 +610,16 @@ router.get('/orders/:merchantOrderId/status', requireUser, paymentStatusLimiter,
 });
 
 router.post('/phonepe/callback', async (req, res) => {
-  const merchantOrderId = orderIdFromCallback(req);
-  if (!merchantOrderId) return res.status(202).json({ ok: true });
+  try {
+    requirePhonePeCallbackConfig();
+    if (!validatePhonePeCallbackAuth(callbackAuthorizationHeader(req))) {
+      return res.status(401).json({ ok: false });
+    }
+  } catch (error) {
+    return res.status(503).json({ ok: false, message: readablePhonePeError(error, 'PhonePe callback verification is not configured') });
+  }
 
-  const order = await TokenOrder.findOne({ merchantOrderId });
+  const order = await findOrderFromCallback(req);
   if (!order) return res.status(202).json({ ok: true });
 
   // Acknowledge quickly and reconcile asynchronously to keep callback latency low
@@ -508,5 +632,20 @@ router.post('/phonepe/callback', async (req, res) => {
     }
   });
 });
+
+export {
+  amountForPlan,
+  billingFrequencyForPlan,
+  calculatePhonePeCallbackAuthorization,
+  checkoutIdempotencyKey,
+  configuredRedirectUrl,
+  findOrderFromCallback,
+  grantPaidTokens,
+  orderIdFromCallback,
+  reconcileOrder,
+  recurringAmountForPlan,
+  statusFromPhonePeState,
+  validatePhonePeCallbackAuth
+};
 
 export default router;

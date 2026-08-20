@@ -13,9 +13,10 @@ The webhook receives:
 
 ```json
 {
-  "phone": "+919876543210",
-  "otp": "123456",
-  "purpose": "signup"
+  "destinationPhone": "+919876543210",
+  "code": "123456",
+  "purpose": "signup",
+  "expiresAt": "2026-08-20T12:34:56.000Z"
 }
 ```
 

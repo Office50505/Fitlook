@@ -63,7 +63,7 @@ Baseline metadata, robots, sitemap, and route metadata were added. Product/categ
 
 - User token is stored in `localStorage`.
 - OTP sessions are in memory.
-- `devOtp` must not be exposed in production.
+- OTP delivery must stay server-to-server; production requires the webhook provider and must never expose raw OTPs to browser responses.
 - Uploaded/generated media is served from local public paths.
 - Product checkout is not enabled because backend order validation is missing.
 

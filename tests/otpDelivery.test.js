@@ -3,11 +3,23 @@ import fs from 'node:fs/promises';
 import test from 'node:test';
 import { deliverOtp } from '../server/utils/otpDelivery.js';
 
-test('OTP delivery fails closed when no provider is configured', async () => {
+test('OTP delivery fails closed in production when no provider is configured', async () => {
   await assert.rejects(
-    deliverOtp({ phone: '+919876543210', otp: '123456', purpose: 'signup' }, {}),
+    deliverOtp({ phone: '+919876543210', otp: '123456', purpose: 'signup' }, { NODE_ENV: 'production' }),
     /OTP delivery is not configured/
   );
+});
+
+test('OTP delivery defaults to local mock outside production when provider is unset', async () => {
+  const storePath = `/private/tmp/fitlook-otp-default-${Date.now()}-${Math.random()}.jsonl`;
+  await deliverOtp(
+    { phone: '+919876543210', otp: '123456', purpose: 'signup', otpSession: 'local-session' },
+    { NODE_ENV: 'development', OTP_MOCK_STORE_PATH: storePath }
+  );
+  const stored = (await fs.readFile(storePath, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(stored[0].otp, '123456');
+  assert.equal(stored[0].otpSession, 'local-session');
+  await fs.unlink(storePath).catch(() => {});
 });
 
 test('OTP delivery posts the code to the configured webhook provider', async () => {
@@ -32,8 +44,8 @@ test('OTP delivery posts the code to the configured webhook provider', async () 
     assert.equal(received.options.method, 'POST');
     assert.equal(received.options.headers.Authorization, 'Bearer secret-token');
     assert.deepEqual(JSON.parse(received.options.body), {
-      phone: '+919876543210',
-      otp: '123456',
+      destinationPhone: '+919876543210',
+      code: '123456',
       purpose: 'login'
     });
   } finally {
@@ -72,7 +84,7 @@ test('OTP webhook delivery rejects provider 4xx and 5xx responses safely', async
   const originalFetch = globalThis.fetch;
 
   try {
-    for (const status of [400, 503]) {
+    for (const status of [400, 401, 403, 429, 500]) {
       globalThis.fetch = async () => ({ ok: false, status });
       await assert.rejects(
         deliverOtp(
@@ -88,6 +100,75 @@ test('OTP webhook delivery rejects provider 4xx and 5xx responses safely', async
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('OTP webhook retries transient responses only when configured', async () => {
+  const originalFetch = globalThis.fetch;
+  const statuses = [500, 204];
+  const calls = [];
+  globalThis.fetch = async (_url, options) => {
+    calls.push(JSON.parse(options.body));
+    const status = statuses.shift();
+    return { ok: status < 400, status };
+  };
+
+  try {
+    await deliverOtp(
+      { phone: '+919876543210', otp: '123456', purpose: 'signup', otpSession: 'otp-session-1', expiresAt: Date.now() + 300000 },
+      {
+        OTP_DELIVERY_PROVIDER: 'webhook',
+        OTP_DELIVERY_WEBHOOK_URL: 'https://otp-provider.example/send',
+        OTP_DELIVERY_RETRY_ATTEMPTS: '2',
+        OTP_DELIVERY_RETRY_DELAY_MS: '0'
+      }
+    );
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].destinationPhone, '+919876543210');
+    assert.equal(calls[0].code, '123456');
+    assert.equal(typeof calls[0].expiresAt, 'string');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('OTP webhook does not retry non-retryable authorization failures', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return { ok: false, status: 401 };
+  };
+
+  try {
+    await assert.rejects(
+      deliverOtp(
+        { phone: '+919876543210', otp: '123456', purpose: 'signup' },
+        {
+          OTP_DELIVERY_PROVIDER: 'webhook',
+          OTP_DELIVERY_WEBHOOK_URL: 'https://otp-provider.example/send',
+          OTP_DELIVERY_RETRY_ATTEMPTS: '3'
+        }
+      ),
+      /rejected/
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('OTP webhook rejects unsafe production URLs', async () => {
+  await assert.rejects(
+    deliverOtp(
+      { phone: '+919876543210', otp: '123456', purpose: 'signup' },
+      {
+        NODE_ENV: 'production',
+        OTP_DELIVERY_PROVIDER: 'webhook',
+        OTP_DELIVERY_WEBHOOK_URL: 'http://localhost:3000/otp'
+      }
+    ),
+    /HTTPS|localhost/
+  );
 });
 
 test('OTP webhook delivery rejects malformed provider responses safely', async () => {

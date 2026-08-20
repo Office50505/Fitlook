@@ -25,7 +25,8 @@ import {
   removeCurrentSession,
   verifyOtpChallenge
 } from '../utils/otp.js';
-import { deliverOtp } from '../utils/otpDelivery.js';
+import { deliverOtp, otpDeliveryProvider } from '../utils/otpDelivery.js';
+import { mockOtpStorePath } from '../utils/otpProviders.js';
 import {
   isAllowedRasterImageUpload,
   isDevelopmentModeAllowed,
@@ -55,21 +56,21 @@ const authIpLimiter = createRateLimiter({
 const otpRequestIpLimiter = createRateLimiter({
   name: 'auth:otp-request-ip',
   windowMs: 10 * 60 * 1000,
-  max: 12,
+  max: Number(process.env.RATE_LIMIT_AUTH_OTP_REQUEST_IP_MAX || 12),
   keyGenerator: rateLimitKeys.clientIp,
   message: 'Too many OTP requests from this network. Please wait before requesting another code.'
 });
 const otpRequestPhoneLimiter = createRateLimiter({
   name: 'auth:otp-request-phone',
   windowMs: 10 * 60 * 1000,
-  max: 3,
+  max: Number(process.env.RATE_LIMIT_AUTH_OTP_REQUEST_PHONE_MAX || 3),
   keyGenerator: rateLimitKeys.bodyPhone,
   message: 'Too many OTP requests for this phone number. Please wait before requesting another code.'
 });
 const otpRequestPhoneHourlyLimiter = createRateLimiter({
   name: 'auth:otp-request-phone-hour',
   windowMs: 60 * 60 * 1000,
-  max: 10,
+  max: Number(process.env.RATE_LIMIT_AUTH_OTP_REQUEST_PHONE_HOURLY_MAX || 10),
   keyGenerator: rateLimitKeys.bodyPhone,
   message: 'OTP requests are temporarily limited for this phone number. Please try again later.'
 });
@@ -138,6 +139,31 @@ function shouldGenerateFullBodyProfileForRequest(req) {
 
 function normalizePhone(value = '') {
   return normalizeIndianMobile(value);
+}
+
+function testOtpHelperEnabled() {
+  const nodeEnv = String(process.env.NODE_ENV || '').toLowerCase();
+  const disabled = ['0', 'false', 'no', 'off'].includes(String(process.env.ENABLE_TEST_OTP_HELPER || '').toLowerCase());
+  return nodeEnv !== 'production' && !disabled && otpDeliveryProvider(process.env) === 'mock';
+}
+
+async function latestMockOtp({ phone, purpose, otpSession }) {
+  const storePath = mockOtpStorePath(process.env);
+  const raw = await fs.readFile(storePath, 'utf8').catch(() => '');
+  const entries = raw.trim().split('\n').filter(Boolean).map((line) => {
+    try {
+      return JSON.parse(line);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean).reverse();
+  const match = entries.find((entry) => (
+    normalizePhone(entry.phone) === phone
+    && entry.purpose === purpose
+    && (!otpSession || entry.otpSession === otpSession)
+    && /^\d{6}$/.test(String(entry.otp || ''))
+  ));
+  return match?.otp || '';
 }
 
 function extensionForFile(file) {
@@ -539,14 +565,14 @@ router.post('/signup/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, 
   const existing = await User.exists({ phone });
   if (existing) return res.status(409).json({ message: 'An account already exists for this phone number' });
 
-  const { otpSession, otp } = await createOtpChallenge({
+  const { otpSession, otp, expiresAt } = await createOtpChallenge({
     sessions: signupOtpSessions,
     currentSessions: signupOtpCurrentSessions,
     purpose: 'signup',
     phone
   });
   try {
-    await deliverOtp({ phone, otp, purpose: 'signup' });
+    await deliverOtp({ phone, otp, purpose: 'signup', otpSession, expiresAt });
   } catch (error) {
     await signupOtpSessions.remove(otpSession);
     await removeCurrentSession({ currentSessions: signupOtpCurrentSessions, purpose: 'signup', phone });
@@ -558,6 +584,18 @@ router.post('/signup/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, 
     phone,
     message: 'OTP sent'
   });
+}));
+
+router.get('/test-otp', authIpLimiter, asyncRoute(async (req, res) => {
+  if (!testOtpHelperEnabled()) return res.status(404).json({ message: 'Not found' });
+  const purpose = String(req.query?.purpose || '').trim();
+  if (!['signup', 'login'].includes(purpose)) return res.status(400).json({ message: 'Invalid OTP purpose.' });
+  const phone = normalizePhone(req.query?.phone);
+  const otpSession = String(req.query?.otpSession || '').trim();
+  if (!phone || !otpSession) return res.status(400).json({ message: 'Missing OTP request details.' });
+  const otp = await latestMockOtp({ phone, purpose, otpSession });
+  if (!otp) return res.status(404).json({ message: 'No local code found for this request.' });
+  res.json({ otp });
 }));
 
 router.post('/signup/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
@@ -681,7 +719,7 @@ router.post('/login/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, o
   const user = await User.findOne({ phone });
   if (!user) return res.status(404).json({ message: 'No Lookmefy account found for this phone number' });
 
-  const { otpSession, otp } = await createOtpChallenge({
+  const { otpSession, otp, expiresAt } = await createOtpChallenge({
     sessions: loginOtpSessions,
     currentSessions: loginOtpCurrentSessions,
     purpose: 'login',
@@ -689,7 +727,7 @@ router.post('/login/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, o
     metadata: { userId: user._id.toString() }
   });
   try {
-    await deliverOtp({ phone, otp, purpose: 'login' });
+    await deliverOtp({ phone, otp, purpose: 'login', otpSession, expiresAt });
   } catch (error) {
     await loginOtpSessions.remove(otpSession);
     await removeCurrentSession({ currentSessions: loginOtpCurrentSessions, purpose: 'login', phone });
