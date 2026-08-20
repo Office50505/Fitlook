@@ -6,6 +6,12 @@ import TryOn from '../models/TryOn.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
+import {
+  PAYMENT_PLANS,
+  SUBSCRIPTION_PLAN,
+  TOP_UP_PLANS,
+  planById
+} from '../../shared/pricing.js';
 
 const router = express.Router();
 const paymentCreateLimiter = createRateLimiter({
@@ -22,31 +28,6 @@ const paymentStatusLimiter = createRateLimiter({
   keyGenerator: rateLimitKeys.user,
   message: 'Payment status checks are temporarily limited. Please try again shortly.'
 });
-
-const SUBSCRIPTION_PLAN = {
-  id: 'monthly_150_tokens',
-  name: 'Monthly Lookmefy Membership',
-  orderType: 'subscription',
-  amount: 50000,
-  currency: 'INR',
-  tokens: 150,
-  billing: 'Monthly',
-  mandate: {
-    setupAmount: 100,
-    recurringAmount: 50000,
-    firstDebitDelayHours: 24
-  }
-};
-
-const TOP_UP_PLANS = [
-  { id: 'topup_50_tokens', name: '50 Token Top-up', orderType: 'topup', amount: 20000, currency: 'INR', tokens: 50, billing: 'One-time' },
-  { id: 'topup_75_tokens', name: '75 Token Top-up', orderType: 'topup', amount: 30000, currency: 'INR', tokens: 75, billing: 'One-time' },
-  { id: 'topup_110_tokens', name: '110 Token Top-up', orderType: 'topup', amount: 40000, currency: 'INR', tokens: 110, billing: 'One-time' },
-  { id: 'topup_135_tokens', name: '135 Token Top-up', orderType: 'topup', amount: 50000, currency: 'INR', tokens: 135, billing: 'One-time' },
-  { id: 'topup_400_tokens', name: '400 Token Top-up', orderType: 'topup', amount: 100000, currency: 'INR', tokens: 400, billing: 'One-time' }
-];
-
-const PAYMENT_PLANS = [SUBSCRIPTION_PLAN, ...TOP_UP_PLANS];
 
 let cachedAuth = null;
 
@@ -122,21 +103,18 @@ function publicPlan(plan) {
     name: plan.name,
     orderType: plan.orderType,
     amount: plan.amount,
+    dueTodayAmount: plan.dueTodayAmount || plan.amount,
     currency: plan.currency,
     tokens: plan.tokens,
     billing: plan.billing,
+    cancellation: plan.cancellation || '',
     mandate: plan.mandate || null
   };
 }
 
-function planById(planId) {
-  const id = String(planId || '').trim();
-  return PAYMENT_PLANS.find((plan) => plan.id === id) || null;
-}
-
 function checkoutMessage(plan) {
   if (plan.orderType === 'topup') return `Lookmefy ${plan.tokens} token top-up`;
-  return 'Lookmefy monthly membership';
+  return `Set up ${plan.currency} ${(Number(plan.mandate?.recurringAmount || 0) / 100).toLocaleString('en-IN')}/month mandate`;
 }
 
 function configuredRedirectUrl(req, merchantOrderId, planId) {

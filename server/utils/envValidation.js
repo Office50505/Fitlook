@@ -27,6 +27,19 @@ export function validateServerEnv(env = process.env) {
     const missingFeatureKeys = group.keys.filter((key) => !String(env[key] || '').trim());
     return [`${group.name} is partially configured. Missing: ${missingFeatureKeys.join(', ')}`];
   });
+  const otpProvider = String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase();
+  if (otpProvider && !['disabled', 'mock', 'webhook'].includes(otpProvider)) {
+    warnings.push(`OTP delivery provider "${otpProvider}" is unsupported.`);
+  }
+  if (otpProvider === 'webhook' && !String(env.OTP_DELIVERY_WEBHOOK_URL || '').trim()) {
+    warnings.push('OTP delivery webhook is configured but OTP_DELIVERY_WEBHOOK_URL is missing.');
+  }
+  if (otpProvider === 'mock' && String(env.NODE_ENV || '').toLowerCase() === 'production') {
+    warnings.push('Mock OTP delivery is not allowed in production.');
+  }
+  if (otpProvider === 'mock' && !String(env.OTP_MOCK_STORE_PATH || '').trim()) {
+    warnings.push('Mock OTP delivery is configured but OTP_MOCK_STORE_PATH is missing.');
+  }
 
   return { warnings };
 }

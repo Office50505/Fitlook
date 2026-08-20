@@ -21707,10 +21707,52 @@ body.onboarding-scroll-locked {
 
 .signup-otp-hint {
   margin: -4px 0 0;
-  color: #8b4c4c;
+  color: #6f625b;
   font-family: var(--font-interface);
   font-size: 11px;
   font-weight: 700;
+}
+
+.otp-code-fields {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.otp-code-fields legend {
+  margin: 0 0 2px;
+  color: #4c423d;
+  font-family: var(--font-interface);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.otp-code-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(34px, 1fr));
+  gap: 8px;
+}
+
+.otp-code-grid input {
+  width: 100%;
+  aspect-ratio: 1;
+  min-height: 42px;
+  border: 1px solid rgba(72, 59, 51, .2);
+  border-radius: 8px;
+  background: #fff;
+  color: #241d19;
+  font-family: var(--font-interface);
+  font-size: 20px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.otp-code-grid input:focus {
+  border-color: #332720;
+  box-shadow: 0 0 0 3px rgba(51, 39, 32, .12);
+  outline: 0;
 }
 
 .signup-back-step {

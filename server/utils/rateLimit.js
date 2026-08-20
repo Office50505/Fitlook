@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { getRedisClient, keyPrefix, ttlSeconds, withTimeout } from './cache.js';
+import { normalizeIndianMobile } from './phone.js';
 
 const localBuckets = new Map();
 let lastWarningAt = 0;
@@ -24,13 +25,7 @@ function userId(req) {
 }
 
 function normalizedBodyPhone(req) {
-  const raw = String(req.body?.phone || '').trim();
-  const digits = raw.replace(/[^\d]/g, '');
-  if (!digits) return '';
-  if (digits.length === 10) return `+91${digits}`;
-  if (raw.startsWith('+') && digits.length >= 10 && digits.length <= 15) return `+${digits}`;
-  if (digits.length >= 11 && digits.length <= 15) return `+${digits}`;
-  return '';
+  return normalizeIndianMobile(req.body?.phone);
 }
 
 function bodyIdentifier(req) {

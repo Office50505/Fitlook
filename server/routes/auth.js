@@ -4,7 +4,6 @@ import heicConvert from 'heic-convert';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import multer from 'multer';
-import { createHmac, randomInt } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -16,8 +15,17 @@ import { recordAdminAudit } from '../utils/adminAudit.js';
 import { requireAdmin, signAdminSession } from '../utils/adminAccess.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
 import { enqueueJob, safeJobId } from '../utils/jobQueue.js';
+import { normalizeIndianMobile } from '../utils/phone.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { deleteStoredFile, readStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
+import {
+  cancelOtpChallenge,
+  createOtpChallenge,
+  currentSessionMatches,
+  removeCurrentSession,
+  verifyOtpChallenge
+} from '../utils/otp.js';
+import { deliverOtp } from '../utils/otpDelivery.js';
 import {
   isAllowedRasterImageUpload,
   isDevelopmentModeAllowed,
@@ -35,6 +43,8 @@ const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.e
 const signupOtpTtlMs = 5 * 60 * 1000;
 const signupOtpSessions = createTempSessionStore('otp:signup', { ttlMs: signupOtpTtlMs });
 const loginOtpSessions = createTempSessionStore('otp:login', { ttlMs: signupOtpTtlMs });
+const signupOtpCurrentSessions = createTempSessionStore('otp:signup-current', { ttlMs: signupOtpTtlMs });
+const loginOtpCurrentSessions = createTempSessionStore('otp:login-current', { ttlMs: signupOtpTtlMs });
 const authIpLimiter = createRateLimiter({
   name: 'auth:ip',
   windowMs: 15 * 60 * 1000,
@@ -127,24 +137,11 @@ function shouldGenerateFullBodyProfileForRequest(req) {
 }
 
 function normalizePhone(value = '') {
-  const raw = String(value || '').trim();
-  const digits = raw.replace(/[^\d]/g, '');
-  if (!digits) return '';
-  if (digits.length === 10) return `+91${digits}`;
-  if (raw.startsWith('+') && digits.length >= 10 && digits.length <= 15) return `+${digits}`;
-  if (digits.length >= 11 && digits.length <= 15) return `+${digits}`;
-  return '';
+  return normalizeIndianMobile(value);
 }
 
 function extensionForFile(file) {
   return path.extname(file.originalname || file.filename || '').toLowerCase();
-}
-
-function otpDigest(otpSession, otp) {
-  const secret = process.env.JWT_SECRET || process.env.ADMIN_KEY || 'fitlook-dev-secret';
-  return createHmac('sha256', secret)
-    .update(`${otpSession}:${otp}`)
-    .digest('hex');
 }
 
 function extensionForMimetype(mimetype) {
@@ -538,43 +535,57 @@ function asyncRoute(handler) {
 
 router.post('/signup/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, otpRequestPhoneHourlyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
-  if (!phone) return res.status(400).json({ message: 'Enter a valid phone number' });
+  if (!phone) return res.status(400).json({ message: 'Enter a valid mobile number.' });
   const existing = await User.exists({ phone });
   if (existing) return res.status(409).json({ message: 'An account already exists for this phone number' });
 
-  const otp = String(randomInt(100000, 999999));
-  const { id: otpSession } = await signupOtpSessions.create({
-    phone,
-    otpHash: '',
-    verified: false,
+  const { otpSession, otp } = await createOtpChallenge({
+    sessions: signupOtpSessions,
+    currentSessions: signupOtpCurrentSessions,
+    purpose: 'signup',
+    phone
   });
-  await signupOtpSessions.update(otpSession, (session) => ({
-    ...session,
-    otpHash: otpDigest(otpSession, otp)
-  }));
+  try {
+    await deliverOtp({ phone, otp, purpose: 'signup' });
+  } catch (error) {
+    await signupOtpSessions.remove(otpSession);
+    await removeCurrentSession({ currentSessions: signupOtpCurrentSessions, purpose: 'signup', phone });
+    throw error;
+  }
 
   res.json({
     otpSession,
     phone,
-    message: 'OTP sent',
-    devOtp: otp
+    message: 'OTP sent'
   });
 }));
 
 router.post('/signup/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
-  const otp = String(req.body?.otp || '').replace(/\D/g, '');
   const otpSession = String(req.body?.otpSession || '');
-  const session = await signupOtpSessions.get(otpSession);
-  if (!phone || !otpSession || !session || session.phone !== phone) return res.status(400).json({ message: 'Request a new OTP' });
-  if (session.expiresAt <= Date.now()) {
-    await signupOtpSessions.remove(otpSession);
-    return res.status(400).json({ message: 'OTP expired. Request a new code' });
-  }
-  if (session.otpHash !== otpDigest(otpSession, otp)) return res.status(400).json({ message: 'Incorrect OTP' });
-  session.verified = true;
-  await signupOtpSessions.set(otpSession, session);
+  const result = await verifyOtpChallenge({
+    sessions: signupOtpSessions,
+    currentSessions: signupOtpCurrentSessions,
+    purpose: 'signup',
+    phone,
+    otpSession,
+    otp: req.body?.otp
+  });
+  if (!result.ok) return res.status(result.status).json({ message: result.message });
   res.json({ verified: true, otpSession, phone });
+}));
+
+router.post('/signup/cancel-otp', authIpLimiter, asyncRoute(async (req, res) => {
+  const phone = normalizePhone(req.body?.phone);
+  const otpSession = String(req.body?.otpSession || '');
+  await cancelOtpChallenge({
+    sessions: signupOtpSessions,
+    currentSessions: signupOtpCurrentSessions,
+    purpose: 'signup',
+    phone,
+    otpSession
+  });
+  res.json({ cancelled: true });
 }));
 
 router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) => {
@@ -584,7 +595,15 @@ router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) =
   const username = normalizeUsername(req.body.username) || await uniqueUsername(name);
   const genderPreference = normalizeGenderPreference(req.body.genderPreference);
   const phoneSession = await signupOtpSessions.get(otpSession);
-  if (!phone || !phoneSession || phoneSession.phone !== phone || !phoneSession.verified || phoneSession.expiresAt <= Date.now()) return res.status(400).json({ message: 'Verify your phone number first' });
+  const isCurrentSignupSession = phone && otpSession
+    ? await currentSessionMatches({
+      currentSessions: signupOtpCurrentSessions,
+      purpose: 'signup',
+      phone,
+      otpSession
+    })
+    : false;
+  if (!phone || !phoneSession || phoneSession.phone !== phone || !phoneSession.verified || phoneSession.expiresAt <= Date.now() || !isCurrentSignupSession) return res.status(400).json({ message: 'Verify your phone number first' });
   if (!name || !email || !password || !username || !genderPreference) return res.status(400).json({ message: 'Name, username, email, gender preference, and password are required' });
   if (String(password).length < 12) return res.status(400).json({ message: 'Password must be at least 12 characters' });
   if (username.length < 3) return res.status(400).json({ message: 'Username must be at least 3 characters' });
@@ -618,6 +637,7 @@ router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) =
 
     await generateFullBodyProfileInBackground(user._id, bodyPhoto, { enabled: generateFullBody });
     await signupOtpSessions.remove(otpSession);
+    await removeCurrentSession({ currentSessions: signupOtpCurrentSessions, purpose: 'signup', phone });
     res.status(201).json({ token: sign(user), user: user.toClient() });
   } catch (error) {
     if (isBodyPhotoPreparationError(error)) return res.status(400).json({ message: error.message });
@@ -657,45 +677,63 @@ router.post('/login', authIpLimiter, loginAttemptLimiter, async (req, res) => {
 
 router.post('/login/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, otpRequestPhoneHourlyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
-  if (!phone) return res.status(400).json({ message: 'Enter a valid phone number' });
+  if (!phone) return res.status(400).json({ message: 'Enter a valid mobile number.' });
   const user = await User.findOne({ phone });
   if (!user) return res.status(404).json({ message: 'No Lookmefy account found for this phone number' });
 
-  const otp = String(randomInt(100000, 999999));
-  const { id: otpSession } = await loginOtpSessions.create({
+  const { otpSession, otp } = await createOtpChallenge({
+    sessions: loginOtpSessions,
+    currentSessions: loginOtpCurrentSessions,
+    purpose: 'login',
     phone,
-    userId: user._id.toString(),
-    otpHash: ''
+    metadata: { userId: user._id.toString() }
   });
-  await loginOtpSessions.update(otpSession, (session) => ({
-    ...session,
-    otpHash: otpDigest(otpSession, otp)
-  }));
+  try {
+    await deliverOtp({ phone, otp, purpose: 'login' });
+  } catch (error) {
+    await loginOtpSessions.remove(otpSession);
+    await removeCurrentSession({ currentSessions: loginOtpCurrentSessions, purpose: 'login', phone });
+    throw error;
+  }
 
   res.json({
     otpSession,
     phone,
-    message: 'OTP sent',
-    devOtp: otp
+    message: 'OTP sent'
   });
 }));
 
 router.post('/login/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
-  const otp = String(req.body?.otp || '').replace(/\D/g, '');
   const otpSession = String(req.body?.otpSession || '');
-  const session = await loginOtpSessions.get(otpSession);
-  if (!phone || !otpSession || !session || session.phone !== phone) return res.status(400).json({ message: 'Request a new OTP' });
-  if (session.expiresAt <= Date.now()) {
-    await loginOtpSessions.remove(otpSession);
-    return res.status(400).json({ message: 'OTP expired. Request a new code' });
-  }
-  if (session.otpHash !== otpDigest(otpSession, otp)) return res.status(400).json({ message: 'Incorrect OTP' });
+  const result = await verifyOtpChallenge({
+    sessions: loginOtpSessions,
+    currentSessions: loginOtpCurrentSessions,
+    purpose: 'login',
+    phone,
+    otpSession,
+    otp: req.body?.otp
+  });
+  if (!result.ok) return res.status(result.status).json({ message: result.message });
 
-  const user = await User.findById(session.userId);
+  const user = await User.findById(result.session.userId);
   await loginOtpSessions.remove(otpSession);
+  await removeCurrentSession({ currentSessions: loginOtpCurrentSessions, purpose: 'login', phone });
   if (!user) return res.status(401).json({ message: 'Account not found. Please sign up again.' });
   res.json({ token: sign(user), user: user.toClient() });
+}));
+
+router.post('/login/cancel-otp', authIpLimiter, asyncRoute(async (req, res) => {
+  const phone = normalizePhone(req.body?.phone);
+  const otpSession = String(req.body?.otpSession || '');
+  await cancelOtpChallenge({
+    sessions: loginOtpSessions,
+    currentSessions: loginOtpCurrentSessions,
+    purpose: 'login',
+    phone,
+    otpSession
+  });
+  res.json({ cancelled: true });
 }));
 
 router.post('/admin-login', authIpLimiter, adminLoginLimiter, async (req, res) => {

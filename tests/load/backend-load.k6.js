@@ -70,14 +70,15 @@ export const options = {
 
 export function setup() {
   const runId = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-  const phone = `+1${String(Date.now()).slice(-10)}`;
+  const phone = `+919${String(Date.now()).slice(-9)}`;
   const created = { runId, phone, productId: '', userToken: '', userId: '' };
 
   group('setup: create reusable user', () => {
     const otpRequest = post('/api/auth/signup/request-otp', { phone }, 'POST /api/auth/signup/request-otp', [200]);
     const otpData = parseJson(otpRequest);
     const otpSession = otpData.otpSession || '';
-    const otp = otpData.devOtp || '';
+    const otp = __ENV.LOAD_TEST_OTP || '';
+    if (!otp) throw new Error('LOAD_TEST_OTP is required for load-test signup. The API no longer returns OTP values.');
     post('/api/auth/signup/verify-otp', { phone, otpSession, otp }, 'POST /api/auth/signup/verify-otp', [200]);
 
     const res = http.post(`${baseUrl}/api/auth/signup`, {

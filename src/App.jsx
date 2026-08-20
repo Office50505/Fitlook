@@ -6,6 +6,13 @@ import { cartItemCount, cartSubtotal, readCartItems, removeCartItem, updateCartQ
 import { trackClientEvent } from './utils/analytics.js';
 import { DEFAULT_MODEL_PLACEMENT, calculateModelPlacement, normalizedPlacement } from './utils/modelPlacement.js';
 import { updateProductSeo, updateRouteSeo } from './utils/seo.js';
+import {
+  SUBSCRIPTION_PLAN,
+  TOP_UP_PLANS,
+  creditRateLabel,
+  firstRecurringPaymentDate,
+  formatMinorAmount
+} from '../shared/pricing.js';
 
 const asset = (name) => `/assets/${name}`;
 const MAX_BODY_PHOTO_BYTES = 8 * 1024 * 1024;
@@ -5871,87 +5878,42 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
     }
   };
 
+  const recurringAmount = formatMinorAmount(SUBSCRIPTION_PLAN.mandate.recurringAmount, SUBSCRIPTION_PLAN.currency);
+  const dueTodayAmount = formatMinorAmount(SUBSCRIPTION_PLAN.dueTodayAmount, SUBSCRIPTION_PLAN.currency);
+  const firstRecurringDate = formatDate(firstRecurringPaymentDate(SUBSCRIPTION_PLAN));
   const subscriptionPack = {
-    id: 'monthly_150_tokens',
-    planId: 'monthly_150_tokens',
-    label: 'Mandate',
-    headline: 'Rs 1 setup',
-    price: 'Rs 500',
-    tokensLabel: '150 monthly tokens',
-    rateLabel: 'Rs 3.33 / credit monthly',
-    billing: 'Rs 500 after 24 hours, then monthly',
-    copy: 'Start the monthly membership with a mandate setup. Images use 1 token and videos use 3 tokens.',
-    cta: user ? 'Set up mandate' : 'Create profile',
+    id: SUBSCRIPTION_PLAN.id,
+    planId: SUBSCRIPTION_PLAN.id,
+    plan: SUBSCRIPTION_PLAN,
+    label: SUBSCRIPTION_PLAN.name,
+    headline: `${SUBSCRIPTION_PLAN.tokens} credits every month`,
+    price: dueTodayAmount,
+    tokensLabel: `${SUBSCRIPTION_PLAN.tokens} credits every month`,
+    rateLabel: `${creditRateLabel(SUBSCRIPTION_PLAN)} monthly`,
+    billing: `${recurringAmount} on ${firstRecurringDate}, then monthly`,
+    copy: SUBSCRIPTION_PLAN.cancellation,
+    cta: user ? `Set up ${recurringAmount}/month mandate` : 'Create profile',
     featured: true,
     payable: true
   };
-  const topUpPacks = [
-    {
-      id: 'topup_50_tokens',
-      planId: 'topup_50_tokens',
-      label: 'Top-up',
-      headline: 'Rs 200',
-      tokensLabel: '50 tokens',
-      rateLabel: 'Rs 4.00 / credit',
-      price: 'Rs 200',
-      billing: 'One-time',
-      copy: 'Quick refill when you need a smaller batch of extra generations.',
-      cta: user ? 'Buy top-up' : 'Create profile',
-      payable: true
-    },
-    {
-      id: 'topup_75_tokens',
-      planId: 'topup_75_tokens',
-      label: 'Top-up',
-      headline: 'Rs 300',
-      tokensLabel: '75 tokens',
-      rateLabel: 'Rs 4.00 / credit',
-      price: 'Rs 300',
-      billing: 'One-time',
-      copy: 'A mid-size refill for regular image try-on sessions.',
-      cta: user ? 'Buy top-up' : 'Create profile',
-      payable: true
-    },
-    {
-      id: 'topup_110_tokens',
-      planId: 'topup_110_tokens',
-      label: 'Top-up',
-      headline: 'Rs 400',
-      tokensLabel: '110 tokens',
-      rateLabel: 'Rs 3.64 / credit',
-      price: 'Rs 400',
-      billing: 'One-time',
-      copy: 'Better value for product batches and style exploration.',
-      cta: user ? 'Buy top-up' : 'Create profile',
-      payable: true
-    },
-    {
-      id: 'topup_135_tokens',
-      planId: 'topup_135_tokens',
-      label: 'Top-up',
-      headline: 'Rs 500',
-      tokensLabel: '135 tokens',
-      rateLabel: 'Rs 3.70 / credit',
-      price: 'Rs 500',
-      billing: 'One-time',
-      copy: 'A larger one-time refill without changing the monthly plan.',
-      cta: user ? 'Buy top-up' : 'Create profile',
-      payable: true
-    },
-    {
-      id: 'topup_400_tokens',
-      planId: 'topup_400_tokens',
-      label: 'Top-up',
-      headline: 'Rs 1,000',
-      tokensLabel: '400 tokens',
-      rateLabel: 'Rs 2.50 / credit',
-      price: 'Rs 1,000',
-      billing: 'One-time',
-      copy: 'Best value for bulk catalog work and repeated video trials.',
-      cta: user ? 'Buy top-up' : 'Create profile',
-      payable: true
-    }
-  ];
+  const topUpPacks = TOP_UP_PLANS.map((plan) => ({
+    id: plan.id,
+    planId: plan.id,
+    plan,
+    label: 'Top-up',
+    headline: formatMinorAmount(plan.dueTodayAmount, plan.currency),
+    tokensLabel: `${plan.tokens} credits`,
+    rateLabel: creditRateLabel(plan),
+    price: formatMinorAmount(plan.dueTodayAmount, plan.currency),
+    billing: plan.billing,
+    copy: plan.tokens >= 400
+      ? 'Best value for bulk catalog work and repeated video trials.'
+      : plan.tokens >= 100
+        ? 'Better value for product batches and style exploration.'
+        : 'One-time refill for extra image try-ons and videos.',
+    cta: user ? 'Buy top-up' : 'Create profile',
+    payable: true
+  }));
   const overviewPacks = [
     subscriptionPack,
     {
@@ -5970,6 +5932,8 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
   const creditPacks = isTopUpPage ? topUpPacks : overviewPacks;
   const selectedPack = creditPacks.find((pack) => pack.id === selectedPackId) || creditPacks[1];
   const isPaidPack = Boolean(selectedPack.payable);
+  const selectedPlan = selectedPack.plan || null;
+  const isSubscriptionPack = selectedPlan?.orderType === 'subscription';
   const completeSelection = () => {
     if (!user) {
       window.location.assign('/signup');
@@ -6034,9 +5998,18 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
             <div className="credit-summary-row"><span>Credit Package</span><strong>{selectedPack.label}</strong></div>
             <div className="credit-summary-row"><span>Tokens</span><strong>{selectedPack.tokensLabel}</strong></div>
             {selectedPack.rateLabel && <div className="credit-summary-row"><span>Rate</span><strong>{selectedPack.rateLabel}</strong></div>}
-            <div className="credit-summary-row"><span>Billing</span><strong>{selectedPack.billing}</strong></div>
+            {isSubscriptionPack ? (
+              <>
+                <div className="credit-summary-row"><span>First recurring payment</span><strong>{recurringAmount} on {firstRecurringDate}</strong></div>
+                <div className="credit-summary-row"><span>Then</span><strong>{recurringAmount}/month</strong></div>
+                <div className="credit-summary-row"><span>Billing frequency</span><strong>{selectedPlan.mandate.frequency}</strong></div>
+                <div className="credit-summary-row"><span>Cancellation</span><strong>{selectedPlan.cancellation}</strong></div>
+              </>
+            ) : (
+              <div className="credit-summary-row"><span>Billing</span><strong>{selectedPack.billing}</strong></div>
+            )}
             <div className="credit-summary-row"><span>Processing Fee</span><strong>Free</strong></div>
-            <div className="credit-summary-total"><span>Total, today</span><strong>{selectedPack.price}</strong></div>
+            <div className="credit-summary-total"><span>Due today</span><strong>{selectedPack.price}</strong></div>
             <button type="button" onClick={completeSelection} disabled={checkoutLoading}>{checkoutLoading ? 'Opening checkout...' : selectedPack.cta}</button>
             <small>{isPaidPack ? (isActive && subscription.currentPeriodEnd && selectedPack.id === 'monthly_150_tokens' ? `Current plan ends ${formatDate(subscription.currentPeriodEnd)}. Credits are added after secure payment verification.` : 'Secured by PhonePe. Credits are added only after payment verification.') : selectedPack.copy}</small>
           </aside>
@@ -7698,6 +7671,78 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
   );
 }
 
+function maskedPhoneForOtp(phone = '') {
+  const raw = String(phone || '').trim();
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 4) return 'your mobile number';
+  const local = digits.length > 10 ? digits.slice(-10) : digits;
+  const country = digits.length > 10 ? `+${digits.slice(0, -10)}` : '+91';
+  return `${country} \u2022\u2022\u2022\u2022\u2022 \u2022\u2022${local.slice(-3)}`;
+}
+
+function isLikelyIndianMobile(phone = '') {
+  const raw = String(phone || '').trim();
+  if (!raw || /[a-z]/i.test(raw)) return false;
+  const digits = raw.replace(/\D/g, '');
+  const local = digits.length === 10
+    ? digits
+    : digits.length === 11 && digits.startsWith('0')
+      ? digits.slice(1)
+      : digits.length === 12 && digits.startsWith('91')
+        ? digits.slice(2)
+        : '';
+  return /^[6-9]\d{9}$/.test(local);
+}
+
+function OtpCodeFields({ idPrefix, value, onChange, disabled }) {
+  const inputRefs = useRef([]);
+  const digits = String(value || '').slice(0, 6).padEnd(6, ' ').split('');
+  const setDigitAt = (index, nextValue) => {
+    const nextDigit = String(nextValue || '').replace(/\D/g, '').slice(-1);
+    const current = String(value || '').padEnd(6, ' ').split('');
+    current[index] = nextDigit || ' ';
+    const next = current.join('').replace(/\s/g, '').slice(0, 6);
+    onChange(next);
+    if (nextDigit && index < 5) inputRefs.current[index + 1]?.focus();
+  };
+
+  return (
+    <fieldset className="otp-code-fields" aria-label="Enter verification code">
+      <legend>Enter verification code</legend>
+      <div className="otp-code-grid">
+        {digits.map((digit, index) => (
+          <input
+            key={`${idPrefix}-${index}`}
+            ref={(node) => { inputRefs.current[index] = node; }}
+            id={`${idPrefix}-${index}`}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete={index === 0 ? 'one-time-code' : 'off'}
+            aria-label={`Digit ${index + 1}`}
+            maxLength="1"
+            value={digit === ' ' ? '' : digit}
+            disabled={disabled}
+            onChange={(event) => setDigitAt(index, event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Backspace' && !digits[index].trim() && index > 0) {
+                inputRefs.current[index - 1]?.focus();
+              }
+            }}
+            onPaste={(event) => {
+              event.preventDefault();
+              const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+              if (!pasted) return;
+              onChange(pasted);
+              inputRefs.current[Math.min(pasted.length, 6) - 1]?.focus();
+            }}
+          />
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function AuthPage({ mode, setUser }) {
   const bodyPhotoCameraRef = useRef(null);
   const [message, setMessage] = useState('');
@@ -7706,7 +7751,6 @@ function AuthPage({ mode, setUser }) {
   const [phoneValue, setPhoneValue] = useState('');
   const [otpValue, setOtpValue] = useState('');
   const [otpSession, setOtpSession] = useState('');
-  const [devOtp, setDevOtp] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [bodyPhotoFile, setBodyPhotoFile] = useState(null);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
@@ -7726,7 +7770,6 @@ function AuthPage({ mode, setUser }) {
     setPhoneValue('');
     setOtpValue('');
     setOtpSession('');
-    setDevOtp('');
     if (mode === 'signup') {
       setSignupStep('phone');
     }
@@ -7743,8 +7786,43 @@ function AuthPage({ mode, setUser }) {
     setBodyPhotoPreview(file ? URL.createObjectURL(file) : '');
   };
 
+  const cancelOtpSession = async (purpose, session = otpSession, phone = phoneValue) => {
+    if (!session || !phone) return;
+    try {
+      await api(`/auth/${purpose}/cancel-otp`, {
+        method: 'POST',
+        body: JSON.stringify({ phone, otpSession: session }),
+        retry: 0
+      });
+    } catch {
+      // The next verification/account step is still server-authoritative.
+    }
+  };
+
+  const clearOtpEntry = (purpose) => {
+    const session = otpSession;
+    const phone = phoneValue;
+    setOtpSession('');
+    setOtpValue('');
+    setMessage('');
+    if (session) void cancelOtpSession(purpose, session, phone);
+  };
+
+  const updatePhoneEntry = (purpose, nextPhone) => {
+    const session = otpSession;
+    const phone = phoneValue;
+    setPhoneValue(nextPhone);
+    setOtpSession('');
+    setOtpValue('');
+    if (session) void cancelOtpSession(purpose, session, phone);
+  };
+
   const requestSignupOtp = async () => {
     if (otpLoading) return;
+    if (!isLikelyIndianMobile(phoneValue)) {
+      setMessage('Enter a valid mobile number.');
+      return;
+    }
     setOtpLoading(true);
     setMessage('');
     try {
@@ -7754,9 +7832,8 @@ function AuthPage({ mode, setUser }) {
       });
       setOtpSession(data.otpSession || '');
       setPhoneValue(data.phone || phoneValue);
-      setDevOtp(data.devOtp || '');
       setOtpValue('');
-      setMessage(data.devOtp ? `OTP sent. Test code: ${data.devOtp}` : 'OTP sent.');
+      setMessage('OTP sent.');
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -7786,6 +7863,10 @@ function AuthPage({ mode, setUser }) {
 
   const requestLoginOtp = async () => {
     if (otpLoading) return;
+    if (!isLikelyIndianMobile(phoneValue)) {
+      setMessage('Enter a valid mobile number.');
+      return;
+    }
     setOtpLoading(true);
     setMessage('');
     try {
@@ -7795,9 +7876,8 @@ function AuthPage({ mode, setUser }) {
       });
       setOtpSession(data.otpSession || '');
       setPhoneValue(data.phone || phoneValue);
-      setDevOtp(data.devOtp || '');
       setOtpValue('');
-      setMessage(data.devOtp ? `OTP sent. Test code: ${data.devOtp}` : 'OTP sent.');
+      setMessage('OTP sent.');
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -7901,16 +7981,14 @@ function AuthPage({ mode, setUser }) {
             <form className="auth-login-form" onSubmit={(event) => event.preventDefault()} aria-busy={otpLoading}>
               <label className="signup-field">
                 <span>Mobile number</span>
-                <input name="loginPhone" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Mobile number" value={phoneValue} onChange={(event) => { setPhoneValue(event.target.value); setOtpSession(''); setOtpValue(''); setDevOtp(''); }} />
+                <input name="loginPhone" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('login', event.target.value)} />
               </label>
-              <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestLoginOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
+              <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestLoginOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend code' : 'Send OTP'}</button>
               {otpSession && (
                 <div className="auth-signup-reference-fields">
-                  <label className="signup-field">
-                    <span>OTP</span>
-                    <input name="loginOtp" inputMode="numeric" pattern="[0-9]*" maxLength="6" placeholder="6-digit OTP" value={otpValue} onChange={(event) => setOtpValue(event.target.value.replace(/\D/g, '').slice(0, 6))} />
-                  </label>
-                  {devOtp && <p className="signup-otp-hint">Test OTP: {devOtp}</p>}
+                  <p className="signup-otp-hint">We sent a 6-digit code to {maskedPhoneForOtp(phoneValue)}.</p>
+                  <OtpCodeFields idPrefix="login-otp" value={otpValue} onChange={setOtpValue} disabled={otpLoading} />
+                  <button className="signup-back-step" type="button" onClick={() => clearOtpEntry('login')}>Change number</button>
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifyLoginOtp}>{otpLoading ? 'Verifying...' : 'Verify & login'}</button>
                 </div>
               )}
@@ -7939,24 +8017,22 @@ function AuthPage({ mode, setUser }) {
               <div className="auth-signup-reference-fields">
                 <label className="signup-field">
                   <span>Mobile number</span>
-                  <input name="phoneDisplay" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Mobile number" value={phoneValue} onChange={(event) => { setPhoneValue(event.target.value); setOtpSession(''); setOtpValue(''); setDevOtp(''); }} />
+                  <input name="phoneDisplay" type="tel" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('signup', event.target.value)} />
                 </label>
               </div>
-              <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestSignupOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
+              <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestSignupOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend code' : 'Send OTP'}</button>
               {otpSession && (
                 <div className="auth-signup-reference-fields">
-                  <label className="signup-field">
-                    <span>OTP</span>
-                    <input name="otpDisplay" inputMode="numeric" pattern="[0-9]*" maxLength="6" placeholder="6-digit OTP" value={otpValue} onChange={(event) => setOtpValue(event.target.value.replace(/\D/g, '').slice(0, 6))} />
-                  </label>
-                  {devOtp && <p className="signup-otp-hint">Test OTP: {devOtp}</p>}
+                  <p className="signup-otp-hint">We sent a 6-digit code to {maskedPhoneForOtp(phoneValue)}.</p>
+                  <OtpCodeFields idPrefix="signup-otp" value={otpValue} onChange={setOtpValue} disabled={otpLoading} />
+                  <button className="signup-back-step" type="button" onClick={() => clearOtpEntry('signup')}>Change number</button>
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifySignupOtp}>{otpLoading ? 'Verifying...' : 'Verify & continue'}</button>
                 </div>
               )}
             </div>
           ) : (
             <>
-              <button className="signup-back-step" type="button" onClick={() => setSignupStep('phone')}>Change number</button>
+              <button className="signup-back-step" type="button" onClick={() => { setSignupStep('phone'); clearOtpEntry('signup'); }}>Change number</button>
               <div className="auth-signup-reference-fields">
                 <label className="signup-field">
                   <span>Full name</span>
