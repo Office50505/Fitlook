@@ -5028,6 +5028,7 @@ function toggleWishlistProductId(productOrId) {
   if (saved && product) writeWishlistProductSnapshot(product);
   if (!saved) removeWishlistProductSnapshot(id);
   window.dispatchEvent(new CustomEvent('fitlook:wishlist-change', { detail: { id, saved } }));
+  if (saved) recordEvent('wishlist', { productId: id });
   if (sessionStorage.getItem('fitlook_token')) {
     api(`/auth/wishlist/${encodeURIComponent(id)}`, { method: saved ? 'PUT' : 'DELETE' })
       .catch(() => announce('Wishlist saved on this device. Account sync will retry when the connection is available.', 'error'));
