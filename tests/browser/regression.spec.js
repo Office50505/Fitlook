@@ -282,6 +282,35 @@ test('authentication persists across tabs and logout syncs', async ({ page, requ
   await isolated.close();
 });
 
+test('delete account flow requires typed confirmation and clears authenticated state', async ({ page, request, context }) => {
+  const account = await createAccountViaApi(request);
+  await installToken(context, account.token);
+
+  await page.goto('/profile');
+  await page.getByRole('button', { name: 'Delete Account' }).click();
+  await expect(page.getByRole('dialog', { name: /Delete your account/i })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: /Delete your account/i })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Delete Account' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  const finalDelete = page.getByRole('button', { name: 'Permanently Delete Account' });
+  await expect(finalDelete).toBeDisabled();
+  await page.getByLabel('Type DELETE to confirm').fill('delete');
+  await expect(finalDelete).toBeDisabled();
+  await page.getByLabel('Type DELETE to confirm').fill('DELETE');
+  await expect(finalDelete).toBeEnabled();
+  await finalDelete.click();
+
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('fitlook_token'))).toBeNull();
+  await expect(page).toHaveURL(/\/$/);
+  const deletedSession = await request.get('/api/auth/me', { headers: { Authorization: `Bearer ${account.token}` } });
+  expect(deletedSession.status()).toBe(401);
+
+  await page.goto('/profile');
+  await expect(page.getByRole('heading', { name: /Sign in to view your profile/i })).toBeVisible();
+});
+
 test('protected routes show guest auth gate and preserve internal return paths', async ({ page }) => {
   await page.goto('/closet');
   await expect(page).toHaveURL(/\/closet/);

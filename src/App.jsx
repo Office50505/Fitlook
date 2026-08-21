@@ -760,6 +760,7 @@ function authReturnPath() {
 
 function requiresAuthentication(path = normalizePath()) {
   return path === '/profile'
+    || path === '/generation-history'
     || path === '/style-bot'
     || path === '/custom-try-on'
     || path === '/try-on'
@@ -1280,6 +1281,52 @@ function useTryOnCache(user, products) {
   return [tryOns, setTryOns];
 }
 
+function useGenerationHistory(user) {
+  const [state, setState] = useState({ items: [], loading: Boolean(user), error: '' });
+  const [requestVersion, setRequestVersion] = useState(0);
+
+  useEffect(() => {
+    if (!user) {
+      setState({ items: [], loading: false, error: '' });
+      return undefined;
+    }
+
+    let alive = true;
+    const controller = new AbortController();
+    setState((current) => ({ ...current, loading: true, error: '' }));
+
+    api('/tryons', { signal: controller.signal })
+      .then(async (data) => {
+        const tryOns = Array.isArray(data.tryOns) ? data.tryOns : [];
+        const productIds = [...new Set(tryOns.map((item) => item.productId).filter(Boolean))].slice(0, 48);
+        const productPairs = await Promise.all(productIds.map(async (productId) => {
+          try {
+            const result = await api(`/products/${encodeURIComponent(productId)}`, { signal: controller.signal });
+            return [productId, result.product || null];
+          } catch {
+            return [productId, null];
+          }
+        }));
+        if (!alive) return;
+        const productsById = Object.fromEntries(productPairs);
+        const items = tryOns
+          .filter((item) => item?.imageUrl)
+          .map((item) => ({ ...item, product: productsById[item.productId] || null }));
+        setState({ items, loading: false, error: '' });
+      })
+      .catch((error) => {
+        if (alive && error.name !== 'AbortError') setState({ items: [], loading: false, error: 'We couldn’t load your generation history.' });
+      });
+
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [user?.id, requestVersion]);
+
+  return { ...state, retry: () => setRequestVersion((current) => current + 1) };
+}
+
 function MobileBottomNav({ user }) {
   const currentPath = normalizePath();
   const mobileNavLinks = [
@@ -1432,7 +1479,7 @@ function Header({ user, setUser, authChecked = true }) {
 
   return (
     <>
-      {currentPath !== '/wishlist' && currentPath !== '/tokens' && currentPath !== '/tokens/top-up' && currentPath !== '/profile' && <div className="announcement">
+      {currentPath !== '/wishlist' && currentPath !== '/tokens' && currentPath !== '/tokens/top-up' && currentPath !== '/profile' && currentPath !== '/generation-history' && <div className="announcement">
         <span>✨</span>
         <span>{user ? <>You have {user.tokens} tokens ready for AI try-on</> : <>Get free tokens on sign up to try AI try-on</>}</span>
         <span>✨</span>
@@ -1558,7 +1605,7 @@ function SearchLandingPage() {
   );
 }
 
-function Footer({ compact = false }) {
+function Footer() {
   const socialLinks = [
     { label: 'Instagram', href: 'https://instagram.com/', icon: 'instagram' },
     { label: 'X', href: 'https://x.com/', icon: 'x' }
@@ -1568,38 +1615,16 @@ function Footer({ compact = false }) {
     { label: 'Google Play', helper: 'Get it on', href: '/support', icon: 'play' }
   ];
 
-  if (compact) {
-    return (
-      <footer className="wishlist-compact-footer">
-        <div className="wrap wishlist-compact-footer-inner">
-          <div className="wishlist-compact-footer-grid">
-            <div className="wishlist-compact-brand"><a href="/" aria-label="Lookmefy home"><BrandLogo /></a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div className="wishlist-compact-social" aria-label="Social links">{socialLinks.map((item) => <a href={item.href} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label} key={item.label}><SocialLogo name={item.icon} /></a>)}</div></div>
-            <div><h2>Shop</h2><a href="/categories">New in</a><a href="/categories?gender=women">Women</a><a href="/categories?gender=men">Men</a><a href="/categories?discounted=true">Sale</a></div>
-            <div><h2>Help</h2><a href="/support">Support</a><a href="/returns">Returns</a><a href="/contact">Contact us</a><a href="/shipping">Shipping</a></div>
-            <div><h2>Download our App</h2><p>Get the Lookmefy app for your daily fashion edit.</p><div className="wishlist-app-links">{appLinks.map((item) => <a className="wishlist-app-link" href={item.href} aria-label={item.label} key={item.label}><StoreLogo name={item.icon} /><span><small>{item.helper}</small><strong>{item.label}</strong></span></a>)}</div></div>
-          </div>
-          <div className="wishlist-compact-footer-bottom"><span>© 2026 Lookmefy. Curated by intelligence.</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a></div></div>
-        </div>
-      </footer>
-    );
-  }
-
   return (
-    <footer className="footer">
-      <div className="wrap">
-        <div className="footer-grid">
-          <div className="footer-brand-block">
-            <a className="footer-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
-            <p className="footer-about">Defining the intersection of personal styling and digital try-on. Curated for the modern wardrobe.</p>
-            <div className="footer-social" aria-label="Social links">
-              {socialLinks.map((item) => <a href={item.href} key={item.label} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label}><SocialLogo name={item.icon} /></a>)}
-            </div>
-          </div>
-          <FooterCol title="Collections" links={[['New Arrivals', '/categories'], ["Men's Edit", '/categories?gender=men'], ["Women's Edit", '/categories?gender=women'], ['Accessories', '/categories/accessories'], ['Seasonal Sale', '/categories?discounted=true']]} />
-          <FooterCol title="Company" links={[['Journal', '/blog'], ['About', '/about'], ['Virtual Atelier', '/custom-try-on'], ['Contact', '/contact'], ['Shipping', '/shipping']]} />
-          <FooterCol title="Assurance" links={[['Secure Payment', '/support'], ['Support', '/support'], ['Returns & Refunds', '/returns'], ['Cancellation', '/cancellation']]} />
+    <footer className="wishlist-compact-footer">
+      <div className="wrap wishlist-compact-footer-inner">
+        <div className="wishlist-compact-footer-grid">
+          <div className="wishlist-compact-brand"><a href="/" aria-label="Lookmefy home"><BrandLogo /></a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div className="wishlist-compact-social" aria-label="Social links">{socialLinks.map((item) => <a href={item.href} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label} key={item.label}><SocialLogo name={item.icon} /></a>)}</div></div>
+          <div><h2>Shop</h2><a href="/categories">New in</a><a href="/categories?gender=women">Women</a><a href="/categories?gender=men">Men</a><a href="/categories?discounted=true">Sale</a></div>
+          <div><h2>Help</h2><a href="/support">Support</a><a href="/returns">Returns</a><a href="/contact">Contact us</a><a href="/shipping">Shipping</a></div>
+          <div><h2>Download our App</h2><p>Get the Lookmefy app for your daily fashion edit.</p><div className="wishlist-app-links">{appLinks.map((item) => <a className="wishlist-app-link" href={item.href} aria-label={item.label} key={item.label}><StoreLogo name={item.icon} /><span><small>{item.helper}</small><strong>{item.label}</strong></span></a>)}</div></div>
         </div>
-        <div className="footer-bottom"><div>© 2026 Lookmefy. All rights reserved.</div><div className="legal"><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/data-deletion">Data Deletion</a><a href="/ai-disclaimer">AI Disclaimer</a><a href="/accessibility">Accessibility</a></div></div>
+        <div className="wishlist-compact-footer-bottom"><span>© 2026 Lookmefy. Curated by intelligence.</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a></div></div>
       </div>
     </footer>
   );
@@ -1743,20 +1768,6 @@ function StoreLogo({ name }) {
       <path fill="#4285f4" d="m4.5 3.6 8.1 8.4 2.7-2.8L6.7 4.3c-.8-.5-1.6-.7-2.2-.7Z" />
       <path fill="#ea4335" d="m4.5 20.4c.6.1 1.4-.2 2.2-.7l8.6-4.9-2.7-2.8-8.1 8.4Z" />
     </svg>
-  );
-}
-
-function FooterCol({ title, links }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className={`footer-col ${open ? 'open' : ''}`}>
-      <button className="footer-col-toggle" type="button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
-        <h3>{title}</h3>
-        <span aria-hidden="true">+</span>
-      </button>
-      <ul>{links.map(([label, href]) => <li key={label}><a href={href}>{label}</a></li>)}</ul>
-    </div>
   );
 }
 
@@ -2904,22 +2915,16 @@ function AtelierCategoriesPage() {
   return (
     <div className="atelier-category-page">
       <main className="atelier-category-main">
-        <section className="atelier-category-title-section">
-          <div className="atelier-category-wide atelier-category-title-row">
-            <h1>The Categories</h1>
-          </div>
-        </section>
-
         {categoryHero && <section className="atelier-category-wide atelier-category-hero-section">
           <a className={`atelier-category-hero${categoryHero.campaign ? ` atelier-category-hero-${categoryHero.campaign}` : ''}`} href={categoryHero.href}>
             <OptimizedImage src={categoryHero.imageUrl} alt={categoryHero.alt} eager />
             <span className="atelier-category-hero-scrim" aria-hidden="true" />
-            <span className="atelier-category-hero-copy"><small>{categoryHero.category}</small><strong>{categoryHero.title}</strong><em>{categoryHero.cta}</em></span>
+            <span className="atelier-category-hero-copy"><small>{categoryHero.category}</small><strong>{categoryHero.title}</strong><span className="atelier-category-hero-support">Curated essentials, trending pieces and everyday styles.</span><em>{categoryHero.cta} <span aria-hidden="true">→</span></em></span>
           </a>
         </section>}
 
         {catalog.quickCategories.length > 0 && <section className="atelier-category-wide atelier-category-quick-section" aria-labelledby="category-quick-title">
-          <div className="atelier-category-quick-heading"><p id="category-quick-title">Explore fashion</p><span>Live catalog</span></div>
+          <div className="atelier-category-quick-heading"><p>SHOP BY CATEGORY</p><h2 id="category-quick-title">Find your style</h2></div>
           <div className="atelier-category-rail-wrap">
             <button className="atelier-category-scroll-button prev" type="button" aria-label="Previous fashion categories" onClick={() => scrollQuickCategoryRail(-1)}><AtelierIcon name="arrowLeft" /></button>
             <nav className="atelier-category-quick-rail" aria-label="Fashion categories" ref={quickCategoryRailRef} tabIndex="0" onKeyDown={handleQuickCategoryKeyDown}>
@@ -6260,12 +6265,14 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
 function ProfilePage({ user, setUser }) {
   const fileRef = useRef(null);
   const cameraRef = useRef(null);
+  const deleteTriggerRef = useRef(null);
   const [preview, setPreview] = useState('');
   const [photoFile, setPhotoFile] = useState(null);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
   const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [creditHistory, setCreditHistory] = useState({
     loading: false,
     error: '',
@@ -6273,6 +6280,7 @@ function ProfilePage({ user, setUser }) {
     totalPurchased: 0,
     totalUsed: 0
   });
+  const generationHistory = useGenerationHistory(user);
 
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -6390,6 +6398,15 @@ function ProfilePage({ user, setUser }) {
     window.history.pushState({}, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
   };
+  const finishAccountDeletion = () => {
+    clearAuthToken();
+    ['fitlook_wishlist', 'fitlook_wishlist_ids', 'fitlook:wishlist', 'wishlist', 'fitlook_wishlist_products', 'fitlook_wishlist_collections'].forEach((key) => localStorage.removeItem(key));
+    window.dispatchEvent(new CustomEvent('fitlook:wishlist-change', { detail: { ids: [] } }));
+    setUser(null);
+    announce('Your account has been deleted.');
+    window.history.pushState({}, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
 
   return (
     <main className="profile-page profile-reference-page">
@@ -6423,6 +6440,25 @@ function ProfilePage({ user, setUser }) {
             ))}
           </div>
           <div className="profile-reference-credit-foot"><p>Each new AI try-on uses 1 credit.</p><a href="/tokens">Buy more credits</a></div>
+        </section>
+
+        <section className="profile-reference-panel profile-generation-card" aria-label="Generation history">
+          <div className="profile-reference-section-head">
+            <div><h2>Generation History</h2><p>View all AI Try-On images you’ve created.</p></div>
+            <span className="profile-credit-mark"><SparkleLineIcon /></span>
+          </div>
+          {generationHistory.items.length > 0 && (
+            <div className="profile-generation-preview" aria-label="Recent generation previews">
+              {generationHistory.items.slice(0, 3).map((item) => {
+                const title = item.product?.name || 'AI Try-On';
+                return <img src={protectedMediaUrl(item.imageUrl)} alt={title} key={item.id} />;
+              })}
+            </div>
+          )}
+          <div className="profile-generation-foot">
+            <p>{generationHistory.loading ? 'Loading recent generations...' : generationHistory.items.length ? `${generationHistory.items.length} saved ${generationHistory.items.length === 1 ? 'creation' : 'creations'}` : 'Your saved try-ons will appear here.'}</p>
+            <a href="/generation-history">View History <span>→</span></a>
+          </div>
         </section>
 
         <section className="profile-reference-panel profile-reference-photo" id="tryon-photo" aria-label="Try-on photo">
@@ -6467,6 +6503,190 @@ function ProfilePage({ user, setUser }) {
             <a href="/data-deletion"><span>Data deletion</span><b>›</b></a>
             <button type="button" onClick={logout}><span>Log out</span><b>›</b></button>
           </div>
+        </section>
+
+        <section className="profile-reference-panel profile-danger-zone" aria-label="Danger zone">
+          <div className="profile-reference-section-head">
+            <div><h2>Danger Zone</h2><p>Permanent account actions</p></div>
+          </div>
+          <div className="profile-danger-action">
+            <div>
+              <strong>Delete account permanently</strong>
+              <p>Permanently delete your Lookmefy account and associated data. This action cannot be undone.</p>
+            </div>
+            <button ref={deleteTriggerRef} type="button" onClick={() => setDeleteModalOpen(true)}>Delete Account</button>
+          </div>
+        </section>
+      </section>
+      {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
+      {deleteModalOpen && (
+        <DeleteAccountDialog
+          returnFocusRef={deleteTriggerRef}
+          onCancel={() => setDeleteModalOpen(false)}
+          onDeleted={finishAccountDeletion}
+        />
+      )}
+    </main>
+  );
+}
+
+function DeleteAccountDialog({ onCancel, onDeleted, returnFocusRef }) {
+  const cancelButtonRef = useRef(null);
+  const confirmInputRef = useRef(null);
+  const deletingRef = useRef(false);
+  const [step, setStep] = useState('review');
+  const [confirmation, setConfirmation] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState('');
+  const canDelete = confirmation === 'DELETE' && !deleting;
+
+  useEffect(() => {
+    deletingRef.current = deleting;
+  }, [deleting]);
+
+  useEffect(() => {
+    cancelButtonRef.current?.focus();
+    const onKey = (event) => {
+      if (event.key === 'Escape' && !deletingRef.current) onCancel();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      returnFocusRef?.current?.focus();
+    };
+  }, [onCancel, returnFocusRef]);
+
+  useEffect(() => {
+    if (step === 'confirm') confirmInputRef.current?.focus();
+  }, [step]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  const continueToConfirm = () => {
+    setError('');
+    setStep('confirm');
+  };
+
+  const deleteAccount = async () => {
+    if (!canDelete) return;
+    setDeleting(true);
+    setError('');
+    try {
+      const data = await api('/auth/me', {
+        method: 'DELETE',
+        retry: 0,
+        body: JSON.stringify({ confirmation: 'DELETE' })
+      });
+      if (!data?.deleted) throw new Error('Delete failed');
+      onDeleted();
+    } catch {
+      setDeleting(false);
+      setError('We couldn’t delete your account. Please try again.');
+    }
+  };
+
+  return (
+    <div className="delete-account-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !deleting) onCancel(); }}>
+      <section className="delete-account-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-account-title" aria-describedby="delete-account-description">
+        <header>
+          <div>
+            <p>Danger Zone</p>
+            <h2 id="delete-account-title">Delete your account?</h2>
+          </div>
+          <button ref={cancelButtonRef} type="button" aria-label="Cancel account deletion" disabled={deleting} onClick={onCancel}>×</button>
+        </header>
+
+        <p id="delete-account-description">This will permanently delete your Lookmefy account and associated account data. This action cannot be undone.</p>
+        <ul>
+          <li>Profile information</li>
+          <li>Wardrobe items</li>
+          <li>Wishlist</li>
+          <li>AI Try-On generation history</li>
+          <li>Saved portrait</li>
+          <li>Remaining credits</li>
+          <li>Account preferences</li>
+        </ul>
+        <p className="delete-account-credit-warning">Any remaining credits will be permanently lost.</p>
+
+        {step === 'confirm' && (
+          <label className="delete-account-confirm">
+            <span>Type DELETE to confirm</span>
+            <input ref={confirmInputRef} value={confirmation} disabled={deleting} autoComplete="off" onChange={(event) => setConfirmation(event.target.value)} />
+          </label>
+        )}
+        {error && <p className="delete-account-error" role="alert">{error}</p>}
+
+        <div className="delete-account-actions">
+          <button type="button" disabled={deleting} onClick={onCancel}>Cancel</button>
+          {step === 'review' ? (
+            <button type="button" className="delete-account-continue" onClick={continueToConfirm}>Continue</button>
+          ) : (
+            <button type="button" className="delete-account-final" disabled={!canDelete} onClick={deleteAccount}>{deleting ? 'Deleting your account…' : 'Permanently Delete Account'}</button>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function GenerationHistoryPage({ user }) {
+  const history = useGenerationHistory(user);
+  const [fullscreenImage, setFullscreenImage] = useState(null);
+
+  if (!user) return null;
+
+  return (
+    <main className="profile-page profile-reference-page generation-history-page">
+      <section className="wrap profile-reference-shell generation-history-shell" aria-labelledby="generation-history-title">
+        <header className="profile-reference-head generation-history-head">
+          <div>
+            <h1 id="generation-history-title">Generation History</h1>
+            <p>Your AI Try-On creations, all in one place.</p>
+          </div>
+          <a className="generation-history-back" href="/profile">Back to Profile</a>
+        </header>
+
+        <section className="generation-history-content" aria-label="AI Try-On generation history">
+          {history.loading && <ProductGridSkeleton count={8} />}
+          {!history.loading && history.error && <StatusPanel text={history.error} onRetry={history.retry} />}
+          {!history.loading && !history.error && history.items.length > 0 && (
+            <div className="generation-history-grid">
+              {history.items.map((item) => {
+                const product = item.product;
+                const title = product?.name || 'AI Try-On';
+                const imageUrl = protectedMediaUrl(item.imageUrl);
+                return (
+                  <article className="generation-history-card" key={item.id}>
+                    <button
+                      className="generation-history-media"
+                      type="button"
+                      aria-label={`Open ${title} generation`}
+                      onClick={() => setFullscreenImage({ src: imageUrl, alt: `AI Try-On creation${product?.name ? ` for ${product.name}` : ''}`, title })}
+                    >
+                      <OptimizedImage src={imageUrl} fallbackSrc={asset('hero2.png')} alt={`AI Try-On creation${product?.name ? ` for ${product.name}` : ''}`} />
+                    </button>
+                    <div className="generation-history-copy">
+                      <p>AI Try-On</p>
+                      {product ? <a href={`/product/${encodeURIComponent(product.id)}`}><h2>{product.name}</h2></a> : <h2>AI Try-On</h2>}
+                      {item.createdAt && <time dateTime={item.createdAt}>{formatDate(item.createdAt)}</time>}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+          {!history.loading && !history.error && history.items.length === 0 && (
+            <section className="wishlist-reference-empty generation-history-empty" aria-label="No generation history">
+              <div><h2>No generations yet</h2><p>Your AI Try-On creations will appear here.</p></div>
+              <a href="/categories">Explore Styles</a>
+            </section>
+          )}
         </section>
       </section>
       {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
@@ -7187,6 +7407,12 @@ function ProtectedRouteGate({ path, authChecked }) {
       copy: 'Save garments, create looks and use AI styling.',
       image: 'wardrobe-stage-room.png'
     }
+    : path === '/generation-history'
+      ? {
+        title: 'Sign in to view your generation history',
+        copy: 'See the AI Try-On images you have created.',
+        image: 'hero2.png'
+      }
     : path === '/profile'
       ? {
         title: 'Sign in to view your profile',
@@ -8688,6 +8914,7 @@ function App() {
     if (path === '/tokens') return <TokenPage user={user} setUser={setUser} mode="overview" />;
     if (path === '/tokens/top-up') return <TokenPage key={routeKey} user={user} setUser={setUser} mode="topup" />;
     if (path === '/profile') return <ProfilePage user={user} setUser={setUser} />;
+    if (path === '/generation-history') return <GenerationHistoryPage user={user} />;
     if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} />;
     if ((path === '/signup' || path === '/login') && user) return <SearchPage user={user} setUser={setUser} />;
     if (path === '/signup') return <AuthPage mode="signup" setUser={setUser} />;
@@ -8706,7 +8933,6 @@ function App() {
       '.atelier-lookbook',
       '.atelier-newsletter',
       '.atelier-mixed-feed',
-      '.atelier-category-title-section',
       '.atelier-category-hero-section',
       '.atelier-category-quick-section',
       '.atelier-category-audience-section',
@@ -8755,7 +8981,7 @@ function App() {
     return () => observer.disconnect();
   }, [routeKey]);
 
-  const authFallbackRoutes = ['/try-on', '/custom-try-on', '/closet', '/closet/add', '/closet/combo', '/closet/items', '/style-bot', '/tokens', '/profile'];
+  const authFallbackRoutes = ['/try-on', '/custom-try-on', '/closet', '/closet/add', '/closet/combo', '/closet/items', '/style-bot', '/tokens', '/profile', '/generation-history'];
   const isStandaloneAuth = (path === '/login' || path === '/signup') && !user;
   const isConciergePage = path === '/style-bot' && Boolean(user);
   const isProductPage = /^\/product\/[^/]+$/.test(path);
@@ -8777,7 +9003,7 @@ function App() {
       {!isOnline && <div className="network-status" role="status" aria-live="polite">You are offline. Changes will resume when you reconnect.</div>}
       {toast && <Toast toast={toast} onDismiss={dismissToast} />}
       {!shouldHideMobileBottomNav && <MobileBottomNav user={user} />}
-      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Footer compact={path === '/wishlist' || path === '/profile' || isProductPage} />}
+      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Footer />}
       {shouldShowOnboarding && <OnboardingOverview user={user} onComplete={setUser} />}
       {replayTourOpen && user && <OnboardingOverview user={user} persist={false} onClose={() => setReplayTourOpen(false)} />}
     </>

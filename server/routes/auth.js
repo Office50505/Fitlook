@@ -8,9 +8,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import AdminAuditLog from '../models/AdminAuditLog.js';
+import ClosetItem from '../models/ClosetItem.js';
+import ClosetOutfit from '../models/ClosetOutfit.js';
+import CustomTryOn from '../models/CustomTryOn.js';
+import ExternalTryOn from '../models/ExternalTryOn.js';
 import Product, { productToClient } from '../models/Product.js';
 import TokenOrder from '../models/TokenOrder.js';
+import TryOn from '../models/TryOn.js';
 import User from '../models/User.js';
+import UserEvent from '../models/UserEvent.js';
+import UserPreference from '../models/UserPreference.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
 import { requireAdmin, signAdminSession } from '../utils/adminAccess.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
@@ -108,6 +115,13 @@ const profilePhotoLimiter = createRateLimiter({
   max: 5,
   keyGenerator: rateLimitKeys.user,
   message: 'Profile photo generation is temporarily limited. Please wait before trying again.'
+});
+const accountDeleteLimiter = createRateLimiter({
+  name: 'auth:account-delete',
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Too many account deletion attempts. Please wait before trying again.'
 });
 const adminReadLimiter = createRateLimiter({
   name: 'auth:admin-read',
@@ -926,6 +940,96 @@ router.patch('/admin/users/:id/tokens', requireAdmin, adminWriteLimiter, async (
 router.get('/me', requireUser, (req, res) => {
   res.json({ user: req.user.toClient() });
 });
+
+function addStoredFile(files, file) {
+  if (!file) return;
+  const value = file.toObject ? file.toObject() : file;
+  if (value.path || value.url || value.storage) files.push(value);
+}
+
+function collectAccountMediaFiles(user, records) {
+  const files = [];
+  const bodyPhoto = user.bodyPhoto?.toObject ? user.bodyPhoto.toObject() : user.bodyPhoto;
+  addStoredFile(files, bodyPhoto);
+  addStoredFile(files, bodyPhoto?.original);
+
+  records.tryOns.forEach((item) => {
+    addStoredFile(files, item.image);
+    addStoredFile(files, item.transparentImage);
+    addStoredFile(files, item.video);
+  });
+  records.customTryOns.forEach((item) => {
+    addStoredFile(files, item.garment);
+    addStoredFile(files, item.image);
+    addStoredFile(files, item.transparentImage);
+  });
+  records.externalTryOns.forEach((item) => {
+    addStoredFile(files, item.image);
+    addStoredFile(files, item.transparentImage);
+  });
+  records.closetItems.forEach((item) => addStoredFile(files, item.image));
+  records.closetOutfits.forEach((item) => {
+    addStoredFile(files, item.garment);
+    addStoredFile(files, item.image);
+    addStoredFile(files, item.transparentImage);
+  });
+
+  return files;
+}
+
+router.delete('/me', requireUser, accountDeleteLimiter, asyncRoute(async (req, res) => {
+  if (String(req.body?.confirmation || '') !== 'DELETE') {
+    return res.status(400).json({ message: 'Type DELETE to confirm account deletion.' });
+  }
+
+  const userId = req.user._id;
+  const [tryOns, customTryOns, externalTryOns, closetItems, closetOutfits] = await Promise.all([
+    TryOn.find({ user: userId }).select('image transparentImage video').lean(),
+    CustomTryOn.find({ user: userId }).select('garment image transparentImage').lean(),
+    ExternalTryOn.find({ user: userId }).select('image transparentImage').lean(),
+    ClosetItem.find({ user: userId }).select('image').lean(),
+    ClosetOutfit.find({ user: userId }).select('garment image transparentImage').lean()
+  ]);
+
+  const mediaFiles = collectAccountMediaFiles(req.user, { tryOns, customTryOns, externalTryOns, closetItems, closetOutfits });
+  await Promise.allSettled(mediaFiles.map((file) => deleteStoredFile(file)));
+
+  const [
+    deletedTryOns,
+    deletedCustomTryOns,
+    deletedExternalTryOns,
+    deletedClosetItems,
+    deletedClosetOutfits,
+    deletedTokenOrders,
+    deletedEvents,
+    deletedPreferences,
+    deletedUser
+  ] = await Promise.all([
+    TryOn.deleteMany({ user: userId }),
+    CustomTryOn.deleteMany({ user: userId }),
+    ExternalTryOn.deleteMany({ user: userId }),
+    ClosetItem.deleteMany({ user: userId }),
+    ClosetOutfit.deleteMany({ user: userId }),
+    TokenOrder.deleteMany({ user: userId }),
+    UserEvent.deleteMany({ user: userId }),
+    UserPreference.deleteMany({ user: userId }),
+    User.deleteOne({ _id: userId })
+  ]);
+
+  res.json({
+    deleted: Boolean(deletedUser.deletedCount),
+    counts: {
+      tryOns: deletedTryOns.deletedCount || 0,
+      customTryOns: deletedCustomTryOns.deletedCount || 0,
+      externalTryOns: deletedExternalTryOns.deletedCount || 0,
+      closetItems: deletedClosetItems.deletedCount || 0,
+      closetOutfits: deletedClosetOutfits.deletedCount || 0,
+      tokenOrders: deletedTokenOrders.deletedCount || 0,
+      events: deletedEvents.deletedCount || 0,
+      preferences: deletedPreferences.deletedCount || 0
+    }
+  });
+}));
 
 router.patch('/onboarding', requireUser, async (req, res) => {
   if (!req.user.onboardingSeenAt) {
