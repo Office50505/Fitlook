@@ -213,11 +213,14 @@ test('responsive menu, OTP inputs, search layout, and payment summary fit every 
   await expect(signupPhone).toHaveValue('9876543210');
   await signupPhone.fill(`98765${String(Date.now()).slice(-5)}`);
   await guestPage.getByRole('button', { name: /Send OTP/i }).click();
-  await expect(guestPage.getByText(/We sent a 6-digit code/)).toBeVisible();
-  await expect(guestPage.locator('.otp-code-grid input')).toHaveCount(6);
-  await guestPage.getByRole('button', { name: /Use local code/i }).click();
-  await expect(guestPage.getByText(/Local code filled/i)).toBeVisible();
-  await expect.poll(async () => guestPage.locator('.otp-code-grid input').evaluateAll((inputs) => inputs.map((input) => input.value).join(''))).toMatch(/^\d{6}$/);
+  const testOtpText = guestPage.locator('.signup-test-otp');
+  await expect(testOtpText).toBeVisible();
+  const testOtpMatch = (await testOtpText.innerText()).match(/\d{6}/);
+  expect(testOtpMatch?.[0]).toMatch(/^\d{6}$/);
+  const otpInput = guestPage.getByLabel('6-digit OTP');
+  await expect(otpInput).toHaveCount(1);
+  await otpInput.fill(testOtpMatch[0]);
+  await expect(otpInput).toHaveValue(testOtpMatch[0]);
   await expectNoHorizontalOverflow(guestPage);
   await guest.close();
 

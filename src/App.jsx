@@ -1440,7 +1440,7 @@ function Header({ user, setUser, authChecked = true }) {
       <header className="site-header" ref={headerRef}>
         <div className="wrap header-inner">
           <div className="header-left">
-            <a className="brand" href="/home"><BrandLogo /></a>
+            <a className="brand" href="/home" aria-label="Lookmefy home"><BrandLogo /></a>
             <nav className="nav" aria-label="Primary navigation">
               {navLinks.map(([label, href], index) => {
                 const active = isActiveLink(href, index);
@@ -1573,7 +1573,7 @@ function Footer({ compact = false }) {
       <footer className="wishlist-compact-footer">
         <div className="wrap wishlist-compact-footer-inner">
           <div className="wishlist-compact-footer-grid">
-            <div className="wishlist-compact-brand"><a href="/"><BrandLogo /></a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div className="wishlist-compact-social" aria-label="Social links">{socialLinks.map((item) => <a href={item.href} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label} key={item.label}><SocialLogo name={item.icon} /></a>)}</div></div>
+            <div className="wishlist-compact-brand"><a href="/" aria-label="Lookmefy home"><BrandLogo /></a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div className="wishlist-compact-social" aria-label="Social links">{socialLinks.map((item) => <a href={item.href} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label} key={item.label}><SocialLogo name={item.icon} /></a>)}</div></div>
             <div><h2>Shop</h2><a href="/categories">New in</a><a href="/categories?gender=women">Women</a><a href="/categories?gender=men">Men</a><a href="/categories?discounted=true">Sale</a></div>
             <div><h2>Help</h2><a href="/support">Support</a><a href="/returns">Returns</a><a href="/contact">Contact us</a><a href="/shipping">Shipping</a></div>
             <div><h2>Download our App</h2><p>Get the Lookmefy app for your daily fashion edit.</p><div className="wishlist-app-links">{appLinks.map((item) => <a className="wishlist-app-link" href={item.href} aria-label={item.label} key={item.label}><StoreLogo name={item.icon} /><span><small>{item.helper}</small><strong>{item.label}</strong></span></a>)}</div></div>
@@ -1589,7 +1589,7 @@ function Footer({ compact = false }) {
       <div className="wrap">
         <div className="footer-grid">
           <div className="footer-brand-block">
-            <a className="footer-logo" href="/"><BrandLogo /></a>
+            <a className="footer-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
             <p className="footer-about">Defining the intersection of personal styling and digital try-on. Curated for the modern wardrobe.</p>
             <div className="footer-social" aria-label="Social links">
               {socialLinks.map((item) => <a href={item.href} key={item.label} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label}><SocialLogo name={item.icon} /></a>)}
@@ -1606,7 +1606,101 @@ function Footer({ compact = false }) {
 }
 
 function BrandLogo() {
-  return <img className="brand-logo-image" src={asset('lookmefy-logo.svg')} alt="Lookmefy" />;
+  return (
+    <span className="brand-logo-lockup" aria-hidden="true">
+      <svg className="brand-logo-mark-art" viewBox="440 186 359 322" preserveAspectRatio="xMidYMid meet" focusable="false">
+        <g transform="translate(0,970) scale(0.1,-0.1)" fill="currentColor" stroke="none">
+          <path d="M6445 7823 c-95 -34 -161 -103 -190 -198 -17 -58 -13 -81 17 -91 25
+-8 58 25 58 58 0 35 40 98 80 127 83 60 181 62 271 5 45 -28 71 -66 89 -129
+28 -99 -46 -219 -158 -259 -77 -27 -86 -45 -92 -195 l-5 -126 -53 -7 c-66 -10
+-176 -60 -273 -125 -227 -152 -615 -384 -797 -478 -162 -82 -272 -190 -272
+-266 0 -18 13 -9 74 49 180 171 377 201 463 70 l28 -42 3 -615 c1 -338 0 -621
+-2 -628 -4 -8 -35 2 -108 36 -202 95 -380 140 -598 150 l-135 6 0 1100 0 1100
+22 47 c22 49 63 82 115 93 16 4 26 11 22 16 -6 10 -577 13 -587 2 -4 -3 16
+-16 45 -27 61 -25 91 -63 107 -137 15 -70 15 -1998 0 -2085 -13 -77 -60 -137
+-120 -155 -67 -21 -46 -32 44 -23 141 15 383 10 470 -9 133 -29 283 -93 516
+-220 383 -208 478 -240 711 -241 144 -1 172 3 265 42 94 38 113 72 23 41 -110
+-38 -277 -17 -432 54 -94 44 -279 147 -288 161 -12 17 -10 1136 2 1136 10 0
+105 -141 353 -525 60 -93 153 -236 206 -317 53 -81 117 -181 144 -223 26 -41
+54 -75 61 -75 7 0 79 109 159 243 137 229 354 588 482 797 32 52 64 102 71
+110 12 12 14 -91 14 -655 0 -755 3 -721 -75 -760 l-40 -20 112 -3 c62 -1 164
+-1 225 0 l113 3 -40 20 c-79 39 -75 -4 -75 831 0 408 3 756 6 773 4 17 23 50
+44 74 36 40 40 42 96 42 45 0 73 -7 118 -30 72 -36 158 -119 191 -185 18 -35
+31 -50 45 -50 48 0 4 120 -72 199 -51 52 -104 87 -253 166 -161 85 -383 212
+-609 348 -229 137 -281 163 -368 181 l-63 13 0 118 c0 95 3 119 15 125 8 5 34
+16 58 26 59 24 119 85 149 151 22 48 25 65 21 133 -7 115 -55 187 -162 242
+-57 30 -174 35 -241 11z m240 -909 c28 -10 142 -72 255 -139 113 -66 296 -172
+408 -234 111 -62 202 -116 202 -120 0 -4 -27 -15 -60 -25 -33 -10 -88 -35
+-121 -55 -61 -37 -64 -40 -189 -252 -131 -222 -513 -853 -544 -901 -10 -16
+-21 -28 -25 -28 -3 0 -55 77 -116 170 -60 94 -144 223 -186 288 -42 64 -158
+245 -259 401 -207 320 -187 300 -359 343 -47 12 -92 23 -100 25 -20 5 -9 13
+104 78 117 67 433 264 557 347 111 75 172 106 228 118 58 12 142 5 205 -16z" />
+        </g>
+      </svg>
+      <span className="brand-logo-divider" aria-hidden="true" />
+      <svg className="brand-logo-wordmark-art" viewBox="257 526 676 138" preserveAspectRatio="xMidYMid meet" focusable="false">
+        <g transform="translate(0,970) scale(0.1,-0.1)" fill="currentColor" stroke="none">
+          <path d="M5360 4413 c-35 -13 -66 -26 -68 -28 -2 -2 6 -13 17 -24 21 -21 21
+-28 21 -476 0 -443 -4 -505 -32 -505 -4 0 -8 -4 -8 -10 0 -6 40 -10 100 -10
+55 0 100 2 100 5 0 3 -9 14 -20 25 -18 18 -20 33 -20 145 l0 125 32 30 c17 17
+36 29 42 27 5 -2 69 -79 142 -171 72 -93 138 -173 147 -178 9 -5 52 -8 94 -6
+l78 3 -37 22 c-20 12 -80 76 -134 145 -54 67 -122 153 -152 190 -30 37 -52 72
+-50 76 5 14 177 159 227 193 25 16 51 29 58 29 8 0 12 4 8 9 -7 12 -152 13
+-160 1 -3 -5 -1 -11 5 -15 5 -3 10 -17 10 -30 0 -18 -33 -52 -139 -145 -77
+-66 -143 -125 -146 -130 -21 -34 -25 20 -27 357 -2 234 -7 367 -13 368 -5 2
+-39 -8 -75 -22z" />
+          <path d="M8545 4421 c-78 -20 -141 -78 -176 -159 -11 -26 -22 -81 -26 -133
+l-6 -89 -33 0 c-46 0 -52 -18 -7 -22 l38 -3 0 -302 0 -301 -24 -26 -24 -26
+108 0 108 0 -24 26 -24 26 0 301 0 302 73 3 c93 4 85 22 -10 22 l-71 0 5 128
+c4 105 9 134 26 169 49 96 158 97 210 4 13 -23 27 -41 31 -41 13 0 51 46 51
+62 0 9 -16 26 -36 38 -39 24 -136 35 -189 21z" />
+          <path d="M2638 4402 l-66 -3 24 -24 24 -24 0 -466 0 -466 -25 -25 c-14 -14
+-25 -27 -25 -29 0 -3 155 -5 345 -5 l344 0 26 85 c15 47 25 90 23 96 -2 6 -18
+-10 -35 -35 -67 -95 -144 -119 -368 -114 l-150 3 0 477 0 476 24 26 c14 14 23
+26 20 27 -18 3 -106 3 -161 1z" />
+          <path d="M3730 4041 c-104 -21 -210 -104 -257 -200 -24 -49 -28 -68 -28 -146
+0 -83 3 -95 35 -153 39 -73 92 -124 170 -161 50 -23 66 -26 170 -26 109 0 118
+2 175 32 72 37 137 105 171 176 34 74 34 200 0 273 -73 157 -253 242 -436 205z
+m186 -34 c114 -59 182 -225 156 -380 -24 -141 -86 -223 -191 -254 -45 -13 -64
+-14 -105 -4 -137 32 -216 157 -216 342 0 202 108 327 271 315 31 -2 69 -11 85
+-19z" />
+          <path d="M4649 4041 c-105 -22 -206 -103 -259 -207 -21 -41 -25 -63 -25 -134
+0 -76 4 -93 33 -152 37 -76 88 -124 172 -166 50 -25 65 -27 170 -27 110 0 118
+1 175 32 113 59 187 164 201 285 5 43 2 72 -16 129 -19 63 -30 81 -83 134 -45
+45 -78 68 -122 85 -64 24 -183 35 -246 21z m199 -40 c22 -11 57 -41 76 -67 53
+-70 71 -132 70 -249 0 -88 -3 -108 -28 -163 -36 -77 -87 -125 -160 -148 -49
+-16 -63 -16 -109 -5 -145 36 -225 171 -215 366 8 155 69 247 188 286 40 13
+133 3 178 -20z" />
+          <path d="M6427 4033 c-27 -9 -70 -36 -97 -60 -26 -24 -51 -43 -54 -43 -3 0 -6
+25 -6 55 0 30 -3 55 -8 55 -4 0 -38 -11 -76 -25 -38 -14 -71 -25 -74 -25 -3 0
+5 -12 19 -26 l24 -26 0 -263 0 -263 -24 -26 -24 -26 108 0 108 0 -24 26 c-24
+25 -24 28 -27 246 -2 155 0 230 9 250 17 41 95 106 142 119 89 24 171 -14 208
+-96 16 -35 19 -68 19 -266 0 -212 -1 -227 -20 -247 -11 -12 -20 -24 -20 -27 0
+-3 45 -5 100 -5 l101 0 -22 29 c-19 26 -21 44 -26 240 -5 202 -4 213 17 256
+61 126 228 163 317 69 46 -49 55 -107 51 -342 -3 -174 -5 -202 -20 -219 -10
+-11 -18 -23 -18 -26 0 -4 46 -7 102 -7 l101 0 -24 26 c-24 25 -24 28 -29 267
+l-5 242 -28 47 c-18 31 -44 57 -75 75 -41 25 -57 28 -132 28 -76 0 -91 -3
+-139 -30 -29 -16 -69 -48 -88 -70 -33 -37 -36 -39 -47 -21 -67 111 -189 152
+-319 109z" />
+          <path d="M7734 4041 c-92 -24 -187 -101 -236 -192 -20 -38 -23 -58 -23 -149 0
+-87 4 -113 22 -152 30 -66 96 -133 162 -165 50 -25 67 -28 161 -28 94 0 110 3
+155 27 49 25 152 124 142 135 -3 3 -22 -12 -43 -32 -53 -54 -115 -78 -199 -79
+-96 -1 -153 22 -210 86 -50 55 -89 159 -83 220 l3 33 265 5 265 5 -1 50 c-3
+132 -122 235 -279 241 -38 2 -84 0 -101 -5z m138 -21 c73 -21 133 -118 126
+-205 l-3 -40 -195 -2 c-107 -2 -201 1 -208 5 -10 7 -8 23 8 76 42 134 149 200
+272 166z" />
+          <path d="M8688 4034 c-3 -3 5 -16 18 -29 22 -23 54 -84 108 -212 13 -32 42
+-96 64 -143 21 -47 60 -133 86 -191 l47 -106 -35 -76 c-42 -89 -85 -143 -123
+-150 -29 -5 -71 11 -92 37 -20 24 -36 19 -56 -18 -18 -34 -18 -36 -1 -55 28
+-30 87 -36 138 -13 76 34 108 83 198 297 23 55 48 114 56 130 7 17 54 129 104
+250 50 121 100 232 110 247 11 15 20 30 20 33 0 3 -22 5 -49 5 -50 0 -74 -13
+-46 -24 26 -10 17 -76 -24 -176 -22 -52 -62 -149 -89 -215 -28 -66 -54 -119
+-58 -118 -13 2 -204 446 -204 473 0 10 7 23 15 30 8 7 12 16 9 21 -6 10 -187
+13 -196 3z" />
+        </g>
+      </svg>
+    </span>
+  );
 }
 
 function SocialLogo({ name }) {
@@ -2323,7 +2417,7 @@ function Home() {
       <OptimizedImage className="opening-page-image" src={asset('opening-editorial-hero.png')} alt="A woman and man in tailored outerwear" eager />
       <div className="opening-page-overlay" aria-hidden="true" />
       <section className="opening-page-content">
-        <a className="opening-page-brand" href="/" id="opening-title">Lookmefy</a>
+        <a className="opening-page-brand" href="/" id="opening-title" aria-label="Lookmefy home"><BrandLogo /></a>
         <p>Personal style, considered.</p>
         <nav className="opening-page-actions" aria-label="Start exploring Lookmefy">
           <a href="/categories?gender=women">Women's edit</a>
@@ -5843,7 +5937,7 @@ function StyleBotPage({ user, setUser }) {
   return (
     <main className="style-bot-page concierge-page">
       <aside className="concierge-session-rail" aria-label="Stylist sessions">
-        <a className="concierge-brand" href="/">Lookmefy</a>
+        <a className="concierge-brand" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
         <p>Stylist sessions</p>
         <div className="concierge-session-list">
           {sessionHistory.length ? sessionHistory.map((run, index) => (
@@ -7924,15 +8018,6 @@ function OnboardingOverview({ user, onComplete, onClose, persist = true }) {
   );
 }
 
-function maskedPhoneForOtp(phone = '') {
-  const raw = String(phone || '').trim();
-  const digits = raw.replace(/\D/g, '');
-  if (digits.length < 4) return 'your mobile number';
-  const local = digits.length > 10 ? digits.slice(-10) : digits;
-  const country = digits.length > 10 ? `+${digits.slice(0, -10)}` : '+91';
-  return `${country} \u2022\u2022\u2022\u2022\u2022 \u2022\u2022${local.slice(-3)}`;
-}
-
 function isLikelyIndianMobile(phone = '') {
   const raw = String(phone || '').trim();
   if (!raw || /[a-z]/i.test(raw)) return false;
@@ -7955,49 +8040,33 @@ function normalizePhoneEntry(phone = '') {
 }
 
 function OtpCodeFields({ idPrefix, value, onChange, disabled }) {
-  const inputRefs = useRef([]);
-  const digits = String(value || '').slice(0, 6).padEnd(6, ' ').split('');
-  const setDigitAt = (index, nextValue) => {
-    const nextDigit = String(nextValue || '').replace(/\D/g, '').slice(-1);
-    const current = String(value || '').padEnd(6, ' ').split('');
-    current[index] = nextDigit || ' ';
-    const next = current.join('').replace(/\s/g, '').slice(0, 6);
+  const otp = String(value || '').replace(/\D/g, '').slice(0, 6);
+  const setOtp = (nextValue) => {
+    const next = String(nextValue || '').replace(/\D/g, '').slice(0, 6);
     onChange(next);
-    if (nextDigit && index < 5) inputRefs.current[index + 1]?.focus();
   };
 
   return (
     <fieldset className="otp-code-fields" aria-label="Enter verification code">
-      <legend>Enter verification code</legend>
+      <legend>OTP</legend>
       <div className="otp-code-grid">
-        {digits.map((digit, index) => (
-          <input
-            key={`${idPrefix}-${index}`}
-            ref={(node) => { inputRefs.current[index] = node; }}
-            id={`${idPrefix}-${index}`}
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            autoComplete={index === 0 ? 'one-time-code' : 'off'}
-            aria-label={`Digit ${index + 1}`}
-            maxLength="1"
-            value={digit === ' ' ? '' : digit}
-            disabled={disabled}
-            onChange={(event) => setDigitAt(index, event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Backspace' && !digits[index].trim() && index > 0) {
-                inputRefs.current[index - 1]?.focus();
-              }
-            }}
-            onPaste={(event) => {
-              event.preventDefault();
-              const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-              if (!pasted) return;
-              onChange(pasted);
-              inputRefs.current[Math.min(pasted.length, 6) - 1]?.focus();
-            }}
-          />
-        ))}
+        <input
+          id={`${idPrefix}-code`}
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          autoComplete="one-time-code"
+          aria-label="6-digit OTP"
+          placeholder="6-digit OTP"
+          maxLength="6"
+          value={otp}
+          disabled={disabled}
+          onChange={(event) => setOtp(event.target.value)}
+          onPaste={(event) => {
+            event.preventDefault();
+            setOtp(event.clipboardData.getData('text'));
+          }}
+        />
       </div>
     </fieldset>
   );
@@ -8013,6 +8082,7 @@ function AuthPage({ mode, setUser }) {
   const [otpSession, setOtpSession] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [localOtpLoading, setLocalOtpLoading] = useState(false);
+  const [localTestOtp, setLocalTestOtp] = useState('');
   const [bodyPhotoFile, setBodyPhotoFile] = useState(null);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
   const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
@@ -8032,6 +8102,7 @@ function AuthPage({ mode, setUser }) {
     setPhoneValue('');
     setOtpValue('');
     setOtpSession('');
+    setLocalTestOtp('');
     if (mode === 'signup') {
       setSignupStep('phone');
     }
@@ -8066,6 +8137,7 @@ function AuthPage({ mode, setUser }) {
     const phone = phoneValue;
     setOtpSession('');
     setOtpValue('');
+    setLocalTestOtp('');
     setMessage('');
     if (session) void cancelOtpSession(purpose, session, phone);
   };
@@ -8076,7 +8148,26 @@ function AuthPage({ mode, setUser }) {
     setPhoneValue(normalizePhoneEntry(nextPhone));
     setOtpSession('');
     setOtpValue('');
+    setLocalTestOtp('');
     if (session) void cancelOtpSession(purpose, session, phone);
+  };
+
+  const fetchLocalTestOtp = async (purpose, session = otpSession, phone = phoneValue, { fill = false } = {}) => {
+    if (!ENABLE_TEST_OTP_HELPER || !session || !phone || localOtpLoading) return '';
+    setLocalOtpLoading(true);
+    try {
+      const params = new URLSearchParams({ purpose, phone, otpSession: session });
+      const data = await api(`/auth/test-otp?${params.toString()}`, { retry: 0 });
+      const otp = String(data.otp || '').replace(/\D/g, '').slice(0, 6);
+      setLocalTestOtp(otp);
+      if (fill) setOtpValue(otp);
+      return otp;
+    } catch {
+      setLocalTestOtp('');
+      return '';
+    } finally {
+      setLocalOtpLoading(false);
+    }
   };
 
   const requestSignupOtp = async () => {
@@ -8092,10 +8183,14 @@ function AuthPage({ mode, setUser }) {
         method: 'POST',
         body: JSON.stringify({ phone: phoneValue })
       });
-      setOtpSession(data.otpSession || '');
-      setPhoneValue(data.phone || phoneValue);
+      const nextSession = data.otpSession || '';
+      const nextPhone = data.phone || phoneValue;
+      setOtpSession(nextSession);
+      setPhoneValue(nextPhone);
       setOtpValue('');
-      setMessage('OTP sent.');
+      setLocalTestOtp('');
+      const testOtp = await fetchLocalTestOtp('signup', nextSession, nextPhone);
+      setMessage(testOtp ? `OTP sent. Test code: ${testOtp}` : 'OTP sent.');
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -8136,10 +8231,14 @@ function AuthPage({ mode, setUser }) {
         method: 'POST',
         body: JSON.stringify({ phone: phoneValue })
       });
-      setOtpSession(data.otpSession || '');
-      setPhoneValue(data.phone || phoneValue);
+      const nextSession = data.otpSession || '';
+      const nextPhone = data.phone || phoneValue;
+      setOtpSession(nextSession);
+      setPhoneValue(nextPhone);
       setOtpValue('');
-      setMessage('OTP sent.');
+      setLocalTestOtp('');
+      const testOtp = await fetchLocalTestOtp('login', nextSession, nextPhone);
+      setMessage(testOtp ? `OTP sent. Test code: ${testOtp}` : 'OTP sent.');
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -8165,22 +8264,6 @@ function AuthPage({ mode, setUser }) {
       setMessage(err.message);
     } finally {
       setOtpLoading(false);
-    }
-  };
-
-  const fillLocalOtp = async (purpose) => {
-    if (!ENABLE_TEST_OTP_HELPER || !otpSession || localOtpLoading) return;
-    setLocalOtpLoading(true);
-    setMessage('');
-    try {
-      const params = new URLSearchParams({ purpose, phone: phoneValue, otpSession });
-      const data = await api(`/auth/test-otp?${params.toString()}`, { retry: 0 });
-      setOtpValue(String(data.otp || '').replace(/\D/g, '').slice(0, 6));
-      setMessage('Local code filled.');
-    } catch (err) {
-      setMessage(err.message || 'Local code is not available.');
-    } finally {
-      setLocalOtpLoading(false);
     }
   };
 
@@ -8230,7 +8313,7 @@ function AuthPage({ mode, setUser }) {
         <section className="auth-login-story auth-login-reference-story" aria-label="Lookmefy fashion experience">
           <OptimizedImage className="auth-login-background" src={asset('login-editorial-couple.png')} alt="" eager />
           <div className="auth-login-scrim" aria-hidden="true" />
-          <a className="auth-login-logo" href="/">Lookmefy</a>
+          <a className="auth-login-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
           <div className="auth-login-story-copy">
             <h2>AI Fashion Try-On Experience</h2>
             <p>See it on you before you buy it. Experience a more personal way to shop.</p>
@@ -8252,7 +8335,7 @@ function AuthPage({ mode, setUser }) {
 
         <section className="auth-login-panel auth-login-reference-panel">
           <div className="auth-login-card">
-            <a className="auth-login-mobile-logo" href="/">Lookmefy</a>
+            <a className="auth-login-mobile-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
             <h1 id="login-title">Welcome Back</h1>
             <p className="auth-login-copy">Login with your mobile number and OTP.</p>
             <div className="auth-login-tabs" aria-hidden="true"><span>Mobile OTP</span></div>
@@ -8261,13 +8344,11 @@ function AuthPage({ mode, setUser }) {
                 <span>Mobile number</span>
                 <input name="loginPhone" type="tel" inputMode="numeric" pattern="[0-9]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('login', event.target.value)} />
               </label>
-              <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestLoginOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend code' : 'Send OTP'}</button>
+              <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestLoginOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
               {otpSession && (
                 <div className="auth-signup-reference-fields">
-                  <p className="signup-otp-hint">We sent a 6-digit code to {maskedPhoneForOtp(phoneValue)}.</p>
                   <OtpCodeFields idPrefix="login-otp" value={otpValue} onChange={setOtpValue} disabled={otpLoading} />
-                  {ENABLE_TEST_OTP_HELPER && <button className="signup-back-step" type="button" disabled={localOtpLoading} onClick={() => fillLocalOtp('login')}>{localOtpLoading ? 'Loading local code...' : 'Use local code'}</button>}
-                  <button className="signup-back-step" type="button" onClick={() => clearOtpEntry('login')}>Change number</button>
+                  {ENABLE_TEST_OTP_HELPER && localTestOtp && <p className="signup-test-otp">Test OTP: <strong>{localTestOtp}</strong></p>}
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifyLoginOtp}>{otpLoading ? 'Verifying...' : 'Verify & login'}</button>
                 </div>
               )}
@@ -8285,7 +8366,7 @@ function AuthPage({ mode, setUser }) {
     <main className="auth-signup-page auth-signup-reference-page" aria-labelledby="signup-title">
       <section className="auth-signup-reference-shell">
         <form className={`auth-signup-form auth-signup-reference-form signup-step-${signupStep}`} onSubmit={submit} aria-busy={isSubmitting}>
-          <a className="auth-signup-reference-logo" href="/">Lookmefy</a>
+          <a className="auth-signup-reference-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
           <header className="auth-signup-reference-head">
             <h1 id="signup-title">{signupStep === 'phone' ? <>Verify Your<br />Number</> : <>Create Your<br />Account</>}</h1>
             <p>{signupStep === 'phone' ? 'Start with your mobile number and OTP verification.' : 'Add the style details for your AI try-on profile.'}</p>
@@ -8299,13 +8380,11 @@ function AuthPage({ mode, setUser }) {
                   <input name="phoneDisplay" type="tel" inputMode="numeric" pattern="[0-9]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('signup', event.target.value)} />
                 </label>
               </div>
-              <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestSignupOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend code' : 'Send OTP'}</button>
+              <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestSignupOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
               {otpSession && (
                 <div className="auth-signup-reference-fields">
-                  <p className="signup-otp-hint">We sent a 6-digit code to {maskedPhoneForOtp(phoneValue)}.</p>
                   <OtpCodeFields idPrefix="signup-otp" value={otpValue} onChange={setOtpValue} disabled={otpLoading} />
-                  {ENABLE_TEST_OTP_HELPER && <button className="signup-back-step" type="button" disabled={localOtpLoading} onClick={() => fillLocalOtp('signup')}>{localOtpLoading ? 'Loading local code...' : 'Use local code'}</button>}
-                  <button className="signup-back-step" type="button" onClick={() => clearOtpEntry('signup')}>Change number</button>
+                  {ENABLE_TEST_OTP_HELPER && localTestOtp && <p className="signup-test-otp">Test OTP: <strong>{localTestOtp}</strong></p>}
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifySignupOtp}>{otpLoading ? 'Verifying...' : 'Verify & continue'}</button>
                 </div>
               )}

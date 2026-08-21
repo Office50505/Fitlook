@@ -21713,6 +21713,19 @@ body.onboarding-scroll-locked {
   font-weight: 700;
 }
 
+.signup-test-otp {
+  margin: -2px 0 0;
+  color: #a64b45;
+  font-family: var(--font-interface);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.signup-test-otp strong {
+  color: inherit;
+  font: inherit;
+}
+
 .otp-code-fields {
   display: grid;
   gap: 8px;
@@ -34063,78 +34076,6 @@ label,
   }
 }
 
-/* Shared SVG logo in header and footer. */
-.site-header .brand,
-.footer-logo,
-.wishlist-compact-brand > a {
-  display: inline-flex !important;
-  width: auto !important;
-  min-width: 0 !important;
-  align-items: center !important;
-  line-height: 0 !important;
-  text-decoration: none !important;
-}
-
-.site-header .brand {
-  position: relative !important;
-  width: clamp(118px, 9vw, 132px) !important;
-  height: clamp(52px, 4.8vw, 64px) !important;
-  justify-content: center !important;
-  overflow: visible !important;
-}
-
-.brand-logo-image {
-  display: block;
-  width: auto;
-  height: 56px;
-  max-width: 100%;
-  object-fit: contain;
-}
-
-.site-header .brand .brand-logo-image {
-  width: clamp(170px, 12.8vw, 188px);
-  height: auto;
-  max-width: none;
-  object-fit: contain;
-  transform: translateY(12px);
-}
-
-.footer-logo .brand-logo-image {
-  height: clamp(52px, 4.5vw, 70px);
-}
-
-.wishlist-compact-brand .brand-logo-image {
-  height: 40px;
-}
-
-@media (max-width: 820px) {
-  .site-header .brand {
-    width: clamp(88px, 22vw, 112px) !important;
-    height: 54px !important;
-  }
-
-  .site-header .brand .brand-logo-image {
-    width: clamp(128px, 19vw, 150px);
-    height: auto;
-    transform: translateY(7px);
-  }
-
-  .footer-logo .brand-logo-image {
-    height: 50px;
-  }
-}
-
-@media (max-width: 520px) {
-  .site-header .brand {
-    width: 88px !important;
-  }
-
-  .site-header .brand .brand-logo-image {
-    width: 104px;
-    transform: translateY(1px);
-  }
-}
-
 @media (max-width: 700px) {
   .app-page-transition:has(.product-editorial-page) {
     margin-top: 0 !important;
@@ -34628,5 +34569,285 @@ label,
   .product-editorial-summary h1 {
     font-size: clamp(30px, 9vw, 38px) !important;
     line-height: 1.08 !important;
+  }
+}
+
+/* Temporary OTP helper: match the auth mockups without changing the split-page composition. */
+.auth-login-reference-page .auth-login-form,
+.auth-login-reference-page .auth-signup-reference-fields {
+  display: grid !important;
+}
+
+.auth-login-reference-page .signup-field,
+.auth-login-reference-page .otp-code-fields,
+.auth-signup-reference-form.signup-step-phone .otp-code-fields {
+  display: grid !important;
+  gap: 10px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+.auth-login-reference-page .signup-field > span,
+.auth-login-reference-page .otp-code-fields legend,
+.auth-signup-reference-form.signup-step-phone .otp-code-fields legend {
+  color: #2f2925 !important;
+  font-family: var(--font-interface) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  line-height: 1.2 !important;
+  text-transform: none !important;
+}
+
+.auth-login-reference-page .signup-field input,
+.auth-login-reference-page .otp-code-grid input,
+.auth-signup-reference-form.signup-step-phone .otp-code-grid input {
+  width: 100% !important;
+  height: 58px !important;
+  min-height: 58px !important;
+  aspect-ratio: auto !important;
+  border: 1px solid #ddd3ce !important;
+  border-radius: 7px !important;
+  padding: 0 16px !important;
+  background: #fff !important;
+  box-shadow: 0 10px 26px rgba(41, 36, 33, .045) !important;
+  color: #292421 !important;
+  font-family: var(--font-interface) !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  line-height: 58px !important;
+  text-align: left !important;
+}
+
+.auth-login-reference-page .signup-field input::placeholder,
+.auth-login-reference-page .otp-code-grid input::placeholder,
+.auth-signup-reference-form.signup-step-phone .otp-code-grid input::placeholder {
+  color: #aaa29d !important;
+}
+
+.auth-login-reference-page .signup-field input:focus-visible,
+.auth-login-reference-page .otp-code-grid input:focus-visible,
+.auth-signup-reference-form.signup-step-phone .otp-code-grid input:focus-visible {
+  border-color: #292421 !important;
+  box-shadow: 0 0 0 4px rgba(41, 36, 33, .08), 0 12px 30px rgba(41, 36, 33, .06) !important;
+  outline: 0 !important;
+}
+
+.auth-login-reference-page .otp-code-grid,
+.auth-signup-reference-form.signup-step-phone .otp-code-grid {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 0 !important;
+}
+
+.auth-login-reference-page .signup-submit-button,
+.auth-signup-reference-form.signup-step-phone .signup-submit-button {
+  width: 100% !important;
+  border-radius: 999px !important;
+  text-transform: none !important;
+}
+
+.auth-login-reference-page .signup-submit-button:disabled,
+.auth-signup-reference-form.signup-step-phone .signup-submit-button:disabled {
+  background: #85827f !important;
+  color: #fff !important;
+  opacity: 1 !important;
+}
+
+.auth-login-reference-page .signup-test-otp,
+.auth-signup-reference-form.signup-step-phone .signup-test-otp {
+  margin: -6px 0 -4px !important;
+  color: #96504d !important;
+  font-family: var(--font-interface) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+}
+
+/* Global premium logo lockup: [LM] | Lookmefy. */
+.brand-logo-lockup {
+  --logo-mark-size: 40px;
+  --logo-divider-height: 24px;
+  --logo-gap-before-divider: 12px;
+  --logo-gap-after-divider: 18px;
+  --logo-word-size: 24px;
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  align-items: center;
+  color: currentColor;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.brand-logo-mark-art,
+.brand-logo-wordmark-art {
+  display: block;
+  flex: 0 0 auto;
+  color: currentColor;
+  overflow: visible;
+}
+
+.brand-logo-mark-art {
+  width: calc(var(--logo-mark-size) * 1.115);
+  height: var(--logo-mark-size);
+  transform: translateY(calc(var(--logo-mark-size) * -.045));
+}
+
+.brand-logo-wordmark-art {
+  width: calc(var(--logo-word-size) * 4.899);
+  height: var(--logo-word-size);
+}
+
+.brand-logo-divider {
+  display: block;
+  width: 1px;
+  height: var(--logo-divider-height);
+  flex: 0 0 1px;
+  margin-left: var(--logo-gap-before-divider);
+  margin-right: var(--logo-gap-after-divider);
+  background: currentColor;
+  opacity: .28;
+}
+
+.site-header .brand,
+.footer-logo,
+.wishlist-compact-brand > a,
+.auth-login-logo,
+.auth-login-mobile-logo,
+.auth-signup-reference-logo,
+.opening-page-brand,
+.concierge-brand {
+  display: inline-flex !important;
+  width: auto !important;
+  min-width: 0 !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  overflow: visible !important;
+  line-height: 0 !important;
+  text-decoration: none !important;
+}
+
+.site-header .brand {
+  min-width: 164px !important;
+  height: clamp(52px, 4.8vw, 64px) !important;
+}
+
+.site-header .brand .brand-logo-lockup {
+  --logo-mark-size: 38px;
+  --logo-divider-height: 23px;
+  --logo-word-size: 24px;
+}
+
+.footer-logo .brand-logo-lockup,
+.auth-login-logo .brand-logo-lockup,
+.auth-signup-reference-logo .brand-logo-lockup {
+  --logo-mark-size: 40px;
+  --logo-divider-height: 24px;
+  --logo-word-size: 24px;
+}
+
+.wishlist-compact-brand .brand-logo-lockup,
+.concierge-brand .brand-logo-lockup {
+  --logo-mark-size: 34px;
+  --logo-divider-height: 20px;
+  --logo-gap-before-divider: 10px;
+  --logo-gap-after-divider: 16px;
+  --logo-word-size: 21px;
+}
+
+.auth-login-mobile-logo .brand-logo-lockup {
+  --logo-mark-size: 34px;
+  --logo-divider-height: 20px;
+  --logo-gap-before-divider: 10px;
+  --logo-gap-after-divider: 16px;
+  --logo-word-size: 20px;
+}
+
+.auth-login-mobile-logo {
+  display: none !important;
+}
+
+.opening-page-brand .brand-logo-lockup {
+  --logo-mark-size: 42px;
+  --logo-divider-height: 25px;
+  --logo-word-size: 26px;
+  color: #fff;
+}
+
+.auth-login-logo .brand-logo-lockup {
+  color: #fff;
+}
+
+.auth-signup-reference-form.signup-step-phone .auth-signup-reference-logo {
+  width: auto !important;
+  height: auto !important;
+  margin: 0 0 clamp(40px, 4vw, 56px) !important;
+}
+
+.auth-signup-reference-form.signup-step-phone .auth-signup-reference-logo .brand-logo-lockup {
+  --logo-mark-size: 38px;
+  --logo-divider-height: 23px;
+  --logo-word-size: 23px;
+}
+
+@media (max-width: 920px) {
+  .site-header .brand {
+    min-width: 148px !important;
+    height: 54px !important;
+  }
+
+  .site-header .brand .brand-logo-lockup,
+  .auth-signup-reference-form.signup-step-phone .auth-signup-reference-logo .brand-logo-lockup {
+    --logo-mark-size: 34px;
+    --logo-divider-height: 20px;
+    --logo-gap-before-divider: 10px;
+    --logo-gap-after-divider: 16px;
+    --logo-word-size: 21px;
+  }
+}
+
+@media (max-width: 760px) {
+  .auth-login-mobile-logo {
+    display: inline-flex !important;
+  }
+
+  .auth-signup-reference-form.signup-step-phone .auth-signup-reference-logo {
+    margin-bottom: 34px !important;
+  }
+
+  .auth-login-mobile-logo .brand-logo-lockup,
+  .auth-signup-reference-form.signup-step-phone .auth-signup-reference-logo .brand-logo-lockup {
+    --logo-mark-size: 28px;
+    --logo-divider-height: 17px;
+    --logo-gap-before-divider: 9px;
+    --logo-gap-after-divider: 14px;
+    --logo-word-size: 18px;
+  }
+}
+
+@media (max-width: 520px) {
+  .site-header .brand {
+    min-width: 124px !important;
+    height: 50px !important;
+  }
+
+  .site-header .brand .brand-logo-lockup {
+    --logo-mark-size: 28px;
+    --logo-divider-height: 17px;
+    --logo-gap-before-divider: 9px;
+    --logo-gap-after-divider: 14px;
+    --logo-word-size: 18px;
+  }
+
+  .footer-logo .brand-logo-lockup,
+  .wishlist-compact-brand .brand-logo-lockup,
+  .concierge-brand .brand-logo-lockup {
+    --logo-mark-size: 30px;
+    --logo-divider-height: 18px;
+    --logo-gap-before-divider: 9px;
+    --logo-gap-after-divider: 14px;
+    --logo-word-size: 19px;
   }
 }

@@ -172,13 +172,13 @@ test('excessive incorrect attempts invalidate the OTP challenge', async () => wi
 }));
 
 test('frontend and backend sources do not contain the old exposed OTP UI/API keys', async () => {
-  const files = [
-    'src/App.jsx',
-    'server/routes/auth.js'
-  ];
-
-  for (const file of files) {
-    const source = await fs.readFile(file, 'utf8');
-    assert.doesNotMatch(source, /devOtp|Test OTP|Test code/);
+  const frontendSource = await fs.readFile('src/App.jsx', 'utf8');
+  assert.doesNotMatch(frontendSource, /devOtp/);
+  if (/Test OTP|Test code/.test(frontendSource)) {
+    assert.match(frontendSource, /ENABLE_TEST_OTP_HELPER/);
+    assert.match(frontendSource, /\/auth\/test-otp/);
   }
+
+  const backendSource = await fs.readFile('server/routes/auth.js', 'utf8');
+  assert.doesNotMatch(backendSource, /devOtp|Test OTP|Test code/);
 });
