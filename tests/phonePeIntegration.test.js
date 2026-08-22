@@ -145,7 +145,7 @@ async function withMockedModels(callback) {
     tokenFindOneAndUpdate: TokenOrder.findOneAndUpdate,
     tokenFindById: TokenOrder.findById,
     userFindById: User.findById,
-    userFindByIdAndUpdate: User.findByIdAndUpdate
+    userFindOneAndUpdate: User.findOneAndUpdate
   };
   const calls = { credits: 0, saves: 0, findById: 0 };
   TokenOrder.findOneAndUpdate = async (_filter, update) => ({ _id: 'order1', ...update.$set });
@@ -154,7 +154,7 @@ async function withMockedModels(callback) {
     calls.findById += 1;
     return { _id: 'user1', tokens: 10 };
   };
-  User.findByIdAndUpdate = async (_id, update) => {
+  User.findOneAndUpdate = async (_filter, update) => {
     calls.credits += Number(update.$inc?.tokens || 0);
     return { _id: 'user1', tokens: calls.credits };
   };
@@ -164,7 +164,7 @@ async function withMockedModels(callback) {
     TokenOrder.findOneAndUpdate = original.tokenFindOneAndUpdate;
     TokenOrder.findById = original.tokenFindById;
     User.findById = original.userFindById;
-    User.findByIdAndUpdate = original.userFindByIdAndUpdate;
+    User.findOneAndUpdate = original.userFindOneAndUpdate;
   }
 }
 

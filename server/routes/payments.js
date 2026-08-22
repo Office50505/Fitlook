@@ -13,6 +13,7 @@ import {
   TOP_UP_PLANS,
   planById
 } from '../../shared/pricing.js';
+import { phonePeEnabled } from '../utils/envValidation.js';
 import { isProductionEnv, validateConfiguredHttpsUrl } from '../utils/urlValidation.js';
 
 const router = express.Router();
@@ -143,15 +144,33 @@ function addMonths(date, count) {
 }
 
 function requirePhonePeConfig() {
+  if (!phonePeEnabled()) {
+    const error = new Error('PhonePe payments are temporarily unavailable');
+    error.statusCode = 503;
+    throw error;
+  }
   const missing = ['PHONEPE_CLIENT_ID', 'PHONEPE_CLIENT_SECRET', 'PHONEPE_CLIENT_VERSION']
     .filter((key) => !process.env[key]);
-  if (missing.length) throw new Error(`${missing.join(', ')} missing on the server`);
+  if (missing.length) {
+    const error = new Error(`${missing.join(', ')} missing on the server`);
+    error.statusCode = 503;
+    throw error;
+  }
 }
 
 function requirePhonePeCallbackConfig() {
+  if (!phonePeEnabled()) {
+    const error = new Error('PhonePe payments are temporarily unavailable');
+    error.statusCode = 503;
+    throw error;
+  }
   const missing = ['PHONEPE_CALLBACK_USERNAME', 'PHONEPE_CALLBACK_PASSWORD']
     .filter((key) => !process.env[key]);
-  if (missing.length) throw new Error(`${missing.join(', ')} missing on the server`);
+  if (missing.length) {
+    const error = new Error(`${missing.join(', ')} missing on the server`);
+    error.statusCode = 503;
+    throw error;
+  }
 }
 
 function safeCompareHex(left, right) {
@@ -266,6 +285,7 @@ function createMerchantOrderId(userId) {
 }
 
 async function createPhonePePayment({ req, user, plan = SUBSCRIPTION_PLAN }) {
+  requirePhonePeConfig();
   const idempotencyKey = checkoutIdempotencyKey(req);
   if (idempotencyKey) {
     const existingOrder = await TokenOrder.findOne({ user: user._id, idempotencyKey });
@@ -399,8 +419,8 @@ async function grantPaidTokens(order, providerResponse) {
     };
   }
 
-  return User.findByIdAndUpdate(
-    order.user,
+  return User.findOneAndUpdate(
+    { _id: order.user, accountStatus: { $ne: 'deleted' } },
     userUpdate,
     { new: true }
   );
@@ -578,7 +598,7 @@ router.post('/checkout', requireUser, paymentCreateLimiter, async (req, res) => 
     const order = await createPhonePePayment({ req, user: req.user, plan });
     res.status(201).json({ order: order.toClient(), redirectUrl: order.redirectUrl });
   } catch (error) {
-    res.status(400).json({ message: readablePhonePeError(error, 'Could not start PhonePe checkout') });
+    res.status(error.statusCode || 400).json({ message: readablePhonePeError(error, 'Could not start PhonePe checkout') });
   }
 });
 
@@ -587,7 +607,7 @@ router.post('/phonepe/subscription', requireUser, paymentCreateLimiter, async (r
     const order = await createPhonePePayment({ req, user: req.user, plan: SUBSCRIPTION_PLAN });
     res.status(201).json({ order: order.toClient(), redirectUrl: order.redirectUrl });
   } catch (error) {
-    res.status(400).json({ message: readablePhonePeError(error, 'Could not start PhonePe checkout') });
+    res.status(error.statusCode || 400).json({ message: readablePhonePeError(error, 'Could not start PhonePe checkout') });
   }
 });
 
@@ -605,7 +625,7 @@ router.get('/orders/:merchantOrderId/status', requireUser, paymentStatusLimiter,
       user: result.user?.toClient?.() || req.user.toClient()
     });
   } catch (error) {
-    res.status(400).json({ message: readablePhonePeError(error, 'Could not verify PhonePe payment') });
+    res.status(error.statusCode || 400).json({ message: readablePhonePeError(error, 'Could not verify PhonePe payment') });
   }
 });
 

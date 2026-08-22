@@ -48,7 +48,25 @@ const userSchema = new mongoose.Schema(
       enum: ['male', 'female', 'other'],
       default: 'other'
     },
-    tokens: { type: Number, default: signupTokens },
+    tokens: {
+      type: Number,
+      default: signupTokens,
+      min: 0,
+      validate: {
+        validator: Number.isSafeInteger,
+        message: 'Token balance must be a non-negative whole number'
+      }
+    },
+    accountStatus: {
+      type: String,
+      enum: ['active', 'banned', 'deleted'],
+      default: 'active',
+      index: true
+    },
+    bannedAt: Date,
+    banReason: { type: String, trim: true },
+    bannedBy: { type: String, trim: true },
+    deletedAt: Date,
     devMode: { type: Boolean, default: defaultDevMode },
     wishlistProducts: [{
       type: mongoose.Schema.Types.ObjectId,
@@ -88,6 +106,7 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ createdAt: -1 });
+userSchema.index({ accountStatus: 1, createdAt: -1 });
 
 userSchema.methods.toClient = function toClient() {
   return {

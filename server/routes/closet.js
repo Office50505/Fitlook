@@ -10,6 +10,7 @@ import ClosetOutfit from '../models/ClosetOutfit.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
 import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
+import { recordGenerationMetric } from '../utils/generationMetrics.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { deleteStoredFile, readStoredFile, saveBuffer } from '../utils/storage.js';
 import { developmentBillingBypass, isAllowedRasterImageUpload, safeFetchBuffer } from '../utils/security.js';
@@ -558,14 +559,26 @@ async function reserveToken(user, timer) {
     return user;
   }
   const cost = tokenCost();
-  const chargedUser = await User.findOneAndUpdate({ _id: user._id, tokens: { $gte: cost } }, { $inc: { tokens: -cost } }, { new: true });
+  const chargedUser = await User.findOneAndUpdate(
+    {
+      _id: user._id,
+      tokens: { $gte: cost },
+      $or: [{ accountStatus: 'active' }, { accountStatus: { $exists: false } }]
+    },
+    { $inc: { tokens: -cost } },
+    { new: true }
+  );
   if (chargedUser) timer.mark('token reserved', { cost, tokensRemaining: chargedUser.tokens });
   return chargedUser;
 }
 
 async function refundToken(user, timer) {
   if (developmentBillingBypass(user)) return user;
-  const refundedUser = await User.findByIdAndUpdate(user._id, { $inc: { tokens: tokenCost() } }, { new: true });
+  const refundedUser = await User.findOneAndUpdate(
+    { _id: user._id, accountStatus: { $ne: 'deleted' } },
+    { $inc: { tokens: tokenCost() } },
+    { new: true }
+  );
   if (refundedUser) timer.mark('token refunded', { tokensRemaining: refundedUser.tokens });
   return refundedUser || user;
 }
@@ -843,17 +856,22 @@ router.post('/chat', requireUser, closetChatLimiter, async (req, res) => {
 });
 
 router.post('/outfits/generate', requireUser, closetOutfitLimiter, async (req, res) => {
+  const analyticsStartedAt = Date.now();
   const itemIds = [...new Set((Array.isArray(req.body?.itemIds) ? req.body.itemIds : []).map((id) => String(id || '').trim()).filter(Boolean))].slice(0, 5);
   const timer = createTimer('generate-outfit', { userId: req.user._id.toString(), itemCount: itemIds.length });
   let reserved = false;
   try {
-    if (!itemIds.length) return res.status(400).json({ message: 'Select at least one closet item.' });
+    if (!itemIds.length) {
+      await recordGenerationMetric({ user: req.user._id, type: 'closet_image', status: 'rejected', provider: 'fitroom', model: 'fitroom/tryon-v2', durationMs: Date.now() - analyticsStartedAt, error: 'Select at least one closet item' });
+      return res.status(400).json({ message: 'Select at least one closet item.' });
+    }
     ensureTryOnProfileReady(req.user);
     const items = await ClosetItem.find({ user: req.user._id, _id: { $in: itemIds } });
     if (items.length !== itemIds.length) return res.status(404).json({ message: 'One or more closet items were not found.' });
     const chargedUser = await reserveToken(req.user, timer);
     if (!chargedUser) {
       timer.end({ error: 'insufficient tokens' });
+      await recordGenerationMetric({ user: req.user._id, type: 'closet_image', status: 'rejected', provider: 'fitroom', model: 'fitroom/tryon-v2', durationMs: Date.now() - analyticsStartedAt, error: 'insufficient tokens' });
       return res.status(402).json({ message: 'Not enough tokens for AI outfit generation' });
     }
     reserved = true;
@@ -897,11 +915,14 @@ router.post('/outfits/generate', requireUser, closetOutfitLimiter, async (req, r
     });
     await ClosetItem.updateMany({ _id: { $in: items.map((item) => item._id) }, user: req.user._id }, { $inc: { wearCount: 1 }, $set: { lastWornAt: new Date() } });
     timer.end({ outfitId: outfit._id.toString(), tokensRemaining: req.user.tokens });
+    await recordGenerationMetric({ user: req.user._id, type: 'closet_image', status: 'succeeded', provider: outfit.provider, model: outfit.model, tokensCharged: chargedTokenCost(req.user), durationMs: Date.now() - analyticsStartedAt });
     res.status(201).json({ outfit: outfitToClient(outfit, items), user: req.user.toClient() });
   } catch (error) {
+    const tokensRefunded = reserved ? chargedTokenCost(req.user) : 0;
     if (reserved) req.user = await refundToken(req.user, timer);
     const message = readableError(error, 'Could not generate closet outfit');
     timer.end({ error: message });
+    await recordGenerationMetric({ user: req.user._id, type: 'closet_image', status: 'failed', provider: 'fitroom', model: 'fitroom/tryon-v2', durationMs: Date.now() - analyticsStartedAt, tokensCharged: tokensRefunded, tokensRefunded, error: message });
     res.status(400).json({ message });
   }
 });

@@ -1,5 +1,11 @@
 import { MockOtpProvider, WebhookOtpProvider, otpDeliveryFailure } from './otpProviders.js';
 import { isProductionEnv } from './urlValidation.js';
+import OtpDeliveryMetric from '../models/OtpDeliveryMetric.js';
+
+function recordOtpDeliveryMetric(entry) {
+  if (OtpDeliveryMetric.db?.readyState !== 1) return Promise.resolve(null);
+  return OtpDeliveryMetric.create(entry).catch(() => null);
+}
 
 function otpDeliveryProvider(env = process.env) {
   const provider = String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase();
@@ -18,7 +24,29 @@ function createOtpProvider(env = process.env) {
 }
 
 async function deliverOtp(message, env = process.env) {
-  return createOtpProvider(env).deliver(message);
+  const startedAt = Date.now();
+  const provider = otpDeliveryProvider(env) || 'disabled';
+  const estimatedCostUsd = Math.max(0, Number(env.OTP_COST_PER_MESSAGE_USD) || 0);
+  try {
+    const result = await createOtpProvider(env).deliver(message);
+    await recordOtpDeliveryMetric({
+      provider,
+      purpose: ['signup', 'login'].includes(message?.purpose) ? message.purpose : 'other',
+      status: 'succeeded',
+      durationMs: Date.now() - startedAt,
+      estimatedCostUsd
+    });
+    return result;
+  } catch (error) {
+    await recordOtpDeliveryMetric({
+      provider,
+      purpose: ['signup', 'login'].includes(message?.purpose) ? message.purpose : 'other',
+      status: 'failed',
+      durationMs: Date.now() - startedAt,
+      estimatedCostUsd: 0,
+      errorCategory: error?.name === 'AbortError' || /timed out/i.test(error?.message || '') ? 'timeout' : 'provider'
+    });
+    throw error;
+  }
 }
-
 export { createOtpProvider, deliverOtp, otpDeliveryProvider };

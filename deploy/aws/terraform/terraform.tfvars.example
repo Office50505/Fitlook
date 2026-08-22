@@ -8,7 +8,6 @@ backend_env = {
   MONGODB_URI = "mongodb+srv://user:password@example.mongodb.net/fitlook"
   MONGODB_DB  = "fitlook"
   JWT_SECRET  = "replace-with-a-long-random-secret"
-  ADMIN_KEY   = "replace-with-a-long-random-admin-key"
 
   FAL_KEY             = "replace-with-your-fal-key"
   FAL_TRYON_MODEL     = "openai/gpt-image-2/edit"

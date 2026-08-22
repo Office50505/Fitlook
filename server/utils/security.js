@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import jwt from 'jsonwebtoken';
 import sharp from 'sharp';
 import User from '../models/User.js';
+import { accountAccessError } from './accountState.js';
 
 const ALLOWED_RASTER_MIME_TYPES = new Set([
   'image/jpeg',
@@ -295,6 +296,12 @@ async function authorizeUploadRequest(req, clean) {
   if (!user) {
     const error = new Error('User not found');
     error.status = 401;
+    throw error;
+  }
+  const accessError = accountAccessError(user);
+  if (accessError) {
+    const error = new Error(accessError.message);
+    error.status = accessError.statusCode;
     throw error;
   }
   const userId = user._id.toString();

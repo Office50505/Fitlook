@@ -81,6 +81,8 @@ test('validates clothing and rejects duplicate ASINs', () => {
   const context = { taxonomy, seenAsins: new Set(), batchId: 'batch-1' };
   const product = validateAndBuildProduct(validDraft(), { expectedGender: 'men', expectedCategory: 'T-Shirts' }, context);
   assert.equal(product.sourceProductId, 'B0ABCDEF12');
+  assert.equal(product.availabilityStatus, 'available');
+  assert.equal(product.isActive, true);
   assert.throws(
     () => validateAndBuildProduct(validDraft(), { expectedGender: 'men', expectedCategory: 'T-Shirts' }, context),
     /Duplicate ASIN/
@@ -177,6 +179,7 @@ test('replace-existing requires explicit confirmation and deactivates old produc
 
   assert.equal(report.oldProductsDeactivated[0].count, 3);
   assert.equal(model.calls.updateMany.length, 1);
+  assert.equal(model.calls.updateMany[0].update.$set.availabilityStatus, 'archived');
 });
 
 test('approved imported Amazon products are not filtered as temporary recommendations', () => {

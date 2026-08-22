@@ -12,7 +12,9 @@ import recommendationRoutes from './routes/recommendations.js';
 import tryOnRoutes from './routes/tryons.js';
 import imageRoutes from './routes/images.js';
 import jobRoutes from './routes/jobs.js';
-import { requireAdmin } from './utils/adminAccess.js';
+import adminRoutes from './routes/admin.js';
+import { requireAdmin, requireAdminSection } from './utils/adminAccess.js';
+import { ADMIN_SECTIONS } from './utils/adminPermissions.js';
 import { closeRedisClient, getRedisClient } from './utils/cache.js';
 import { closeJobQueues, queueEnabled } from './utils/jobQueue.js';
 import { configureMongoSlowQueryLogging, observabilitySnapshot, requestLogger } from './utils/observability.js';
@@ -20,6 +22,7 @@ import { createRateLimiter, rateLimitKeys } from './utils/rateLimit.js';
 import { appRole, mongoConnectOptions, serviceMetadata } from './utils/runtime.js';
 import { configurationReadiness, validateServerEnv } from './utils/envValidation.js';
 import { securityHeaders, serveUploadedMedia } from './utils/security.js';
+import { recordSystemIncident } from './utils/systemIncidents.js';
 
 dotenv.config();
 
@@ -59,6 +62,7 @@ const adminMetricsLimiter = createRateLimiter({
   keyGenerator: rateLimitKeys.userOrIp,
   message: 'Admin metrics are temporarily limited. Please try again shortly.'
 });
+const requireSystemAdmin = requireAdminSection(ADMIN_SECTIONS.SYSTEM_MANAGEMENT);
 
 function allowedOrigins() {
   return [
@@ -117,6 +121,7 @@ app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/tryons', tryOnRoutes);
 app.use('/api/images', imageRoutes);
 app.use('/api/jobs', jobRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
@@ -148,7 +153,7 @@ app.get('/api/health/ready', async (_req, res) => {
   });
 });
 
-app.get('/api/admin/metrics', requireAdmin, adminMetricsLimiter, async (_req, res, next) => {
+app.get('/api/admin/metrics', requireAdmin, requireSystemAdmin, adminMetricsLimiter, async (_req, res, next) => {
   try {
     res.json(await observabilitySnapshot({ mongoose }));
   } catch (error) {
@@ -167,6 +172,16 @@ app.use((error, req, res, _next) => {
       : error?.message || 'Request failed.';
 
   console.error(`[api] ${req.method} ${req.originalUrl} failed:`, error);
+  if (status >= 500) {
+    void recordSystemIncident({
+      service: 'api',
+      kind: 'http_5xx',
+      severity: 'critical',
+      title: `${req.method} ${req.route?.path || req.path} failed`,
+      message,
+      metadata: { method: req.method, path: req.path, status }
+    });
+  }
   res.status(status).json({ message });
 });
 

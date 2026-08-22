@@ -310,7 +310,6 @@ test('delete account flow requires typed confirmation and clears authenticated s
   await page.goto('/profile');
   await expect(page.getByRole('heading', { name: /Sign in to view your profile/i })).toBeVisible();
 });
-
 test('protected routes show guest auth gate and preserve internal return paths', async ({ page }) => {
   await page.goto('/closet');
   await expect(page).toHaveURL(/\/closet/);

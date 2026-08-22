@@ -1,12 +1,44 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ADMIN_PAGES,
+  PAGE_COPY,
+  adminCanAccessPage,
+  adminCanAccessSection,
+  adminPage,
+  adminSectionForPage,
+  firstAdminPage,
+  visibleAdminSections
+} from './adminNavigation.js';
+import {
+  ApiPerformancePage,
+  CostOverviewPage,
+  FailuresPage,
+  GenerationPipelinePage,
+  MobileReportPage,
+  ProviderCostPage,
+  ServiceHealthPage,
+  SystemOverviewPage
+} from './AdminManagementPages.jsx';
+import { AdminRolesPage } from './AdminRolesPage.jsx';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const STORE_BASE = (import.meta.env.VITE_STORE_BASE_URL || 'http://localhost:5173').replace(/\/$/, '');
 const ADMIN_SESSION_KEY = 'fitlook_admin_session';
+const ADMIN_THEME_KEY = 'lookmefy_admin_theme';
+const ADMIN_RECENT_SEARCHES_KEY = 'lookmefy_admin_recent_searches';
+const ADMIN_SESSION_EXPIRED_EVENT = 'lookmefy:admin-session-expired';
+const EMPTY_STORAGE_USAGE = {
+  bytes: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 },
+  bunnyBytes: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 },
+  bunnyCounts: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 },
+  unknownSize: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 }
+};
 
 function storedAdminSession() {
   try {
-    return JSON.parse(sessionStorage.getItem(ADMIN_SESSION_KEY) || 'null');
+    const session = JSON.parse(sessionStorage.getItem(ADMIN_SESSION_KEY) || 'null');
+    if (!session?.token || !session.admin?.id || !Array.isArray(session.admin.sectionAccess)) return null;
+    return session;
   } catch {
     return null;
   }
@@ -42,6 +74,10 @@ async function api(path, options = {}) {
   const authHeaders = session?.token ? { Authorization: `Bearer ${session.token}` } : {};
   const res = await fetch(`${API_BASE}/api${path}`, { ...options, headers: { ...headers, ...authHeaders, ...options.headers } });
   const data = await res.json().catch(() => null);
+  if (res.status === 401 && session?.token) {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    window.dispatchEvent(new Event(ADMIN_SESSION_EXPIRED_EVENT));
+  }
   if (!res.ok) throw new Error(res.status === 429 ? rateLimitMessage(data, `Request failed (${res.status})`) : readableError(data, `Request failed (${res.status})`));
   return data;
 }
@@ -77,6 +113,7 @@ function displayCategory(product) {
 }
 
 function garmentPlacementLabel(value) {
+  if (value === 'accessory') return 'Accessory';
   return value === 'bottom' ? 'Bottom' : 'Top';
 }
 
@@ -87,6 +124,7 @@ function inferGarmentPlacement(product = {}) {
     product.description,
     Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
   ].filter(Boolean).join(' ').toLowerCase();
+  if (/\b(accessor(?:y|ies)|bags?|handbags?|purses?|wallets?|belts?|scarves?|jewelry|jewellery|necklaces?|rings?|earrings?|bracelets?|watches?|sunglasses?|eyewear|hats?|caps?)\b/.test(text)) return 'accessory';
   return /\b(pants?|trousers?|jeans?|denim|shorts?|skirts?|leggings?|joggers?|palazzos?|bottoms?|lower)\b/.test(text) ? 'bottom' : 'top';
 }
 
@@ -158,7 +196,7 @@ function checkedValue(form, name) {
   return Boolean(form.elements.namedItem(name)?.checked);
 }
 
-function useProducts(params) {
+function useProducts(params, enabled = true) {
   const query = useMemo(() => {
     const search = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -170,20 +208,26 @@ function useProducts(params) {
     products: [],
     total: 0,
     facets: { brands: [], categories: [], categoryCounts: [] },
+    availabilityCounts: {},
     loading: true,
     error: ''
   });
 
   useEffect(() => {
+    if (!enabled) {
+      setState({ products: [], total: 0, facets: { brands: [], categories: [], categoryCounts: [] }, availabilityCounts: {}, loading: false, error: '' });
+      return undefined;
+    }
     let alive = true;
     setState((current) => ({ ...current, loading: true, error: '' }));
-    api(`/products${query ? `?${query}` : ''}`)
+    api(`/products/admin/catalog${query ? `?${query}` : ''}`)
       .then((data) => {
         if (alive) {
           setState({
             products: data.products || [],
             total: data.total || 0,
             facets: data.facets || { brands: [], categories: [], categoryCounts: [] },
+            availabilityCounts: data.availabilityCounts || {},
             loading: false,
             error: ''
           });
@@ -195,6 +239,7 @@ function useProducts(params) {
             products: [],
             total: 0,
             facets: { brands: [], categories: [], categoryCounts: [] },
+            availabilityCounts: {},
             loading: false,
             error: err.message
           });
@@ -203,12 +248,12 @@ function useProducts(params) {
     return () => {
       alive = false;
     };
-  }, [query]);
+  }, [enabled, query]);
 
   return state;
 }
 
-function useRecommendationStats(enabled, refresh) {
+function useRecommendationStats(enabled, refresh, period = { range: '30', from: '', to: '' }) {
   const [state, setState] = useState({ stats: null, loading: false, error: '' });
 
   useEffect(() => {
@@ -217,8 +262,13 @@ function useRecommendationStats(enabled, refresh) {
       return;
     }
     let alive = true;
+    const query = new URLSearchParams({ range: period.range || '30' });
+    if (period.range === 'custom') {
+      query.set('from', period.from);
+      query.set('to', period.to);
+    }
     setState((current) => ({ ...current, loading: true, error: '' }));
-    api('/recommendations/admin/stats')
+    api(`/recommendations/admin/stats?${query.toString()}`)
       .then((data) => {
         if (alive) setState({ stats: data, loading: false, error: '' });
       })
@@ -228,37 +278,12 @@ function useRecommendationStats(enabled, refresh) {
     return () => {
       alive = false;
     };
-  }, [enabled, refresh]);
+  }, [enabled, period.from, period.range, period.to, refresh]);
 
   return state;
 }
 
-function useSystemHealth(enabled, refresh) {
-  const [state, setState] = useState({ health: null, loading: false, error: '' });
-
-  useEffect(() => {
-    if (!enabled) {
-      setState({ health: null, loading: false, error: '' });
-      return;
-    }
-    let alive = true;
-    setState((current) => ({ ...current, loading: true, error: '' }));
-    api('/health')
-      .then((data) => {
-        if (alive) setState({ health: data, loading: false, error: '' });
-      })
-      .catch((err) => {
-        if (alive) setState({ health: null, loading: false, error: err.message });
-      });
-    return () => {
-      alive = false;
-    };
-  }, [enabled, refresh]);
-
-  return state;
-}
-
-function useAdminUsers(enabled, refresh, search = '') {
+function useAdminUsers(enabled, refresh, search = '', status = '', minTokens = '', maxTokens = '') {
   const [state, setState] = useState({ users: [], totals: { users: 0, loaded: 0, tokens: 0 }, loading: false, error: '' });
 
   useEffect(() => {
@@ -269,6 +294,9 @@ function useAdminUsers(enabled, refresh, search = '') {
     let alive = true;
     const query = new URLSearchParams({ limit: '120' });
     if (search.trim()) query.set('q', search.trim());
+    if (status) query.set('status', status);
+    if (minTokens !== '') query.set('minTokens', minTokens);
+    if (maxTokens !== '') query.set('maxTokens', maxTokens);
     setState((current) => ({ ...current, loading: true, error: '' }));
     api(`/auth/admin/users?${query.toString()}`)
       .then((data) => {
@@ -280,7 +308,7 @@ function useAdminUsers(enabled, refresh, search = '') {
     return () => {
       alive = false;
     };
-  }, [enabled, refresh, search]);
+  }, [enabled, maxTokens, minTokens, refresh, search, status]);
 
   return state;
 }
@@ -310,49 +338,77 @@ function useAdminOperations(enabled, refresh) {
   return state;
 }
 
-const ADMIN_PAGES = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'inventory', label: 'Inventory' },
-  { id: 'analytics', label: 'Analytics' },
-  { id: 'users', label: 'Users' },
-  { id: 'settings', label: 'Settings' }
-];
+function useAdminStorage(enabled, type, page, refresh) {
+  const [state, setState] = useState({
+    items: [],
+    counts: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 },
+    usage: EMPTY_STORAGE_USAGE,
+    total: 0,
+    pages: 1,
+    provider: '',
+    loading: false,
+    error: ''
+  });
 
-const PAGE_COPY = {
-  overview: {
-    kicker: 'Home',
-    title: 'Overview',
-    lead: 'See what is happening today: products, users, tokens, and items that need a quick fix.'
-  },
-  inventory: {
-    kicker: 'Products',
-    title: 'Inventory',
-    lead: 'Add, edit, and review the products shown on the Lookmefy website.'
-  },
-  analytics: {
-    kicker: 'Reports',
-    title: 'Analytics',
-    lead: 'See what users are doing and which products are getting attention.'
-  },
-  users: {
-    kicker: 'Customers',
-    title: 'Users',
-    lead: 'Find users, check their token balance, and add or set tokens when needed.'
-  },
-  settings: {
-    kicker: 'Setup',
-    title: 'Settings',
-    lead: 'Check system status, admin key access, and your current session.'
-  },
-  'add-product': {
-    kicker: 'Products',
-    title: 'Add Product',
-    lead: 'Create one new product from a link, review it, and publish it.'
-  }
-};
+  useEffect(() => {
+    if (!enabled) {
+      setState({ items: [], counts: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 }, usage: EMPTY_STORAGE_USAGE, total: 0, pages: 1, provider: '', loading: false, error: '' });
+      return undefined;
+    }
+    let alive = true;
+    setState((current) => ({ ...current, loading: true, error: '' }));
+    api(`/auth/admin/storage?type=${encodeURIComponent(type)}&page=${page}&limit=24`)
+      .then((data) => {
+        if (alive) setState({
+          items: data.items || [],
+          counts: data.counts || { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 },
+          usage: data.usage || EMPTY_STORAGE_USAGE,
+          total: data.total || 0,
+          pages: data.pages || 1,
+          provider: data.provider || '',
+          loading: false,
+          error: ''
+        });
+      })
+      .catch((err) => {
+        if (alive) setState((current) => ({ ...current, items: [], loading: false, error: err.message }));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [enabled, page, refresh, type]);
+
+  return state;
+}
+
+function useAdminResource(enabled, path, refresh) {
+  const [state, setState] = useState({ data: null, loading: false, error: '' });
+
+  useEffect(() => {
+    if (!enabled || !path) {
+      setState({ data: null, loading: false, error: '' });
+      return undefined;
+    }
+    let alive = true;
+    setState((current) => ({ ...current, loading: true, error: '' }));
+    api(path)
+      .then((data) => {
+        if (alive) setState({ data, loading: false, error: '' });
+      })
+      .catch((error) => {
+        if (alive) setState({ data: null, loading: false, error: error.message });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [enabled, path, refresh]);
+
+  return state;
+}
 
 function pageFromHash() {
-  const value = window.location.hash.replace(/^#/, '');
+  const raw = window.location.hash.replace(/^#/, '');
+  const value = raw === 'media-library' ? 'storage' : raw;
   if (value === 'add-product') return value;
   return ADMIN_PAGES.some((page) => page.id === value) ? value : 'overview';
 }
@@ -360,10 +416,13 @@ function pageFromHash() {
 function AdminApp() {
   const formRef = useRef(null);
   const [adminSession, setAdminSession] = useState(() => storedAdminSession());
-  const [adminKey, setAdminKey] = useState('');
   const [activePage, setActivePage] = useState(pageFromHash);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [message, setMessage] = useState('');
+  const [theme, setTheme] = useState(() => localStorage.getItem(ADMIN_THEME_KEY) || 'light');
+  const [pendingAction, setPendingAction] = useState(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [mediaUser, setMediaUser] = useState(null);
   const [previewImage, setPreviewImage] = useState('');
   const [fetchingDraft, setFetchingDraft] = useState(false);
   const [creatingProduct, setCreatingProduct] = useState(false);
@@ -377,8 +436,12 @@ function AdminApp() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
   const [userSearch, setUserSearch] = useState('');
+  const [userStatus, setUserStatus] = useState('');
+  const [userTokenRange, setUserTokenRange] = useState({ min: '', max: '' });
+  const [analyticsPeriod, setAnalyticsPeriod] = useState({ range: '30', from: '', to: '' });
   const [userRefresh, setUserRefresh] = useState(0);
   const [operationsRefresh, setOperationsRefresh] = useState(0);
+  const [managementRefresh, setManagementRefresh] = useState(0);
   const [tokenDrafts, setTokenDrafts] = useState({});
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [filters, setFilters] = useState({
@@ -386,10 +449,17 @@ function AdminApp() {
     category: '',
     brand: '',
     gender: '',
+    availability: '',
     status: '',
     sort: 'newest'
   });
   const [refresh, setRefresh] = useState(0);
+  const currentAdmin = adminSession?.admin || null;
+  const hasUserOperations = adminCanAccessSection(currentAdmin, 'user-operations');
+  const hasSystemManagement = adminCanAccessSection(currentAdmin, 'system-management');
+  const hasCostManagement = adminCanAccessSection(currentAdmin, 'cost-management');
+  const navigationSections = useMemo(() => visibleAdminSections(currentAdmin), [currentAdmin]);
+  const searchablePages = useMemo(() => navigationSections.flatMap((section) => section.pages), [navigationSections]);
   const productParams = useMemo(() => ({
     limit: 96,
     sort: filters.sort,
@@ -397,15 +467,42 @@ function AdminApp() {
     category: filters.category,
     brand: filters.brand,
     gender: filters.gender,
+    availability: filters.availability,
     featured: filters.status === 'featured' ? 'true' : '',
     newArrival: filters.status === 'newArrival' ? 'true' : '',
     refresh
   }), [filters, refresh]);
-  const state = useProducts(productParams);
-  const recommendationStats = useRecommendationStats(Boolean(adminSession?.token), refresh);
-  const systemHealth = useSystemHealth(Boolean(adminSession?.token), refresh);
-  const usersState = useAdminUsers(Boolean(adminSession?.token), userRefresh, userSearch);
-  const operationsState = useAdminOperations(Boolean(adminSession?.token), operationsRefresh);
+  const state = useProducts(productParams, Boolean(adminSession?.token) && hasUserOperations);
+  const recommendationStats = useRecommendationStats(Boolean(adminSession?.token) && hasUserOperations, refresh, analyticsPeriod);
+  const usersState = useAdminUsers(
+    Boolean(adminSession?.token) && hasUserOperations,
+    userRefresh,
+    userSearch,
+    userStatus,
+    userTokenRange.min,
+    userTokenRange.max
+  );
+  const operationsState = useAdminOperations(Boolean(adminSession?.token) && hasUserOperations, operationsRefresh);
+  const pageMeta = adminPage(activePage);
+  const activeSection = adminSectionForPage(activePage);
+  const systemSummaryEnabled = ['system-overview', 'service-health', 'api-performance'].includes(activePage);
+  const incidentsEnabled = activePage === 'failures';
+  const generationsEnabled = ['failures', 'generation-pipeline'].includes(activePage);
+  const mobilePlatform = activePage === 'ios-report' ? 'ios' : activePage === 'android-report' ? 'android' : '';
+  const costOverviewEnabled = activePage === 'cost-overview';
+  const activeCostProvider = pageMeta?.provider || '';
+  const systemSummaryState = useAdminResource(Boolean(adminSession?.token) && hasSystemManagement && systemSummaryEnabled, '/admin/system/summary', managementRefresh);
+  const incidentsState = useAdminResource(Boolean(adminSession?.token) && hasSystemManagement && incidentsEnabled, '/admin/system/incidents?limit=150', managementRefresh);
+  const generationState = useAdminResource(Boolean(adminSession?.token) && hasSystemManagement && generationsEnabled, '/admin/system/generations?days=30', managementRefresh);
+  const mobileState = useAdminResource(Boolean(adminSession?.token) && hasSystemManagement && Boolean(mobilePlatform), mobilePlatform ? `/admin/system/mobile/${mobilePlatform}?days=30` : '', managementRefresh);
+  const auditState = useAdminResource(Boolean(adminSession?.token) && hasSystemManagement && activePage === 'audit-log', '/auth/admin/audit-log', operationsRefresh);
+  const auditLogState = {
+    auditLogs: auditState.data?.auditLogs || [],
+    loading: auditState.loading,
+    error: auditState.error
+  };
+  const costOverviewState = useAdminResource(Boolean(adminSession?.token) && hasCostManagement && costOverviewEnabled, '/admin/costs/summary', managementRefresh);
+  const providerCostState = useAdminResource(Boolean(adminSession?.token) && hasCostManagement && Boolean(activeCostProvider), activeCostProvider ? `/admin/costs/${activeCostProvider}` : '', managementRefresh);
   const duplicateWarnings = useMemo(() => {
     const counts = new Map();
     const remember = (type, value) => {
@@ -432,6 +529,7 @@ function AdminApp() {
     .map((product) => ({ product, flags: productQaFlags(product, duplicateWarnings.get(product.id) || []) }))
     .filter((item) => item.flags.length), [duplicateWarnings, state.products]);
   const selectedProducts = useMemo(() => state.products.filter((product) => selectedIds.has(product.id)), [selectedIds, state.products]);
+  const availableProductCount = Number(state.availabilityCounts?.available || 0);
   const categoryDistribution = useMemo(() => {
     if (state.facets.categoryCounts?.length) {
       return state.facets.categoryCounts
@@ -448,7 +546,7 @@ function AdminApp() {
       .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
   }, [state.facets.categoryCounts, state.products]);
   const pageCopy = PAGE_COPY[activePage] || PAGE_COPY.overview;
-  const adminDisplayName = adminSession?.admin?.method === 'admin-key' ? 'Admin key session' : 'Admin';
+  const adminDisplayName = currentAdmin?.name || currentAdmin?.email || 'Admin';
   const createBusy = fetchingDraft || creatingProduct;
 
   useEffect(() => {
@@ -458,12 +556,83 @@ function AdminApp() {
   }, []);
 
   useEffect(() => {
+    const handleExpiredSession = () => {
+      setAdminSession(null);
+      setMessage('Your admin session ended. Sign in again.');
+    };
+    window.addEventListener(ADMIN_SESSION_EXPIRED_EVENT, handleExpiredSession);
+    return () => window.removeEventListener(ADMIN_SESSION_EXPIRED_EVENT, handleExpiredSession);
+  }, []);
+
+  useEffect(() => {
+    if (!adminSession?.token) return undefined;
+    let alive = true;
+    api('/auth/admin-session')
+      .then((data) => {
+        if (!alive || !data.admin) return;
+        const refreshed = { token: adminSession.token, admin: data.admin };
+        sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(refreshed));
+        setAdminSession(refreshed);
+      })
+      .catch(() => {
+        // The API helper clears invalid sessions and emits the expiry event.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [adminSession?.token]);
+
+  useEffect(() => {
+    if (!adminSession?.token || adminCanAccessPage(currentAdmin, activePage)) return;
+    const fallbackPage = firstAdminPage(currentAdmin);
+    if (!fallbackPage) return;
+    setActivePage(fallbackPage);
+    window.history.replaceState(null, '', `#${fallbackPage}`);
+    setMessage('That page is outside your assigned admin access.');
+  }, [activePage, adminSession?.token, currentAdmin]);
+
+  useEffect(() => {
     setSelectedIds(new Set());
   }, [productParams]);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(ADMIN_THEME_KEY, theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (!message) return undefined;
+    const timeout = window.setTimeout(() => setMessage(''), 5500);
+    return () => window.clearTimeout(timeout);
+  }, [message]);
+
   const showPage = (page) => {
+    if (!adminCanAccessPage(currentAdmin, page)) {
+      setMessage('That page is outside your assigned admin access.');
+      return;
+    }
     setActivePage(page);
     window.history.replaceState(null, '', `#${page}`);
+  };
+
+  const refreshCurrentPage = () => {
+    setRefresh((value) => value + 1);
+    setUserRefresh((value) => value + 1);
+    setOperationsRefresh((value) => value + 1);
+    setManagementRefresh((value) => value + 1);
+  };
+
+  const updateIncidentStatus = async (incidentId, status) => {
+    try {
+      await api(`/admin/system/incidents/${incidentId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+      setMessage(`Incident ${status}.`);
+      setManagementRefresh((value) => value + 1);
+    } catch (error) {
+      setMessage(error.message);
+    }
   };
 
   const openProductFromSearch = (product) => {
@@ -484,13 +653,21 @@ function AdminApp() {
   const completeLogin = (session) => {
     sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
     setAdminSession(session);
-    setAdminKey('');
+    const destination = adminCanAccessPage(session.admin, pageFromHash()) ? pageFromHash() : firstAdminPage(session.admin);
+    if (destination) {
+      setActivePage(destination);
+      window.history.replaceState(null, '', `#${destination}`);
+    }
+  };
+
+  const refreshAdminSession = (session) => {
+    sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
+    setAdminSession(session);
   };
 
   const logout = () => {
     sessionStorage.removeItem(ADMIN_SESSION_KEY);
     setAdminSession(null);
-    setAdminKey('');
   };
 
   const setField = (name, value) => {
@@ -503,6 +680,7 @@ function AdminApp() {
     if (fetchingDraft || creatingProduct) return;
     const form = formRef.current;
     const affiliateLink = String(form?.elements.namedItem('affiliateLink')?.value || '').trim();
+    const itemType = String(form?.elements.namedItem('fetchItemType')?.value || 'auto');
     if (!affiliateLink) {
       setDraftStatus({
         tone: 'error',
@@ -523,8 +701,7 @@ function AdminApp() {
     try {
       const data = await api('/products/preview-link', {
         method: 'POST',
-        body: JSON.stringify({ affiliateLink }),
-        headers: { 'x-admin-key': adminKey }
+        body: JSON.stringify({ affiliateLink, itemType })
       });
       const draft = data.draft || {};
       const fieldNames = [
@@ -575,15 +752,18 @@ function AdminApp() {
     setCreatingProduct(true);
     try {
       const form = event.currentTarget;
-      await api('/products', { method: 'POST', body: new FormData(form), headers: { 'x-admin-key': adminKey } });
+      const availabilityStatus = fieldValue(form, 'availabilityStatus') || 'available';
+      await api('/products', { method: 'POST', body: new FormData(form) });
       form.reset();
       setPreviewImage('');
       setDraftStatus({
         tone: 'success',
-        title: 'Product published',
-        detail: 'The product is live in the catalog. You can fetch another link or create a manual draft.'
+        title: availabilityStatus === 'available' ? 'Product published' : 'Product saved',
+        detail: availabilityStatus === 'available'
+          ? 'The product is live in the catalog. You can fetch another link or create a manual draft.'
+          : `The product was saved as ${availabilityStatus.replace(/_/g, ' ')} and is hidden from the storefront.`
       });
-      setMessage('Product uploaded.');
+      setMessage(availabilityStatus === 'available' ? 'Product uploaded.' : 'Product saved outside the live catalog.');
       setRefresh((value) => value + 1);
       setOperationsRefresh((value) => value + 1);
     } catch (err) {
@@ -594,11 +774,11 @@ function AdminApp() {
   };
 
   const removeProduct = async (id) => {
-    if (!window.confirm('Remove this product from the catalog?')) return;
-    setMessage('Removing product...');
+    if (!window.confirm('Archive this product and hide it from the storefront?')) return;
+    setMessage('Archiving product...');
     try {
-      await api(`/products/${id}`, { method: 'DELETE', headers: { 'x-admin-key': adminKey } });
-      setMessage('Product removed.');
+      await api(`/products/${id}`, { method: 'DELETE' });
+      setMessage('Product archived.');
       setRefresh((value) => value + 1);
       setOperationsRefresh((value) => value + 1);
     } catch (err) {
@@ -606,19 +786,23 @@ function AdminApp() {
     }
   };
 
+  const requestDeleteProduct = (product) => {
+    setPendingAction({ type: 'delete-product', product });
+  };
+
   const removeAllProducts = async () => {
-    if (!state.total) {
-      setMessage('There are no active products to remove.');
+    if (!availableProductCount) {
+      setMessage('There are no available products to archive.');
       return;
     }
-    const confirmed = window.confirm(`Remove all ${state.total} active products from the catalog? This will hide them from the storefront.`);
+    const confirmed = window.confirm(`Archive all ${availableProductCount} available products? This will hide them from the storefront.`);
     if (!confirmed) return;
     const secondConfirmed = window.confirm('Please confirm again. This removes every listed product from the active catalog.');
     if (!secondConfirmed) return;
-    setMessage('Removing all active products...');
+    setMessage('Archiving all available products...');
     try {
-      const data = await api('/products', { method: 'DELETE', headers: { 'x-admin-key': adminKey } });
-      setMessage(`Removed ${data.removed || 0} products from the catalog.`);
+      const data = await api('/products', { method: 'DELETE' });
+      setMessage(`Archived ${data.removed || 0} products.`);
       setRefresh((value) => value + 1);
       setOperationsRefresh((value) => value + 1);
     } catch (err) {
@@ -631,8 +815,7 @@ function AdminApp() {
     try {
       await api(`/products/${id}/garment-placement`, {
         method: 'PATCH',
-        body: JSON.stringify({ garmentPlacement }),
-        headers: { 'x-admin-key': adminKey }
+        body: JSON.stringify({ garmentPlacement })
       });
       setMessage('Fit area updated.');
       setRefresh((value) => value + 1);
@@ -647,7 +830,7 @@ function AdminApp() {
   };
 
   const clearFilters = () => {
-    setFilters({ q: '', category: '', brand: '', gender: '', status: '', sort: 'newest' });
+    setFilters({ q: '', category: '', brand: '', gender: '', availability: '', status: '', sort: 'newest' });
   };
 
   const toggleSelected = (id) => {
@@ -674,8 +857,7 @@ function AdminApp() {
     setMessage(`${label}...`);
     const results = await Promise.allSettled([...selectedIds].map((id) => api(`/products/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify(updates),
-      headers: { 'x-admin-key': adminKey }
+      body: JSON.stringify(updates)
     })));
     const failed = results.filter((result) => result.status === 'rejected');
     setMessage(failed.length ? `${label} finished with ${failed.length} failed updates.` : `${label} complete for ${selectedIds.size} products.`);
@@ -684,22 +866,48 @@ function AdminApp() {
     setOperationsRefresh((value) => value + 1);
   };
 
+  const bulkAvailability = async (availabilityStatus, label) => {
+    if (!selectedIds.size) {
+      setMessage('Select products first.');
+      return;
+    }
+    setMessage(`${label}...`);
+    try {
+      const data = await api('/products/admin/inventory', {
+        method: 'PATCH',
+        body: JSON.stringify({ ids: [...selectedIds], availabilityStatus })
+      });
+      setMessage(`${label} complete for ${data.updated || 0} products.`);
+      setSelectedIds(new Set());
+      setRefresh((value) => value + 1);
+      setOperationsRefresh((value) => value + 1);
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
   const bulkRemove = async () => {
     if (!selectedIds.size) {
       setMessage('Select products first.');
       return;
     }
-    if (!window.confirm(`Remove ${selectedIds.size} selected products from the active catalog?`)) return;
-    setMessage('Removing selected products...');
-    const results = await Promise.allSettled([...selectedIds].map((id) => api(`/products/${id}`, {
-      method: 'DELETE',
-      headers: { 'x-admin-key': adminKey }
-    })));
-    const failed = results.filter((result) => result.status === 'rejected');
-    setMessage(failed.length ? `Removed selected products with ${failed.length} failures.` : `Removed ${selectedIds.size} selected products.`);
-    setSelectedIds(new Set());
-    setRefresh((value) => value + 1);
-    setOperationsRefresh((value) => value + 1);
+    if (!window.confirm(`Archive ${selectedIds.size} selected products?`)) return;
+    await bulkAvailability('archived', 'Archiving selected products');
+  };
+
+  const updateProductAvailability = async (id, availabilityStatus) => {
+    setMessage('Updating availability...');
+    try {
+      await api(`/products/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ availabilityStatus })
+      });
+      setMessage(`Product marked ${availabilityStatus.replace(/_/g, ' ')}.`);
+      setRefresh((value) => value + 1);
+      setOperationsRefresh((value) => value + 1);
+    } catch (err) {
+      setMessage(err.message);
+    }
   };
 
   const openEditor = (product) => {
@@ -735,6 +943,8 @@ function AdminApp() {
       sourceUrl: fieldValue(form, 'sourceUrl'),
       remoteImageUrl: fieldValue(form, 'remoteImageUrl'),
       tryOnModel: fieldValue(form, 'tryOnModel'),
+      availabilityStatus: fieldValue(form, 'availabilityStatus'),
+      inventoryNotes: fieldValue(form, 'inventoryNotes'),
       isFeatured: checkedValue(form, 'isFeatured'),
       isNewArrival: checkedValue(form, 'isNewArrival')
     };
@@ -743,8 +953,7 @@ function AdminApp() {
     try {
       const data = await api(`/products/${editingProduct.id}`, {
         method: 'PATCH',
-        body: JSON.stringify(payload),
-        headers: { 'x-admin-key': adminKey }
+        body: JSON.stringify(payload)
       });
       setEditingProduct(data.product || null);
       setEditMessage('Product saved.');
@@ -761,7 +970,7 @@ function AdminApp() {
   const rebuildCategories = async () => {
     setMessage('Rebuilding product categories...');
     try {
-      const data = await api('/products/recategorize', { method: 'POST', headers: { 'x-admin-key': adminKey } });
+      const data = await api('/products/recategorize', { method: 'POST' });
       setMessage(`Categories rebuilt. Updated ${data.updated || 0} of ${data.checked || 0} products.`);
       setRefresh((value) => value + 1);
       setOperationsRefresh((value) => value + 1);
@@ -774,24 +983,82 @@ function AdminApp() {
     setTokenDrafts((current) => ({ ...current, [userId]: value }));
   };
 
-  const updateUserTokens = async (userId, mode) => {
-    const amount = Number(tokenDrafts[userId]);
-    if (!Number.isFinite(amount) || !Number.isInteger(amount)) {
-      setMessage('Enter a whole token amount first.');
+  const updateUserTokens = (userId, mode) => {
+    const rawAmount = tokenDrafts[userId];
+    const amount = Number(rawAmount);
+    if (rawAmount === '' || rawAmount === undefined || !Number.isSafeInteger(amount) || amount < 0) {
+      setMessage('Enter a non-negative whole token amount first.');
       return;
     }
-    setMessage(mode === 'add' ? 'Adding tokens...' : 'Updating token balance...');
+    const user = usersState.users.find((item) => item.id === userId);
+    setPendingAction({ type: 'tokens', user, userId, mode, amount });
+  };
+
+  const updateUserStatus = (user, status) => {
+    setPendingAction({ type: 'user-status', user, status });
+  };
+
+  const removeUser = (user) => {
+    setPendingAction({ type: 'remove-user', user });
+  };
+
+  const confirmPendingAction = async ({ reason = '', confirmation = '' } = {}) => {
+    const action = pendingAction;
+    if (!action || actionBusy) return;
+    setActionBusy(true);
+    let completed = false;
     try {
-      await api(`/auth/admin/users/${userId}/tokens`, {
-        method: 'PATCH',
-        body: JSON.stringify({ mode, amount })
-      });
-      setTokenDrafts((current) => ({ ...current, [userId]: '' }));
-      setUserRefresh((value) => value + 1);
-      setOperationsRefresh((value) => value + 1);
-      setMessage(mode === 'add' ? `Added ${amount} tokens.` : `Set balance to ${amount} tokens.`);
+      if (action.type === 'tokens') {
+        setMessage(action.mode === 'add' ? 'Adding tokens...' : 'Updating token balance...');
+        await api(`/auth/admin/users/${action.userId}/tokens`, {
+          method: 'PATCH',
+          body: JSON.stringify({ mode: action.mode, amount: action.amount })
+        });
+        setTokenDrafts((current) => ({ ...current, [action.userId]: '' }));
+        setUserRefresh((value) => value + 1);
+        setOperationsRefresh((value) => value + 1);
+        setMessage(action.mode === 'add' ? `Added ${action.amount} tokens.` : `Set balance to ${action.amount} tokens.`);
+      } else if (action.type === 'user-status') {
+        setMessage(action.status === 'banned' ? 'Banning user...' : 'Restoring user access...');
+        await api(`/auth/admin/users/${action.user.id}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: action.status, reason: reason.trim() })
+        });
+        setUserRefresh((value) => value + 1);
+        setOperationsRefresh((value) => value + 1);
+        setMessage(action.status === 'banned' ? 'User banned.' : 'User access restored.');
+      } else if (action.type === 'remove-user') {
+        setMessage('Removing user personal data...');
+        const data = await api(`/auth/admin/users/${action.user.id}`, {
+          method: 'DELETE',
+          body: JSON.stringify({ confirmation: 'ANONYMIZE' })
+        });
+        setUserRefresh((value) => value + 1);
+        setOperationsRefresh((value) => value + 1);
+        setMessage(data.storageCleanupComplete ? 'User removed. Payment records were preserved.' : 'User removed, with a storage cleanup warning recorded.');
+      } else if (action.type === 'delete-product') {
+        if (confirmation !== 'DELETE') throw new Error('Type DELETE to permanently remove this product.');
+        setMessage('Deleting product and related try-ons...');
+        const data = await api(`/products/${action.product.id}/permanent`, {
+          method: 'DELETE',
+          body: JSON.stringify({ confirmation })
+        });
+        setEditingProduct((current) => current?.id === action.product.id ? null : current);
+        setSelectedIds((current) => {
+          const next = new Set(current);
+          next.delete(action.product.id);
+          return next;
+        });
+        setRefresh((value) => value + 1);
+        setOperationsRefresh((value) => value + 1);
+        setMessage(data.storageCleanupComplete ? 'Product permanently deleted.' : 'Product deleted, with a storage cleanup warning recorded.');
+      }
+      completed = true;
     } catch (err) {
       setMessage(err.message);
+    } finally {
+      setActionBusy(false);
+      if (completed) setPendingAction(null);
     }
   };
 
@@ -816,26 +1083,37 @@ function AdminApp() {
               {sidebarCollapsed ? '>' : '<'}
             </button>
           </div>
-          <button className="sidebar-create" type="button" onClick={openCreateProduct}>
+          {hasUserOperations && <button className="sidebar-create" type="button" onClick={openCreateProduct}>
             <b>+</b>
             <span>Add Product</span>
-          </button>
+          </button>}
           <nav className="sidebar-nav" aria-label="Admin pages">
-            {ADMIN_PAGES.map((page) => (
-              <button
-                key={page.id}
-                type="button"
-                className={activePage === page.id ? 'active' : ''}
-                aria-current={activePage === page.id ? 'page' : undefined}
-                onClick={() => showPage(page.id)}
-              >
-                <b aria-hidden="true"><SidebarIcon id={page.id} /></b>
-                <span>{page.label}</span>
-              </button>
+            {navigationSections.map((section) => (
+              <section className="sidebar-section" key={section.id} aria-labelledby={`sidebar-${section.id}`}>
+                <p className="sidebar-section-label" id={`sidebar-${section.id}`}>{section.label}</p>
+                <div className="sidebar-section-pages">
+                  {section.pages.map((page) => {
+                    const selected = activePage === page.id || (activePage === 'add-product' && page.id === 'inventory');
+                    return (
+                      <button
+                        key={page.id}
+                        type="button"
+                        className={selected ? 'active' : ''}
+                        aria-current={selected ? 'page' : undefined}
+                        title={sidebarCollapsed ? page.label : undefined}
+                        onClick={() => showPage(page.id)}
+                      >
+                        <b aria-hidden="true"><SidebarIcon id={page.icon} /></b>
+                        <span>{page.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
             ))}
           </nav>
           <div className="sidebar-session">
-            <span>{adminDisplayName}</span>
+            <span>{adminDisplayName} · {currentAdmin?.role === 'master' ? 'Master' : 'Developer'}</span>
             <button type="button" onClick={logout}>Logout</button>
           </div>
         </aside>
@@ -845,21 +1123,28 @@ function AdminApp() {
               <span>Lookmefy</span>
               <strong>Admin</strong>
             </div>
-            <div className="admin-topline">
-              <span>{pageCopy.title}</span>
-              <span>{message || 'Ready'}</span>
-            </div>
+            <nav className="admin-breadcrumb" aria-label="Breadcrumb">
+              <span>Admin</span>
+              <b aria-hidden="true">/</b>
+              <span>{activeSection.label}</span>
+              <b aria-hidden="true">/</b>
+              <strong>{pageCopy.title}</strong>
+            </nav>
             <GlobalAdminSearch
               value={globalSearch}
               onChange={setGlobalSearch}
               products={state.products}
               users={usersState.users}
+              pages={searchablePages}
               onProduct={openProductFromSearch}
               onUser={openUserFromSearch}
               onPage={showPage}
             />
             <div className="admin-profile">
               <span>{adminDisplayName}</span>
+              <button className="theme-toggle" type="button" onClick={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')} aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}>
+                <span aria-hidden="true" />
+              </button>
               <button type="button" onClick={logout}>Logout</button>
             </div>
           </header>
@@ -871,17 +1156,17 @@ function AdminApp() {
               <p className="lead">{pageCopy.lead}</p>
             </div>
             <div className="hero-actions">
-              <button type="button" onClick={() => setRefresh((value) => value + 1)}>Refresh</button>
-              <button type="button" onClick={rebuildCategories}>Rebuild Categories</button>
-              <button className="primary-action" type="button" onClick={openCreateProduct}>Add Product</button>
+              <button type="button" onClick={refreshCurrentPage}>Refresh Page</button>
+              {['inventory', 'add-product'].includes(activePage) && <button type="button" onClick={rebuildCategories}>Rebuild Categories</button>}
+              {['overview', 'inventory', 'add-product'].includes(activePage) && <button className="primary-action" type="button" onClick={openCreateProduct}>Add Product</button>}
             </div>
           </section>
 
           {activePage === 'inventory' && <section className="overview-grid" aria-label="Admin summary">
-            <StatBox label="Active products" value={formatNumber(state.total || 0)} meta={`${state.facets.categories?.length || 0} categories`} />
-            <StatBox label="Need fixes" value={formatNumber(reviewItems.length)} meta="missing details or duplicates" />
-            <StatBox label="User actions" value={formatNumber(recommendationStats.stats?.totals?.events || 0)} meta="clicks, searches, and try-ons" />
-            <StatBox label="Users 30d" value={formatNumber(recommendationStats.stats?.totals?.activeUsers30d || 0)} meta="active in the last month" />
+            <StatBox label="Available" value={formatNumber(state.availabilityCounts?.available || 0)} meta="visible and eligible for try-on" />
+            <StatBox label="Out of stock" value={formatNumber(state.availabilityCounts?.out_of_stock || 0)} meta="temporarily hidden" />
+            <StatBox label="Review queue" value={formatNumber((state.availabilityCounts?.unavailable || 0) + (state.availabilityCounts?.draft || 0))} meta="unavailable and draft items" />
+            <StatBox label="Archived" value={formatNumber(state.availabilityCounts?.archived || 0)} meta="retained outside the storefront" />
           </section>}
 
           {activePage === 'overview' && (
@@ -898,17 +1183,18 @@ function AdminApp() {
               onOpenUsers={() => showPage('users')}
               onAddProduct={openCreateProduct}
               onRebuildCategories={rebuildCategories}
+              loading={state.loading || usersState.loading || recommendationStats.loading || operationsState.loading}
             />
           )}
 
           {activePage === 'inventory' && <section className="admin-command-bar" aria-label="Catalog actions">
             <div>
-              <strong>{state.total || 0} active products</strong>
-              <span>{message || 'Product tools are ready.'}</span>
+              <strong>{availableProductCount} available of {state.total || 0} catalog products</strong>
+              <span>Affiliate availability, merchandising, and catalog review controls.</span>
             </div>
             <div>
               <button type="button" onClick={rebuildCategories}>Rebuild Categories</button>
-              <button className="danger-action" type="button" onClick={removeAllProducts} disabled={state.loading || !state.total}>Remove All</button>
+              <button className="danger-action" type="button" onClick={removeAllProducts} disabled={state.loading || !availableProductCount}>Archive All Available</button>
             </div>
           </section>}
 
@@ -923,6 +1209,11 @@ function AdminApp() {
               </div>
               <section className="form-section">
                 <div className="form-section-title"><strong>Import</strong><span>Start from an affiliate URL or fill manually.</span></div>
+                <fieldset className="segmented-field fetch-type-field" disabled={creatingProduct}>
+                  <legend>Fetch as</legend>
+                  <label><input type="radio" name="fetchItemType" value="auto" defaultChecked /><span>Auto detect</span></label>
+                  <label><input type="radio" name="fetchItemType" value="accessory" /><span>Accessory</span></label>
+                </fieldset>
                 <div className="affiliate-import">
                   <label className="field">
                     <span>Affiliate link</span>
@@ -956,6 +1247,7 @@ function AdminApp() {
                   <legend>Fit area</legend>
                   <label><input type="radio" name="garmentPlacement" value="top" defaultChecked /><span>Top</span></label>
                   <label><input type="radio" name="garmentPlacement" value="bottom" /><span>Bottom</span></label>
+                  <label><input type="radio" name="garmentPlacement" value="accessory" /><span>Accessory</span></label>
                 </fieldset>
                 <label className="field"><span>Description</span><textarea name="description" rows="4" placeholder="Short product description" disabled={creatingProduct} /></label>
               </section>
@@ -983,6 +1275,8 @@ function AdminApp() {
                   <label><input name="isFeatured" type="checkbox" disabled={creatingProduct} /> Featured</label>
                   <label><input name="isNewArrival" type="checkbox" defaultChecked disabled={creatingProduct} /> New arrival</label>
                 </div>
+                <label className="field"><span>Availability</span><select name="availabilityStatus" defaultValue="available" disabled={creatingProduct}><option value="draft">Draft</option><option value="available">Available</option><option value="out_of_stock">Out of stock</option><option value="unavailable">Unavailable</option><option value="archived">Archived</option></select></label>
+                <label className="field"><span>Inventory note</span><input name="inventoryNotes" placeholder="Optional source or availability note" disabled={creatingProduct} /></label>
               </section>
               <button className="submit" disabled={createBusy}>
                 {creatingProduct && <span className="button-spinner" aria-hidden="true" />}
@@ -995,7 +1289,7 @@ function AdminApp() {
               <div className="section-head admin-catalog-head">
                 <div>
                   <h2>Catalog</h2>
-                  <p>{state.total} active products matching the current view.</p>
+                  <p>{state.total} affiliate products matching the current view.</p>
                 </div>
                 <div className="catalog-head-actions">
                   <span className="count">{state.products.length} loaded</span>
@@ -1005,13 +1299,17 @@ function AdminApp() {
                 </div>
               </div>
               <CatalogFilters filters={filters} facets={state.facets} onChange={updateFilter} onClear={clearFilters} />
-              <QaSummary items={reviewItems} />
+              <QaSummary items={reviewItems} onOpen={openEditor} />
               <BulkActionBar
                 selectedProducts={selectedProducts}
                 onFeature={() => bulkPatch({ isFeatured: true }, 'Marking selected as featured')}
                 onUnfeature={() => bulkPatch({ isFeatured: false }, 'Removing featured flag')}
                 onNewArrival={() => bulkPatch({ isNewArrival: true }, 'Marking selected as new arrivals')}
                 onClearNewArrival={() => bulkPatch({ isNewArrival: false }, 'Clearing new arrival flag')}
+                onAvailable={() => bulkAvailability('available', 'Marking selected available')}
+                onOutOfStock={() => bulkAvailability('out_of_stock', 'Marking selected out of stock')}
+                onUnavailable={() => bulkAvailability('unavailable', 'Marking selected unavailable')}
+                onDraft={() => bulkAvailability('draft', 'Moving selected to draft')}
                 onRemove={bulkRemove}
               />
               {state.loading && <AdminProductSkeleton />}
@@ -1028,7 +1326,9 @@ function AdminApp() {
                     onSelect={() => toggleSelected(product.id)}
                     onEdit={() => openEditor(product)}
                     onPlacement={updateGarmentPlacement}
+                    onAvailability={updateProductAvailability}
                     onRemove={removeProduct}
+                    onDelete={requestDeleteProduct}
                   />
                 ))}
               </div>
@@ -1039,6 +1339,8 @@ function AdminApp() {
             <RecommendationStatsCard
               state={recommendationStats}
               onRefresh={() => setRefresh((value) => value + 1)}
+              period={analyticsPeriod}
+              onPeriodChange={setAnalyticsPeriod}
               categoryDistribution={categoryDistribution}
               categoryTotal={state.total || state.products.length}
             />
@@ -1048,39 +1350,60 @@ function AdminApp() {
             <UsersTokenPage
               state={usersState}
               search={userSearch}
+              status={userStatus}
+              minTokens={userTokenRange.min}
+              maxTokens={userTokenRange.max}
               operationsState={operationsState}
               tokenDrafts={tokenDrafts}
               onSearch={setUserSearch}
+              onStatus={setUserStatus}
+              onMinTokens={(value) => setUserTokenRange((current) => ({ ...current, min: value }))}
+              onMaxTokens={(value) => setUserTokenRange((current) => ({ ...current, max: value }))}
               onDraftChange={setTokenDraft}
               onUpdateTokens={updateUserTokens}
+              onUpdateStatus={updateUserStatus}
+              onRemoveUser={removeUser}
+              onOpenUser={setMediaUser}
               onRefresh={() => setUserRefresh((value) => value + 1)}
             />
           )}
 
+          {activePage === 'storage' && <StoragePage refresh={refresh} onOpenUser={setMediaUser} />}
+
+          {activePage === 'orders' && <div className="management-page"><RecentOrdersPanel operationsState={operationsState} limit={12} /></div>}
+
+          {activePage === 'system-overview' && <SystemOverviewPage state={systemSummaryState} onNavigate={showPage} />}
+          {activePage === 'service-health' && <ServiceHealthPage state={systemSummaryState} />}
+          {activePage === 'failures' && <FailuresPage incidentsState={incidentsState} generationState={generationState} onIncidentStatus={updateIncidentStatus} />}
+          {activePage === 'api-performance' && <ApiPerformancePage state={systemSummaryState} />}
+          {activePage === 'generation-pipeline' && <GenerationPipelinePage state={generationState} />}
+          {activePage === 'ios-report' && <MobileReportPage state={mobileState} platform="ios" />}
+          {activePage === 'android-report' && <MobileReportPage state={mobileState} platform="android" />}
+          {activePage === 'audit-log' && <div className="management-page"><AuditLogPanel operationsState={auditLogState} onRefresh={() => setOperationsRefresh((value) => value + 1)} /></div>}
+
+          {activePage === 'roles' && <AdminRolesPage request={api} currentAdmin={currentAdmin} onSessionRefresh={refreshAdminSession} />}
+
+          {activePage === 'cost-overview' && <CostOverviewPage state={costOverviewState} onNavigate={showPage} />}
+          {hasCostManagement && activeCostProvider && <ProviderCostPage state={providerCostState} />}
+
           {activePage === 'settings' && (
-            <section className="settings-grid">
-              <SystemHealthPanel
-                systemHealth={systemHealth}
-                catalogState={state}
-                recommendationState={recommendationStats}
-                adminSession={adminSession}
-                adminDisplayName={adminDisplayName}
-              />
-              <AuditLogPanel operationsState={operationsState} onRefresh={() => setOperationsRefresh((value) => value + 1)} />
+            <div className="settings-page">
+              <section className="settings-grid">
               <section className="admin-card settings-panel">
                 <div className="section-head">
                   <div>
                     <h2>Admin Access</h2>
-                    <p>The admin key is the only credential required to enter this dashboard.</p>
+                    <p>Your personal admin identity and assigned section access.</p>
                   </div>
                 </div>
                 <div className="settings-summary-card">
                   <span>Current session</span>
                   <strong>{adminDisplayName}</strong>
-                  <p>You are signed in on this browser.</p>
+                  <p>{currentAdmin?.email}</p>
                 </div>
                 <div className="settings-list">
-                  <div><span>Login rule</span><strong>Admin key only</strong></div>
+                  <div><span>Role</span><strong>{currentAdmin?.role === 'master' ? 'Master' : 'Developer'}</strong></div>
+                  <div><span>Section access</span><strong>{currentAdmin?.sectionAccess?.length || 0} of 3</strong></div>
                   <div><span>Session duration</span><strong>12 hours</strong></div>
                 </div>
               </section>
@@ -1092,17 +1415,21 @@ function AdminApp() {
                   </div>
                 </div>
                 <div className="settings-actions">
-                  <button type="button" onClick={() => setRefresh((value) => value + 1)}>Refresh Data</button>
-                  <button type="button" onClick={() => showPage('inventory')}>Open Inventory</button>
+                  {hasSystemManagement && <button type="button" onClick={() => showPage('system-overview')}>Open System Overview</button>}
+                  {hasSystemManagement && <button type="button" onClick={() => showPage('audit-log')}>Open Audit Log</button>}
                   <button className="danger-action" type="button" onClick={logout}>Logout</button>
                 </div>
               </section>
-            </section>
+              </section>
+            </div>
           )}
 
           {editingProduct && <ProductEditor product={editingProduct} message={editMessage} saving={savingEdit} onClose={closeEditor} onSubmit={submitEdit} />}
+          {mediaUser && <UserMediaDrawer key={mediaUser.id} user={mediaUser} onClose={() => setMediaUser(null)} />}
+          {pendingAction && <AdminConfirmDialog action={pendingAction} busy={actionBusy} onCancel={() => setPendingAction(null)} onConfirm={confirmPendingAction} />}
         </section>
       </div>
+      {message && <AdminToast message={message} onDismiss={() => setMessage('')} />}
     </main>
   );
 }
@@ -1156,6 +1483,57 @@ function SidebarIcon({ id }) {
       </svg>
     );
   }
+  if (id === 'storage') {
+    return (
+      <svg {...common}>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <circle cx="8.5" cy="9" r="1.5" />
+        <path d="m5 17 4.5-4 3 2.5 2.5-2 4 3.5" />
+      </svg>
+    );
+  }
+  if (id === 'orders') {
+    return <svg {...common}><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6M9 16h3" /></svg>;
+  }
+  if (id === 'system') {
+    return <svg {...common}><path d="M3 12h4l2-6 4 12 2-6h6" /><path d="M4 4h16v16H4z" /></svg>;
+  }
+  if (id === 'services') {
+    return <svg {...common}><rect x="4" y="3" width="16" height="7" rx="2" /><rect x="4" y="14" width="16" height="7" rx="2" /><path d="M8 7h.01M8 18h.01M12 7h5M12 18h5" /></svg>;
+  }
+  if (id === 'failures') {
+    return <svg {...common}><path d="M12 3 2.5 20h19z" /><path d="M12 9v5M12 17h.01" /></svg>;
+  }
+  if (id === 'api') {
+    return <svg {...common}><path d="M4 17a8 8 0 1 1 16 0" /><path d="m12 13 4-4M6 20h12" /></svg>;
+  }
+  if (id === 'generation') {
+    return <svg {...common}><path d="m12 3 1.4 3.6L17 8l-3.6 1.4L12 13l-1.4-3.6L7 8l3.6-1.4z" /><path d="m18 14 .8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8zM5 13l.7 1.8L7.5 15l-1.8.7L5 17.5l-.7-1.8L2.5 15l1.8-.7z" /></svg>;
+  }
+  if (id === 'video') {
+    return <svg {...common}><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3z" /></svg>;
+  }
+  if (id === 'ios' || id === 'android') {
+    return <svg {...common}><rect x="7" y="2" width="10" height="20" rx="2" /><path d="M10 5h4M11 18h2" /></svg>;
+  }
+  if (id === 'audit') {
+    return <svg {...common}><path d="M9 4h6l1 3h3v14H5V7h3z" /><path d="M9 12h6M9 16h6" /></svg>;
+  }
+  if (id === 'roles') {
+    return <svg {...common}><circle cx="9" cy="8" r="3" /><path d="M3 20v-2a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v2" /><path d="m16 11 2 2 4-4" /></svg>;
+  }
+  if (id === 'costs') {
+    return <svg {...common}><path d="M4 7h15a2 2 0 0 1 2 2v9H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h13" /><path d="M16 12h5M17 15h.01" /></svg>;
+  }
+  if (id === 'database') {
+    return <svg {...common}><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7" /></svg>;
+  }
+  if (id === 'otp') {
+    return <svg {...common}><path d="M4 4h16v12H8l-4 4z" /><path d="M8 10h.01M12 10h.01M16 10h.01" /></svg>;
+  }
+  if (id === 'cloud') {
+    return <svg {...common}><path d="M17.5 19H6a4 4 0 0 1-.4-8A6.5 6.5 0 0 1 18 9a5 5 0 0 1-.5 10z" /></svg>;
+  }
   return (
     <svg {...common}>
       <circle cx="12" cy="12" r="3" />
@@ -1164,49 +1542,101 @@ function SidebarIcon({ id }) {
   );
 }
 
-function GlobalAdminSearch({ value, onChange, products, users, onProduct, onUser, onPage }) {
+function GlobalAdminSearch({ value, onChange, products, users, pages = [], onProduct, onUser, onPage }) {
+  const [focused, setFocused] = useState(false);
+  const [recentSearches, setRecentSearches] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(ADMIN_RECENT_SEARCHES_KEY) || '[]');
+    } catch {
+      return [];
+    }
+  });
   const query = value.trim().toLowerCase();
   const productResults = query ? products
     .filter((product) => [product.name, product.brand, product.category].some((field) => String(field || '').toLowerCase().includes(query)))
     .slice(0, 4) : [];
   const userResults = query ? users
-    .filter((user) => [user.name, user.email, user.username].some((field) => String(field || '').toLowerCase().includes(query)))
+    .filter((user) => [
+      user.id,
+      user.name,
+      user.email,
+      user.phone,
+      user.username,
+      user.genderPreference,
+      user.accountStatus,
+      user.tokens,
+      user.subscription?.planId,
+      user.subscription?.status
+    ].some((field) => String(field ?? '').toLowerCase().includes(query)))
     .slice(0, 4) : [];
-  const pageResults = query ? ADMIN_PAGES.filter((page) => page.label.toLowerCase().includes(query)).slice(0, 3) : [];
-  const hasResults = query && (productResults.length || userResults.length || pageResults.length);
-  const choose = (handler, item) => {
+  const pageResults = query ? pages.filter((page) => page.label.toLowerCase().includes(query)).slice(0, 3) : [];
+  const hasResults = Boolean(productResults.length || userResults.length || pageResults.length);
+  const remember = (label) => {
+    const next = [String(label || '').trim(), ...recentSearches.filter((item) => item !== label)].filter(Boolean).slice(0, 4);
+    setRecentSearches(next);
+    try {
+      localStorage.setItem(ADMIN_RECENT_SEARCHES_KEY, JSON.stringify(next));
+    } catch {
+      // Recent searches are optional when browser storage is unavailable.
+    }
+  };
+  const choose = (handler, item, label) => {
+    remember(label);
     handler(item);
     onChange('');
+    setFocused(false);
   };
 
   return (
     <div className="global-search">
       <label>
         <span>Search admin</span>
-        <input value={value} onChange={(event) => onChange(event.target.value)} placeholder="Search products, users, pages..." />
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => window.setTimeout(() => setFocused(false), 120)}
+          placeholder="Search products, users, pages..."
+          autoComplete="off"
+        />
       </label>
-      {hasResults ? (
+      {focused && (
         <div className="global-search-results">
+          {!query && recentSearches.length > 0 && <span className="search-group-label">Recent searches</span>}
+          {!query && recentSearches.map((recent) => (
+            <button type="button" key={`recent-${recent}`} onMouseDown={(event) => event.preventDefault()} onClick={() => onChange(recent)}>
+              <strong>{recent}</strong>
+              <span>Search again</span>
+            </button>
+          ))}
+          {!query && <span className="search-group-label">Quick navigation</span>}
+          {!query && ADMIN_PAGES.slice(0, 5).map((page) => (
+            <button type="button" key={`quick-${page.id}`} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(onPage, page.id, page.label)}>
+              <strong>{page.label}</strong>
+              <span>Open page</span>
+            </button>
+          ))}
           {productResults.map((product) => (
-            <button type="button" key={`product-${product.id}`} onClick={() => choose(onProduct, product)}>
+            <button type="button" key={`product-${product.id}`} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(onProduct, product, product.name)}>
               <strong>{product.name}</strong>
               <span>Product - {displayBrand(product)} - {displayCategory(product)}</span>
             </button>
           ))}
           {userResults.map((user) => (
-            <button type="button" key={`user-${user.id}`} onClick={() => choose(onUser, user)}>
+            <button type="button" key={`user-${user.id}`} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(onUser, user, user.email)}>
               <strong>{user.name || user.email}</strong>
               <span>User - {user.email}</span>
             </button>
           ))}
           {pageResults.map((page) => (
-            <button type="button" key={`page-${page.id}`} onClick={() => choose(onPage, page.id)}>
+            <button type="button" key={`page-${page.id}`} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(onPage, page.id, page.label)}>
               <strong>{page.label}</strong>
               <span>Open page</span>
             </button>
           ))}
+          {query && !hasResults && <p className="search-empty">No matching products, users, or pages.</p>}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -1223,7 +1653,8 @@ function OverviewWorkspace({
   onOpenAnalytics,
   onOpenUsers,
   onAddProduct,
-  onRebuildCategories
+  onRebuildCategories,
+  loading
 }) {
   const recentProducts = products.slice(0, 5);
   const categories = facets?.categories?.length || facets?.categoryCounts?.length || 0;
@@ -1245,13 +1676,13 @@ function OverviewWorkspace({
           <p>Products, users, tokens, and the work that needs attention.</p>
         </div>
         <div className="overview-command-actions">
-          <button type="button" onClick={onAddProduct}>Add Product</button>
-          <button type="button" onClick={onOpenUsers}>Manage Tokens</button>
-          <button type="button" onClick={onRebuildCategories}>Fix Categories</button>
+          <button type="button" onClick={onAddProduct}><span aria-hidden="true">+</span>Add Product</button>
+          <button type="button" onClick={onOpenUsers}><span aria-hidden="true">$</span>Manage Tokens</button>
+          <button type="button" onClick={onRebuildCategories}><span aria-hidden="true">!</span>Fix Categories</button>
         </div>
       </section>
 
-      <section className="overview-crm-grid">
+      {loading ? <OverviewSkeleton /> : <section className="overview-crm-grid">
         <section className="admin-card crm-card catalog-pipeline-card">
           <div className="section-head">
             <div>
@@ -1307,7 +1738,7 @@ function OverviewWorkspace({
           <div className="recent-product-list">
             {recentProducts.length === 0 ? <StatusPanel text="No products loaded yet." /> : recentProducts.map((product) => (
               <article key={product.id} className="recent-product-item">
-                <img src={mediaUrl(product.imageUrl)} alt="" />
+                <ProductThumbnail product={product} decorative />
                 <div>
                   <strong>{product.name}</strong>
                   <span>{displayBrand(product)} - {displayCategory(product)}</span>
@@ -1339,52 +1770,400 @@ function OverviewWorkspace({
           </div>
           <button className="wide-card-action" type="button" onClick={onOpenAnalytics}>Open Analytics</button>
         </section>
-      </section>
+      </section>}
     </section>
   );
 }
 
 function ActionInbox({ reviewItems, lowTokenUsers, paymentIssues, onOpenInventory, onOpenUsers }) {
-  const hasItems = reviewItems.length || lowTokenUsers.length || paymentIssues.length;
-  if (!hasItems) return <StatusPanel text="Nothing urgent right now." />;
+  const [visibleCount, setVisibleCount] = useState(6);
+  const items = [
+    ...reviewItems.map(({ product, flags }) => ({ id: `product-${product.id}`, kicker: 'Product fix', title: product.name, detail: flags.slice(0, 2).join(', '), onClick: onOpenInventory })),
+    ...lowTokenUsers.map((user) => ({ id: `user-${user.id}`, kicker: 'Low tokens', title: user.name || user.email, detail: `${formatNumber(user.tokens || 0)} tokens left`, onClick: onOpenUsers })),
+    ...paymentIssues.map((order) => ({ id: `order-${order.id}`, kicker: `${order.status} payment`, title: order.user?.name || order.user?.email || order.merchantOrderId, detail: `${formatMoney(order.amount || 0, order.currency)} - ${formatCatalogDate(order.createdAt)}`, onClick: onOpenUsers }))
+  ];
+  if (!items.length) return <StatusPanel text="Nothing urgent right now." />;
 
   return (
-    <div className="attention-list action-inbox-list">
-      {reviewItems.slice(0, 3).map(({ product, flags }) => (
-        <button type="button" key={`product-${product.id}`} onClick={onOpenInventory}>
-          <span>Product fix</span>
-          <strong>{product.name}</strong>
-          <em>{flags.slice(0, 2).join(', ')}</em>
+    <div>
+      <div className="attention-list action-inbox-list">
+        {items.slice(0, visibleCount).map((item) => (
+          <button type="button" key={item.id} onClick={item.onClick}>
+            <span>{item.kicker}</span>
+            <strong>{item.title}</strong>
+            <em>{item.detail}</em>
+          </button>
+        ))}
+      </div>
+      {visibleCount < items.length && (
+        <button className="inbox-load-more" type="button" onClick={() => setVisibleCount((value) => value + 6)}>
+          Show {Math.min(6, items.length - visibleCount)} more
         </button>
-      ))}
-      {lowTokenUsers.map((user) => (
-        <button type="button" key={`user-${user.id}`} onClick={onOpenUsers}>
-          <span>Low tokens</span>
-          <strong>{user.name || user.email}</strong>
-          <em>{formatNumber(user.tokens || 0)} tokens left</em>
-        </button>
-      ))}
-      {paymentIssues.map((order) => (
-        <button type="button" key={`order-${order.id}`} onClick={onOpenUsers}>
-          <span>{order.status} payment</span>
-          <strong>{order.user?.name || order.user?.email || order.merchantOrderId}</strong>
-          <em>{formatMoney(order.amount || 0, order.currency)} - {formatCatalogDate(order.createdAt)}</em>
-        </button>
-      ))}
+      )}
     </div>
   );
 }
 
-function UsersTokenPage({ state, search, operationsState, tokenDrafts, onSearch, onDraftChange, onUpdateTokens, onRefresh }) {
-  const lowTokenUsers = state.users.filter((user) => Number(user.tokens || 0) <= 5).slice(0, 8);
+const STORAGE_TYPES = [
+  { id: 'all', label: 'All images' },
+  { id: 'profile', label: 'Profiles' },
+  { id: 'tryon', label: 'Try-ons' },
+  { id: 'closet', label: 'Closet' },
+  { id: 'product', label: 'Products' }
+];
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (!bytes) return 'Size unavailable';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatMegabytes(value) {
+  return `${(Number(value || 0) / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatActiveDuration(value) {
+  const totalMinutes = Math.floor(Math.max(0, Number(value || 0)) / 60_000);
+  if (totalMinutes < 1) return '<1 min';
+  if (totalMinutes < 60) return `${totalMinutes} min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function formatSessionStatus(value = '') {
+  const labels = {
+    online: 'Online',
+    recent: 'Recently active',
+    inactive: 'Inactive',
+    logged_out: 'Logged out',
+    revoked: 'Revoked',
+    expired: 'Expired',
+    legacy_activity: 'Legacy activity',
+    not_tracked: 'Not tracked'
+  };
+  return labels[value] || String(value || 'Not tracked').replace(/_/g, ' ');
+}
+
+function StoragePage({ refresh, onOpenUser }) {
+  const [type, setType] = useState('all');
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState('');
+  const state = useAdminStorage(true, type, page, refresh);
+  const needle = query.trim().toLowerCase();
+  const visibleItems = needle ? state.items.filter((item) => [
+    item.title,
+    item.kind,
+    item.owner?.name,
+    item.owner?.email,
+    item.path,
+    item.storage
+  ].some((value) => String(value || '').toLowerCase().includes(needle))) : state.items;
+  const chooseType = (nextType) => {
+    setType(nextType);
+    setPage(1);
+  };
+
+  return (
+    <section className="storage-page">
+      <section className="storage-usage-band" aria-label="Bunny image storage usage">
+        <div className="storage-usage-total">
+          <span>Bunny photo storage</span>
+          <strong>{formatMegabytes(state.usage.bunnyBytes.all)}</strong>
+          <em>{formatNumber(state.usage.bunnyCounts.all)} database-tracked Bunny images</em>
+          {state.usage.unknownSize.all > 0 && <small>{formatNumber(state.usage.unknownSize.all)} legacy files have no size metadata.</small>}
+        </div>
+        <div className="storage-usage-breakdown">
+          <div><span>Profiles</span><strong>{formatMegabytes(state.usage.bunnyBytes.profile)}</strong></div>
+          <div><span>Try-ons</span><strong>{formatMegabytes(state.usage.bunnyBytes.tryon)}</strong></div>
+          <div><span>Closet</span><strong>{formatMegabytes(state.usage.bunnyBytes.closet)}</strong></div>
+          <div><span>Products</span><strong>{formatMegabytes(state.usage.bunnyBytes.product)}</strong></div>
+        </div>
+      </section>
+      <section className="overview-grid storage-summary" aria-label="Stored image summary">
+        <StatBox label="Profile images" value={formatNumber(state.counts.profile || 0)} meta={`${formatMegabytes(state.usage.bunnyBytes.profile)} on Bunny`} />
+        <StatBox label="Try-on images" value={formatNumber(state.counts.tryon || 0)} meta={`${formatMegabytes(state.usage.bunnyBytes.tryon)} on Bunny`} />
+        <StatBox label="Closet images" value={formatNumber(state.counts.closet || 0)} meta={`${formatMegabytes(state.usage.bunnyBytes.closet)} on Bunny`} />
+        <StatBox label="Product images" value={formatNumber(state.counts.product || 0)} meta={`${formatMegabytes(state.usage.bunnyBytes.product)} on Bunny`} />
+      </section>
+
+      <section className="storage-browser">
+        <div className="storage-toolbar">
+          <div className="storage-tabs" role="tablist" aria-label="Storage image type">
+            {STORAGE_TYPES.map((item) => (
+              <button key={item.id} type="button" role="tab" aria-selected={type === item.id} className={type === item.id ? 'active' : ''} onClick={() => chooseType(item.id)}>
+                <span>{item.label}</span>
+                <b>{formatNumber(state.counts[item.id] || 0)}</b>
+              </button>
+            ))}
+          </div>
+          <label className="field storage-search">
+            <span>Search loaded images</span>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="User, image, or storage key" />
+          </label>
+        </div>
+
+        <div className="storage-result-head">
+          <div><strong>{formatNumber(state.total)} stored images</strong><span>{formatMegabytes(state.usage.bunnyBytes[type] || 0)} on Bunny</span></div>
+          <span>Page {page} of {state.pages}</span>
+        </div>
+        {state.loading && <MediaGridSkeleton />}
+        {state.error && <StatusPanel text={state.error} />}
+        {!state.loading && !state.error && visibleItems.length === 0 && <StatusPanel text={needle ? 'No loaded images match this search.' : 'No stored images found in this group.'} />}
+        {!state.loading && !state.error && visibleItems.length > 0 && <StoredMediaGrid items={visibleItems} onOpenUser={onOpenUser} />}
+        <StoragePagination page={page} pages={state.pages} loading={state.loading} onPage={setPage} />
+      </section>
+    </section>
+  );
+}
+
+function StoredMediaGrid({ items, onOpenUser }) {
+  return (
+    <div className="stored-media-grid">
+      {items.map((item) => <StoredMediaCard key={item.id} item={item} onOpenUser={onOpenUser} />)}
+    </div>
+  );
+}
+
+function StoredMediaCard({ item, onOpenUser }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <article className="stored-media-card">
+      <a className={`stored-media-preview ${failed ? 'failed' : ''}`} href={mediaUrl(item.url)} target="_blank" rel="noreferrer" aria-label={`Open ${item.title}`}>
+        {!failed ? <img src={mediaUrl(item.url)} alt={item.title} loading="lazy" onError={() => setFailed(true)} /> : <span>Preview unavailable</span>}
+      </a>
+      <div className="stored-media-copy">
+        <span>{item.kind}</span>
+        <strong>{item.title}</strong>
+        {item.owner
+          ? onOpenUser
+            ? <button type="button" onClick={() => onOpenUser(item.owner)}>{item.owner.name || item.owner.email}</button>
+            : <em>{item.owner.name || item.owner.email}</em>
+          : <em>{item.related?.label || 'Lookmefy catalog'}</em>}
+      </div>
+      <div className="stored-media-meta">
+        <span>{item.storage || 'stored'}</span>
+        <span>{formatBytes(item.size)}</span>
+        <span>{formatCatalogDate(item.createdAt)}</span>
+      </div>
+      {item.path && <code title={item.path}>{item.path}</code>}
+    </article>
+  );
+}
+
+function MediaGridSkeleton() {
+  return <div className="media-grid-skeleton" aria-label="Loading stored images">{Array.from({ length: 8 }).map((_, index) => <span key={index} />)}</div>;
+}
+
+function StoragePagination({ page, pages, loading, onPage }) {
+  if (pages <= 1) return null;
+  return (
+    <nav className="storage-pagination" aria-label="Storage pages">
+      <button type="button" disabled={loading || page <= 1} onClick={() => onPage(page - 1)}>Previous</button>
+      <span>{page} / {pages}</span>
+      <button type="button" disabled={loading || page >= pages} onClick={() => onPage(page + 1)}>Next</button>
+    </nav>
+  );
+}
+
+const USER_DETAIL_TABS = [
+  ['overview', 'Overview'],
+  ['sessions', 'Sessions'],
+  ['activity', 'Activity'],
+  ['preferences', 'Preferences'],
+  ['media', 'Media']
+];
+
+function UserMediaDrawer({ user, onClose }) {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [activityPage, setActivityPage] = useState(1);
+  const [mediaPage, setMediaPage] = useState(1);
+  const [insights, setInsights] = useState({ data: null, loading: true, error: '' });
+  const [media, setMedia] = useState({ items: [], counts: {}, usage: EMPTY_STORAGE_USAGE, total: 0, pages: 1, loading: false, loaded: false, error: '' });
+
+  useEffect(() => {
+    let alive = true;
+    setInsights((current) => ({ ...current, loading: true, error: '' }));
+    api(`/auth/admin/users/${user.id}/insights?activityPage=${activityPage}&activityLimit=24`)
+      .then((data) => {
+        if (alive) setInsights({ data, loading: false, error: '' });
+      })
+      .catch((err) => {
+        if (alive) setInsights((current) => ({ ...current, loading: false, error: err.message }));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [activityPage, user.id]);
+
+  useEffect(() => {
+    if (activeTab !== 'media') return undefined;
+    let alive = true;
+    setMedia((current) => ({ ...current, loading: true, error: '' }));
+    api(`/auth/admin/users/${user.id}/media?page=${mediaPage}&limit=24`)
+      .then((data) => {
+        if (alive) setMedia({ items: data.items || [], counts: data.counts || {}, usage: data.usage || EMPTY_STORAGE_USAGE, total: data.total || 0, pages: data.pages || 1, loading: false, loaded: true, error: '' });
+      })
+      .catch((err) => {
+        if (alive) setMedia((current) => ({ ...current, items: [], loading: false, loaded: true, error: err.message }));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [activeTab, mediaPage, user.id]);
+
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+
+  const data = insights.data;
+  const summary = data?.summary || {};
+  const displayUser = data?.user || user;
+  const activityPagination = data?.activityPagination || { page: 1, pages: 1 };
+
+  return (
+    <div className="media-drawer-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <aside className="user-media-drawer" role="dialog" aria-modal="true" aria-labelledby="user-media-title">
+        <header className="media-drawer-head">
+          <div>
+            <span>User details</span>
+            <h2 id="user-media-title">{displayUser.name || displayUser.email}</h2>
+            <p>{[displayUser.email, displayUser.phone].filter(Boolean).join(' - ')}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close user details">x</button>
+        </header>
+        <nav className="user-detail-tabs" aria-label="User detail sections">
+          {USER_DETAIL_TABS.map(([id, label]) => (
+            <button type="button" className={activeTab === id ? 'active' : ''} aria-current={activeTab === id ? 'page' : undefined} onClick={() => setActiveTab(id)} key={id}>{label}</button>
+          ))}
+        </nav>
+        <div className="media-drawer-body user-detail-body">
+          {activeTab !== 'media' && insights.loading && <OverviewSkeleton />}
+          {activeTab !== 'media' && insights.error && <StatusPanel text={insights.error} />}
+
+          {activeTab === 'overview' && data && !insights.loading && (
+            <div className="user-insights-overview">
+              <section className="user-insight-metrics" aria-label="User activity summary">
+                <div><span>Last login</span><strong>{summary.lastLoginAt ? formatSignalDate(summary.lastLoginAt) : 'Not tracked'}</strong></div>
+                <div><span>Last active</span><strong>{summary.lastActiveAt ? formatSignalDate(summary.lastActiveAt) : 'No activity'}</strong></div>
+                <div><span>Active time</span><strong>{formatActiveDuration(summary.totalActiveMs)}</strong></div>
+                <div><span>Session state</span><strong className={`session-state ${summary.sessionStatus || 'not_tracked'}`}>{formatSessionStatus(summary.sessionStatus)}</strong></div>
+              </section>
+              <section className="user-overview-band">
+                <div><span>Sessions</span><strong>{formatNumber(summary.sessionCount || 0)}</strong></div>
+                <div><span>Recorded actions</span><strong>{formatNumber(summary.activityCount || 0)}</strong></div>
+                <div><span>Tracked page views</span><strong>{formatNumber(summary.pageViews || 0)}</strong></div>
+                <div><span>Explicit preference</span><strong>{data.preferences?.explicitGender || 'other'}</strong></div>
+              </section>
+              <section className="user-detail-section">
+                <div className="user-detail-section-head"><h3>Most interacted products</h3><span>Views, clicks, saves, try-ons, and shop actions</span></div>
+                {data.topProducts?.length ? <div className="user-top-products">{data.topProducts.map((product) => (
+                  <article key={product.id}>
+                    <ProductThumbnail product={{ ...product, imageUrl: product.imageUrl }} decorative />
+                    <div><strong>{product.name}</strong><span>{product.brand || product.category}</span><em>{formatNumber(product.interactions)} interactions - last {formatSignalDate(product.lastAt)}</em></div>
+                  </article>
+                ))}</div> : <StatusPanel text="No product interactions recorded yet." />}
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'sessions' && data && !insights.loading && (
+            <section className="user-detail-section">
+              <div className="user-detail-section-head"><h3>Login sessions</h3><span>{formatNumber(summary.sessionCount || 0)} retained sessions</span></div>
+              {data.sessions?.length ? <div className="user-session-list">{data.sessions.map((session) => (
+                <article key={session.id}>
+                  <div><strong>{formatSignalDate(session.loginAt)}</strong><span>{session.authMethod} login</span></div>
+                  <div><strong>{formatActiveDuration(session.activeDurationMs)}</strong><span>active time</span></div>
+                  <div><strong>{session.logoutAt ? formatSignalDate(session.logoutAt) : formatSignalDate(session.lastSeenAt)}</strong><span>{session.logoutAt ? 'logout' : 'last active'}</span></div>
+                  <div><b className={`session-state ${session.status}`}>{formatSessionStatus(session.status)}</b><span>{session.browser} - {session.deviceType}</span></div>
+                  <code title={session.lastPath || '/'}>{session.lastPath || '/'}</code>
+                </article>
+              ))}</div> : <StatusPanel text="Session tracking starts after this feature is deployed." />}
+            </section>
+          )}
+
+          {activeTab === 'activity' && data && !insights.loading && (
+            <section className="user-detail-section">
+              <div className="user-detail-section-head"><h3>Activity timeline</h3><span>{formatNumber(activityPagination.total || 0)} recorded actions</span></div>
+              {data.activity?.length ? <div className="user-activity-list">{data.activity.map((item) => (
+                <article key={item.id}>
+                  <span className="activity-mark" aria-hidden="true" />
+                  <div>
+                    <strong>{item.product?.name || item.query || formatEventType(item.type)}</strong>
+                    <span>{formatEventType(item.type)}{item.product?.brand ? ` - ${item.product.brand}` : ''}</span>
+                    <em>{[item.source, item.path].filter(Boolean).join(' - ') || 'Lookmefy app'}</em>
+                  </div>
+                  <time dateTime={item.createdAt}>{formatSignalDate(item.createdAt)}</time>
+                </article>
+              ))}</div> : <StatusPanel text="No user activity has been recorded." />}
+            </section>
+          )}
+
+          {activeTab === 'preferences' && data && !insights.loading && (
+            <div className="user-preferences-view">
+              <section className="user-preference-summary">
+                <div><span>Explicit audience</span><strong>{data.preferences?.explicitGender || 'other'}</strong></div>
+                <div><span>Learned price</span><strong>{data.preferences?.averagePreferredPrice ? formatMoney(data.preferences.averagePreferredPrice, 'INR') : 'Not learned'}</strong></div>
+                <div><span>Last learned</span><strong>{data.preferences?.updatedAt ? formatSignalDate(data.preferences.updatedAt) : 'No profile yet'}</strong></div>
+              </section>
+              {['categories', 'brands', 'tags', 'genders'].map((bucket) => (
+                <section className="preference-group" key={bucket}>
+                  <div className="user-detail-section-head"><h3>Top {bucket}</h3><span>Weighted from meaningful actions</span></div>
+                  {data.preferences?.[bucket]?.length ? <div className="preference-bars">{data.preferences[bucket].map((item) => (
+                    <div key={item.key}><span>{item.label}</span><strong>{formatWeight(item.weight)}</strong><i style={{ width: `${Math.max(5, Math.min(100, item.weight / data.preferences[bucket][0].weight * 100))}%` }} /></div>
+                  ))}</div> : <StatusPanel text={`No learned ${bucket} yet.`} />}
+                </section>
+              ))}
+            </div>
+          )}
+
+          {activeTab === 'media' && (
+            <div className="user-media-view">
+              <section className="user-media-summary" aria-label="User image summary">
+                <div><span>Profiles</span><strong>{formatNumber(media.counts.profile || 0)}</strong></div>
+                <div><span>Try-ons</span><strong>{formatNumber(media.counts.tryon || 0)}</strong></div>
+                <div><span>Closet</span><strong>{formatNumber(media.counts.closet || 0)}</strong></div>
+                <div><span>Bunny storage</span><strong>{formatMegabytes(media.usage.bunnyBytes.all)}</strong></div>
+              </section>
+              {media.loading && <MediaGridSkeleton />}
+              {media.error && <StatusPanel text={media.error} />}
+              {!media.loading && media.loaded && !media.error && media.items.length === 0 && <StatusPanel text="No stored images were found for this user." />}
+              {!media.loading && !media.error && media.items.length > 0 && <StoredMediaGrid items={media.items} />}
+            </div>
+          )}
+        </div>
+        {activeTab === 'activity' && <StoragePagination page={activityPage} pages={activityPagination.pages || 1} loading={insights.loading} onPage={setActivityPage} />}
+        {activeTab === 'media' && <StoragePagination page={mediaPage} pages={media.pages} loading={media.loading} onPage={setMediaPage} />}
+      </aside>
+    </div>
+  );
+}
+
+function UsersTokenPage({ state, search, status, minTokens, maxTokens, operationsState, tokenDrafts, onSearch, onStatus, onMinTokens, onMaxTokens, onDraftChange, onUpdateTokens, onUpdateStatus, onRemoveUser, onOpenUser, onRefresh }) {
+  const [sort, setSort] = useState('newest');
+  const lowTokenUsers = state.users.filter((user) => user.accountStatus === 'active' && Number(user.tokens || 0) <= 5).slice(0, 8);
+  const sortedUsers = useMemo(() => [...state.users].sort((left, right) => {
+    if (sort === 'oldest') return new Date(left.joinedAt || 0) - new Date(right.joinedAt || 0);
+    if (sort === 'tokens-high') return Number(right.tokens || 0) - Number(left.tokens || 0);
+    if (sort === 'tokens-low') return Number(left.tokens || 0) - Number(right.tokens || 0);
+    if (sort === 'last-order') return new Date(right.lastOrder?.createdAt || 0) - new Date(left.lastOrder?.createdAt || 0);
+    if (sort === 'last-active') return new Date(right.lastActiveAt || 0) - new Date(left.lastActiveAt || 0);
+    return new Date(right.joinedAt || 0) - new Date(left.joinedAt || 0);
+  }), [sort, state.users]);
 
   return (
     <section className="users-page">
       <section className="overview-grid users-summary-grid" aria-label="User summary">
         <StatBox label="Total users" value={formatNumber(state.totals?.users || 0)} meta={`${formatNumber(state.totals?.loaded || 0)} loaded`} />
         <StatBox label="Total tokens" value={formatNumber(state.totals?.tokens || 0)} meta="tokens users can spend" />
-        <StatBox label="Search results" value={formatNumber(state.users.length || 0)} meta={search ? 'filtered users' : 'latest users'} />
-        <StatBox label="Token changes" value="Set/Add" meta="change a user balance" />
+        <StatBox label="Active users" value={formatNumber(state.totals?.active || 0)} meta={`${formatNumber(state.totals?.banned || 0)} banned`} />
+        <StatBox label="Removed" value={formatNumber(state.totals?.deleted || 0)} meta="personal data removed" />
       </section>
 
       <section className="users-page-top-grid">
@@ -1395,18 +2174,46 @@ function UsersTokenPage({ state, search, operationsState, tokenDrafts, onSearch,
       <section className="admin-card users-crm-card">
         <div className="section-head users-head">
           <div>
-            <h2>User Tokens</h2>
-            <p>Search users, check their plan, and change token balances.</p>
+            <h2>User Management</h2>
+            <p>Manage access, remove accounts, and maintain token balances.</p>
           </div>
           <button type="button" onClick={onRefresh}>Refresh Users</button>
         </div>
         <div className="users-toolbar">
           <label className="field">
             <span>Search users</span>
-            <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Name, Gmail, or username" />
+            <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Name, email, mobile, ID, or account field" />
+          </label>
+          <label className="field">
+            <span>Account status</span>
+            <select value={status} onChange={(event) => onStatus(event.target.value)}>
+              <option value="">All accounts</option>
+              <option value="active">Active</option>
+              <option value="banned">Banned</option>
+              <option value="deleted">Removed</option>
+            </select>
+          </label>
+          <div className="field token-filter-field">
+            <span>Token balance</span>
+            <div className="token-range-filter">
+              <input type="number" min="0" step="1" inputMode="numeric" value={minTokens} onChange={(event) => onMinTokens(event.target.value)} placeholder="Min" aria-label="Minimum token balance" />
+              <span>to</span>
+              <input type="number" min="0" step="1" inputMode="numeric" value={maxTokens} onChange={(event) => onMaxTokens(event.target.value)} placeholder="Max" aria-label="Maximum token balance" />
+            </div>
+          </div>
+          <label className="field">
+            <span>Sort users</span>
+            <select value={sort} onChange={(event) => setSort(event.target.value)}>
+              <option value="newest">Newest joined</option>
+              <option value="oldest">Oldest joined</option>
+              <option value="tokens-high">Tokens high to low</option>
+              <option value="tokens-low">Tokens low to high</option>
+              <option value="last-order">Latest order</option>
+              <option value="last-active">Recently active</option>
+            </select>
           </label>
         </div>
-        {state.loading && <StatusPanel text="Loading users..." />}
+        {state.loading && <UserRowsSkeleton />}
         {state.error && <StatusPanel text={state.error} />}
         {!state.loading && !state.error && state.users.length === 0 && <StatusPanel text="No users found." />}
         {!state.loading && !state.error && state.users.length > 0 && (
@@ -1419,7 +2226,7 @@ function UsersTokenPage({ state, search, operationsState, tokenDrafts, onSearch,
               <span>Actions</span>
             </div>
             <div className="users-list">
-              {state.users.map((user) => (
+              {sortedUsers.map((user) => (
                 <UserTokenRow
                   key={user.id}
                   user={user}
@@ -1427,6 +2234,9 @@ function UsersTokenPage({ state, search, operationsState, tokenDrafts, onSearch,
                   onDraftChange={(value) => onDraftChange(user.id, value)}
                   onSet={() => onUpdateTokens(user.id, 'set')}
                   onAdd={() => onUpdateTokens(user.id, 'add')}
+                  onStatus={(nextStatus) => onUpdateStatus(user, nextStatus)}
+                  onRemove={() => onRemoveUser(user)}
+                  onOpen={() => onOpenUser(user)}
                 />
               ))}
             </div>
@@ -1459,7 +2269,7 @@ function LowTokenUsersPanel({ users }) {
   );
 }
 
-function RecentOrdersPanel({ operationsState }) {
+function RecentOrdersPanel({ operationsState, limit = 6 }) {
   const totals = operationsState.orderTotals || {};
   const completed = totals.completed?.count || 0;
   const pending = totals.pending?.count || 0;
@@ -1483,7 +2293,7 @@ function RecentOrdersPanel({ operationsState }) {
       {!operationsState.loading && !operationsState.error && operationsState.orders.length === 0 && <StatusPanel text="No token orders yet." />}
       {!operationsState.loading && !operationsState.error && operationsState.orders.length > 0 && (
         <div className="orders-list">
-          {operationsState.orders.slice(0, 6).map((order) => (
+          {operationsState.orders.slice(0, limit).map((order) => (
             <article key={order.id} className={`order-row ${order.status}`}>
               <div>
                 <strong>{order.user?.name || order.user?.email || 'Unknown user'}</strong>
@@ -1501,25 +2311,30 @@ function RecentOrdersPanel({ operationsState }) {
   );
 }
 
-function UserTokenRow({ user, draft, onDraftChange, onSet, onAdd }) {
+function UserTokenRow({ user, draft, onDraftChange, onSet, onAdd, onStatus, onRemove, onOpen }) {
   const planStatus = user.subscription?.status || 'none';
   const planName = user.subscription?.planId || (planStatus === 'none' ? 'Free' : planStatus);
   const initials = String(user.name || user.email || 'U').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+  const accountStatus = user.accountStatus || 'active';
+  const isDeleted = accountStatus === 'deleted';
 
   return (
     <article className="user-row">
-      <div className="user-identity">
-        <span className="user-avatar">{initials || 'U'}</span>
+      <button className="user-identity user-media-trigger" type="button" onClick={onOpen} aria-label={`Open details for ${user.name || user.email}`}>
+        <span className="user-avatar" style={userAvatarStyle(user.id || user.email)}>{initials || 'U'}</span>
         <div>
           <strong>{user.name || 'Unnamed user'}</strong>
           <span>{user.email}</span>
+          {user.phone && <span>{user.phone}</span>}
           {user.username && <em>@{user.username}</em>}
+          <b className={`account-status ${accountStatus}`}>{accountStatus}</b>
         </div>
-      </div>
+      </button>
       <div className="user-plan-cell">
         <strong>{planName}</strong>
         <span>{planStatus}</span>
-        <em>{user.bodyPhotoStatus || 'uploaded'} profile</em>
+        <em className={`user-presence ${user.sessionStatus || 'not_tracked'}`}>{formatSessionStatus(user.sessionStatus)}</em>
+        <small>{user.lastActiveAt ? formatSignalDate(user.lastActiveAt) : `${user.bodyPhotoStatus || 'uploaded'} profile`}</small>
       </div>
       <div className="user-token-cell">
         <strong>{formatNumber(user.tokens || 0)}</strong>
@@ -1539,22 +2354,54 @@ function UserTokenRow({ user, draft, onDraftChange, onSet, onAdd }) {
           </>
         )}
       </div>
-      <div className="user-token-actions">
-        <input type="number" step="1" value={draft} onChange={(event) => onDraftChange(event.target.value)} placeholder="Tokens" />
-        <button type="button" onClick={onAdd}>Add</button>
-        <button type="button" onClick={onSet}>Set</button>
+      <div className="user-admin-actions" onClick={(event) => event.stopPropagation()}>
+        <div className="user-token-actions">
+          <input type="number" step="1" min="0" value={draft} onChange={(event) => onDraftChange(event.target.value)} placeholder="Tokens" disabled={isDeleted} />
+          <button type="button" onClick={onAdd} disabled={isDeleted}>Add</button>
+          <button type="button" onClick={onSet} disabled={isDeleted}>Set</button>
+        </div>
+        {!isDeleted && (
+          <div className="user-account-actions">
+            {accountStatus === 'banned'
+              ? <button type="button" onClick={() => onStatus('active')}>Unban</button>
+              : <button className="ban-action" type="button" onClick={() => onStatus('banned')}>Ban</button>}
+            <button className="remove-action" type="button" onClick={onRemove}>Remove</button>
+          </div>
+        )}
       </div>
     </article>
   );
 }
 
 function formatAuditAction(value = '') {
+  if (value === 'user_anonymized') return 'User Removed';
   return String(value || 'admin action')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function AuditLogPanel({ operationsState, onRefresh }) {
+  const [query, setQuery] = useState('');
+  const [action, setAction] = useState('');
+  const [actor, setActor] = useState('');
+  const [range, setRange] = useState('all');
+  const [visibleCount, setVisibleCount] = useState(10);
+  const actions = useMemo(() => [...new Set(operationsState.auditLogs.map((log) => log.action).filter(Boolean))].sort(), [operationsState.auditLogs]);
+  const actors = useMemo(() => [...new Set(operationsState.auditLogs.map((log) => log.actorEmail || 'admin').filter(Boolean))].sort(), [operationsState.auditLogs]);
+  const filteredLogs = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const cutoff = range === 'all' ? 0 : Date.now() - Number(range) * 24 * 60 * 60 * 1000;
+    return operationsState.auditLogs.filter((log) => {
+      if (action && log.action !== action) return false;
+      if (actor && (log.actorEmail || 'admin') !== actor) return false;
+      if (cutoff && new Date(log.createdAt || 0).getTime() < cutoff) return false;
+      if (!needle) return true;
+      return [log.action, log.label, log.entityType, log.actorEmail].some((value) => String(value || '').toLowerCase().includes(needle));
+    });
+  }, [action, actor, operationsState.auditLogs, query, range]);
+
+  useEffect(() => setVisibleCount(10), [action, actor, query, range]);
+
   return (
     <section className="admin-card settings-panel audit-panel">
       <div className="section-head">
@@ -1562,14 +2409,21 @@ function AuditLogPanel({ operationsState, onRefresh }) {
           <h2>Audit Log</h2>
           <p>Recent admin changes for products, tokens, and categories.</p>
         </div>
-        <button type="button" onClick={onRefresh}>Refresh Log</button>
+        <button type="button" onClick={onRefresh}>Refresh Audit Log</button>
+      </div>
+      <div className="audit-toolbar">
+        <label className="field"><span>Search log</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Action, record, or admin" /></label>
+        <label className="field"><span>Action</span><select value={action} onChange={(event) => setAction(event.target.value)}><option value="">All actions</option>{actions.map((item) => <option key={item} value={item}>{formatAuditAction(item)}</option>)}</select></label>
+        <label className="field"><span>Admin</span><select value={actor} onChange={(event) => setActor(event.target.value)}><option value="">All admins</option>{actors.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <label className="field"><span>Date</span><select value={range} onChange={(event) => setRange(event.target.value)}><option value="all">All dates</option><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></label>
       </div>
       {operationsState.loading && <StatusPanel text="Loading audit log..." />}
       {operationsState.error && <StatusPanel text={operationsState.error} />}
       {!operationsState.loading && !operationsState.error && operationsState.auditLogs.length === 0 && <StatusPanel text="No admin actions recorded yet." />}
-      {!operationsState.loading && !operationsState.error && operationsState.auditLogs.length > 0 && (
+      {!operationsState.loading && !operationsState.error && operationsState.auditLogs.length > 0 && filteredLogs.length === 0 && <StatusPanel text="No audit entries match these filters." />}
+      {!operationsState.loading && !operationsState.error && filteredLogs.length > 0 && (
         <div className="audit-list">
-          {operationsState.auditLogs.slice(0, 10).map((log) => (
+          {filteredLogs.slice(0, visibleCount).map((log) => (
             <article key={log.id}>
               <div>
                 <strong>{formatAuditAction(log.action)}</strong>
@@ -1581,6 +2435,7 @@ function AuditLogPanel({ operationsState, onRefresh }) {
               </div>
             </article>
           ))}
+          {visibleCount < filteredLogs.length && <button className="audit-load-more" type="button" onClick={() => setVisibleCount((value) => value + 10)}>Load 10 more</button>}
         </div>
       )}
     </section>
@@ -1603,79 +2458,35 @@ function stopProductRowOpen(event) {
   event.stopPropagation();
 }
 
-function HealthRow({ label, status, detail }) {
-  return (
-    <div className="health-row">
-      <span className={`health-dot ${status}`} />
-      <div>
-        <strong>{label}</strong>
-        <em>{detail}</em>
-      </div>
-      <b>{status === 'ok' ? 'Healthy' : status === 'warn' ? 'Check' : 'Down'}</b>
-    </div>
-  );
-}
-
-function SystemHealthPanel({ systemHealth, catalogState, recommendationState, adminSession, adminDisplayName }) {
-  const apiOk = Boolean(systemHealth.health?.ok);
-  const mongoOk = Boolean(systemHealth.health?.mongo);
-  const catalogOk = !catalogState.loading && !catalogState.error;
-  const analyticsOk = !recommendationState.loading && !recommendationState.error;
-
-  return (
-    <section className="admin-card settings-panel health-panel">
-      <div className="section-head">
-        <div>
-          <h2>System Status</h2>
-          <p>Check if the main parts of the admin panel are working.</p>
-        </div>
-      </div>
-      <div className="health-list">
-        <HealthRow
-          label="API server"
-          status={systemHealth.loading ? 'warn' : apiOk ? 'ok' : 'down'}
-          detail={systemHealth.loading ? 'Checking the server...' : systemHealth.error || 'Server is responding.'}
-        />
-        <HealthRow
-          label="MongoDB"
-          status={systemHealth.loading ? 'warn' : mongoOk ? 'ok' : 'down'}
-          detail={mongoOk ? 'Database is connected.' : 'Database is not confirmed.'}
-        />
-        <HealthRow
-          label="Admin session"
-          status={adminSession?.token ? 'ok' : 'down'}
-          detail={adminSession?.token ? adminDisplayName : 'No active admin session found.'}
-        />
-        <HealthRow
-          label="Catalog API"
-          status={catalogState.loading ? 'warn' : catalogOk ? 'ok' : 'down'}
-          detail={catalogState.loading ? 'Loading products...' : catalogState.error || `${formatNumber(catalogState.total || 0)} active products loaded.`}
-        />
-        <HealthRow
-          label="Analytics API"
-          status={recommendationState.loading ? 'warn' : analyticsOk ? 'ok' : 'down'}
-          detail={recommendationState.loading ? 'Loading user activity...' : recommendationState.error || `${formatNumber(recommendationState.stats?.totals?.events || 0)} user actions found.`}
-        />
-      </div>
-    </section>
-  );
-}
-
 function AdminLogin({ onLogin }) {
-  const [adminKey, setAdminKey] = useState('');
+  const [mode, setMode] = useState('signin');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
   const submit = async (event) => {
     event.preventDefault();
+    if (mode === 'request' && password !== confirmPassword) {
+      setMessage('Passwords do not match.');
+      return;
+    }
     setLoading(true);
-    setMessage('Checking access...');
+    setMessage(mode === 'request' ? 'Sending access request...' : 'Checking access...');
     try {
-      const data = await api('/auth/admin-login', {
+      const data = await api(mode === 'request' ? '/auth/admin-request-access' : '/auth/admin-login', {
         method: 'POST',
-        body: JSON.stringify({ adminKey })
+        body: JSON.stringify(mode === 'request' ? { name, email, password } : { email, password })
       });
-      onLogin(data);
+      if (mode === 'request') {
+        setMessage(data.message);
+        setPassword('');
+        setConfirmPassword('');
+      } else {
+        onLogin(data);
+      }
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -1689,8 +2500,8 @@ function AdminLogin({ onLogin }) {
         <div className="login-art">
           <div className="brand-mark">F</div>
           <span>Lookmefy Admin</span>
-          <h1>Catalog access with your admin key.</h1>
-          <p>Enter the admin key to open the dashboard and manage Lookmefy operations.</p>
+          <h1>Operate Lookmefy with accountable access.</h1>
+          <p>Use your assigned admin identity to open the operational sections available to you.</p>
           <div className="login-metrics" aria-label="Admin capabilities">
             <div><strong>Catalog</strong><span>Upload and edit products</span></div>
             <div><strong>Activity</strong><span>See what users do</span></div>
@@ -1698,16 +2509,26 @@ function AdminLogin({ onLogin }) {
           </div>
         </div>
         <form className="login-card" onSubmit={submit}>
+          <div className="login-mode-switch" role="tablist" aria-label="Admin authentication">
+            <button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setMessage(''); }}>Sign in</button>
+            <button type="button" role="tab" aria-selected={mode === 'request'} className={mode === 'request' ? 'active' : ''} onClick={() => { setMode('request'); setMessage(''); }}>Request access</button>
+          </div>
           <div>
             <p className="kicker">Secure login</p>
-            <h2>Sign in</h2>
-            <p>The admin key is required to enter this dashboard.</p>
+            <h2>{mode === 'request' ? 'Request access' : 'Sign in'}</h2>
+            <p>{mode === 'request' ? 'Create your password now. Your account will have no permissions until a Master approves it.' : 'Use your admin email and password.'}</p>
           </div>
+          {mode === 'request' && <label className="field"><span>Full name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" autoComplete="name" required /></label>}
           <label className="field">
-            <span>Admin key</span>
-            <input type="password" value={adminKey} onChange={(event) => setAdminKey(event.target.value)} placeholder="Enter admin key" required />
+            <span>Admin email</span>
+            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@lookmefy.com" autoComplete="email" required />
           </label>
-          <button className="submit" type="submit" disabled={loading}>{loading ? 'Signing in...' : 'Enter Admin'}</button>
+          <label className="field">
+            <span>Password</span>
+            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={mode === 'request' ? 'Create your password' : 'Enter your password'} autoComplete={mode === 'request' ? 'new-password' : 'current-password'} required />
+          </label>
+          {mode === 'request' && <label className="field"><span>Confirm password</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat your password" autoComplete="new-password" required /></label>}
+          <button className="submit" type="submit" disabled={loading}>{loading ? (mode === 'request' ? 'Requesting...' : 'Signing in...') : (mode === 'request' ? 'Request access' : 'Enter Admin')}</button>
           {message && <p className="form-message">{message}</p>}
         </form>
       </section>
@@ -1740,30 +2561,36 @@ function DraftFetchStatus({ status }) {
 }
 
 function CatalogFilters({ filters, facets, onChange, onClear }) {
+  const [expanded, setExpanded] = useState(false);
   const categories = facets?.categories || [];
   const brands = facets?.brands || [];
+  const activeCount = ['q', 'category', 'brand', 'gender', 'availability', 'status'].filter((key) => Boolean(filters[key])).length;
 
   return (
     <section className="catalog-filters" aria-label="Catalog filters">
-      <label className="field search-field">
+      <button className="catalog-filter-toggle" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
+        <span>Filters</span>{activeCount > 0 && <b>{activeCount}</b>}
+      </button>
+      <div className={`catalog-filter-fields ${expanded ? 'open' : ''}`}>
+        <label className="field search-field">
         <span>Search</span>
         <input value={filters.q} onChange={(event) => onChange('q', event.target.value)} placeholder="Search name, tag, brand..." />
-      </label>
-      <label className="field">
+        </label>
+        <label className="field">
         <span>Category</span>
         <select value={filters.category} onChange={(event) => onChange('category', event.target.value)}>
           <option value="">All categories</option>
           {categories.map((category) => <option key={category} value={category}>{category}</option>)}
         </select>
-      </label>
-      <label className="field">
+        </label>
+        <label className="field">
         <span>Brand</span>
         <select value={filters.brand} onChange={(event) => onChange('brand', event.target.value)}>
           <option value="">All brands</option>
           {brands.map((brand) => <option key={brand} value={brand}>{brand}</option>)}
         </select>
-      </label>
-      <label className="field">
+        </label>
+        <label className="field">
         <span>Gender</span>
         <select value={filters.gender} onChange={(event) => onChange('gender', event.target.value)}>
           <option value="">All genders</option>
@@ -1771,16 +2598,27 @@ function CatalogFilters({ filters, facets, onChange, onClear }) {
           <option value="women">Women</option>
           <option value="unisex">Unisex</option>
         </select>
-      </label>
-      <label className="field">
-        <span>Status</span>
+        </label>
+        <label className="field">
+        <span>Availability</span>
+        <select value={filters.availability} onChange={(event) => onChange('availability', event.target.value)}>
+          <option value="">All availability</option>
+          <option value="available">Available</option>
+          <option value="out_of_stock">Out of stock</option>
+          <option value="unavailable">Unavailable</option>
+          <option value="draft">Draft</option>
+          <option value="archived">Archived</option>
+        </select>
+        </label>
+        <label className="field">
+        <span>Merchandising</span>
         <select value={filters.status} onChange={(event) => onChange('status', event.target.value)}>
-          <option value="">All statuses</option>
+          <option value="">All products</option>
           <option value="featured">Featured</option>
           <option value="newArrival">New arrivals</option>
         </select>
-      </label>
-      <label className="field">
+        </label>
+        <label className="field">
         <span>Sort</span>
         <select value={filters.sort} onChange={(event) => onChange('sort', event.target.value)}>
           <option value="newest">Newest</option>
@@ -1788,13 +2626,14 @@ function CatalogFilters({ filters, facets, onChange, onClear }) {
           <option value="price-asc">Price low to high</option>
           <option value="price-desc">Price high to low</option>
         </select>
-      </label>
-      <button type="button" onClick={onClear}>Reset</button>
+        </label>
+        <button type="button" onClick={onClear}>Reset</button>
+      </div>
     </section>
   );
 }
 
-function QaSummary({ items }) {
+function QaSummary({ items, onOpen }) {
   const visible = items.slice(0, 5);
   return (
     <section className={`qa-summary ${items.length ? 'needs-work' : ''}`} aria-label="Product checks summary">
@@ -1805,7 +2644,10 @@ function QaSummary({ items }) {
       {visible.length > 0 && (
         <div className="qa-summary-list">
           {visible.map(({ product, flags }) => (
-            <span key={product.id}>{product.name}: {flags.slice(0, 2).join(', ')}</span>
+            <button type="button" key={product.id} onClick={() => onOpen(product)}>
+              <span>{product.name}: {flags.slice(0, 2).join(', ')}</span>
+              <b>Fix</b>
+            </button>
           ))}
         </div>
       )}
@@ -1813,7 +2655,7 @@ function QaSummary({ items }) {
   );
 }
 
-function BulkActionBar({ selectedProducts, onFeature, onUnfeature, onNewArrival, onClearNewArrival, onRemove }) {
+function BulkActionBar({ selectedProducts, onFeature, onUnfeature, onNewArrival, onClearNewArrival, onAvailable, onOutOfStock, onUnavailable, onDraft, onRemove }) {
   if (!selectedProducts.length) return null;
   return (
     <section className="bulk-action-bar" aria-label="Bulk product actions">
@@ -1823,13 +2665,17 @@ function BulkActionBar({ selectedProducts, onFeature, onUnfeature, onNewArrival,
         <button type="button" onClick={onUnfeature}>Unfeature</button>
         <button type="button" onClick={onNewArrival}>New Arrival</button>
         <button type="button" onClick={onClearNewArrival}>Clear New</button>
-        <button className="danger-action" type="button" onClick={onRemove}>Remove</button>
+        <button type="button" onClick={onAvailable}>Available</button>
+        <button type="button" onClick={onOutOfStock}>Out of stock</button>
+        <button type="button" onClick={onUnavailable}>Unavailable</button>
+        <button type="button" onClick={onDraft}>Draft</button>
+        <button className="danger-action" type="button" onClick={onRemove}>Archive</button>
       </div>
     </section>
   );
 }
 
-function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlacement, onRemove }) {
+function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlacement, onAvailability, onRemove, onDelete }) {
   const openProduct = () => onEdit(product);
   const openProductFromKeyboard = (event) => {
     if (event.target !== event.currentTarget) return;
@@ -1852,7 +2698,7 @@ function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlace
         <label className="row-check" aria-label={`Select ${product.name}`} onClick={stopProductRowOpen}>
           <input type="checkbox" checked={selected} onChange={onSelect} />
         </label>
-        <img src={mediaUrl(product.imageUrl)} alt={product.name} />
+        <ProductThumbnail product={product} />
         <div className="admin-product-title">
           <h3>{product.name}</h3>
           <p>{displayBrand(product)}</p>
@@ -1867,6 +2713,7 @@ function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlace
         <strong>{formatMoney(product.price || 0, product.currency)}</strong>
         <span>{Number(product.rating || 0).toFixed(1)} rating - {formatNumber(product.ratingCount || 0)} reviews</span>
         <div className="product-admin-meta">
+          <span className={`availability-status ${product.availabilityStatus || 'available'}`}>{String(product.availabilityStatus || 'available').replace(/_/g, ' ')}</span>
           {product.tryOnModel && <span>{product.tryOnModel}</span>}
           {product.isFeatured && <span>Featured</span>}
           {product.isNewArrival && <span>New arrival</span>}
@@ -1880,19 +2727,40 @@ function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlace
         </div>
         {qaFlags.length > 0 && (
           <div className="qa-flags">
-            {qaFlags.slice(0, 2).map((flag) => <span key={`${product.id}-${flag}`}>{flag}</span>)}
+            {qaFlags.slice(0, 2).map((flag) => <button type="button" key={`${product.id}-${flag}`} onClick={openProduct}>{flag} - Fix</button>)}
           </div>
         )}
       </div>
       <div className="product-cell admin-product-actions" onClick={stopProductRowOpen}>
-        <div className="row-segmented" aria-label={`Fit area for ${product.name}`}>
-          <button className={(product.garmentPlacement || 'top') === 'top' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'top')}>Top</button>
-          <button className={product.garmentPlacement === 'bottom' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'bottom')}>Bottom</button>
+        <div className="row-control-cluster">
+          <label>
+            <span>Availability</span>
+            <select
+              aria-label={`Availability for ${product.name}`}
+              value={product.availabilityStatus || 'available'}
+              onChange={(event) => onAvailability(product.id, event.target.value)}
+            >
+              <option value="draft">Draft</option>
+              <option value="available">Available</option>
+              <option value="out_of_stock">Out of stock</option>
+              <option value="unavailable">Unavailable</option>
+              <option value="archived">Archived</option>
+            </select>
+          </label>
+          <div className="fit-area-control">
+            <span>Fit area</span>
+            <div className="row-segmented" aria-label={`Fit area for ${product.name}`}>
+              <button className={(product.garmentPlacement || 'top') === 'top' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'top')}>Top</button>
+              <button className={product.garmentPlacement === 'bottom' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'bottom')}>Bottom</button>
+              <button className={product.garmentPlacement === 'accessory' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'accessory')}>Accessory</button>
+            </div>
+          </div>
         </div>
         <div className="row-actions">
-          <a className="preview-action" href={productPublicUrl(product)} target="_blank" rel="noreferrer">Preview</a>
+          {product.availabilityStatus === 'available' && <a className="preview-action" href={productPublicUrl(product)} target="_blank" rel="noreferrer">Preview</a>}
           <button type="button" onClick={openProduct}>Edit</button>
-          <button className="danger-action" type="button" onClick={() => onRemove(product.id)}>Remove</button>
+          <button className="danger-action" type="button" onClick={() => onRemove(product.id)}>Archive</button>
+          <button className="delete-action" type="button" onClick={() => onDelete(product)}>Delete</button>
         </div>
       </div>
     </article>
@@ -1932,11 +2800,14 @@ function ProductEditor({ product, message, saving, onClose, onSubmit }) {
               <legend>Fit area</legend>
               <label><input type="radio" name="garmentPlacement" value="top" defaultChecked={(product.garmentPlacement || 'top') === 'top'} /><span>Top</span></label>
               <label><input type="radio" name="garmentPlacement" value="bottom" defaultChecked={product.garmentPlacement === 'bottom'} /><span>Bottom</span></label>
+              <label><input type="radio" name="garmentPlacement" value="accessory" defaultChecked={product.garmentPlacement === 'accessory'} /><span>Accessory</span></label>
             </fieldset>
             <label className="field"><span>Description</span><textarea name="description" rows="4" defaultValue={product.description || ''} /></label>
           </section>
           <section className="form-section">
             <div className="form-section-title"><strong>Merchandising</strong><span>Used by catalog cards, filters, and personalized ranking.</span></div>
+            <label className="field"><span>Availability</span><select name="availabilityStatus" defaultValue={product.availabilityStatus || 'available'}><option value="draft">Draft</option><option value="available">Available</option><option value="out_of_stock">Out of stock</option><option value="unavailable">Unavailable</option><option value="archived">Archived</option></select></label>
+            <label className="field"><span>Inventory note</span><input name="inventoryNotes" defaultValue={product.inventoryNotes || ''} placeholder="Optional source or availability note" /></label>
             <div className="two-col">
               <label className="field"><span>Price</span><input name="price" type="number" step="0.01" min="0" required defaultValue={product.price ?? ''} /></label>
               <label className="field"><span>Compare price</span><input name="compareAtPrice" type="number" step="0.01" min="0" defaultValue={product.compareAtPrice ?? ''} /></label>
@@ -2012,7 +2883,124 @@ function CategoryDistribution({ items, total }) {
   );
 }
 
-function RecommendationStatsCard({ state, onRefresh, categoryDistribution = [], categoryTotal = 0 }) {
+function analyticsDateInput(value = new Date()) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : '';
+}
+
+function formatPercent(value) {
+  const number = Number(value || 0);
+  return `${Number.isInteger(number) ? number : number.toFixed(1)}%`;
+}
+
+function formatDurationMs(value) {
+  const milliseconds = Math.max(0, Number(value || 0));
+  if (!milliseconds) return '-';
+  const seconds = Math.round(milliseconds / 100) / 10;
+  return seconds >= 60 ? `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s` : `${seconds}s`;
+}
+
+function analyticsChange(value) {
+  const number = Number(value || 0);
+  const sign = number > 0 ? '+' : '';
+  return `${sign}${number}% vs previous period`;
+}
+
+function exportAnalyticsCsv(stats) {
+  const rows = [['Section', 'Metric', 'Value', 'Detail']];
+  const add = (section, metric, value, detail = '') => rows.push([section, metric, value, detail]);
+  Object.entries(stats.totals || {}).forEach(([metric, value]) => add('Overview', metric, value));
+  (stats.funnel || []).forEach((item) => add('Funnel', item.label, item.users, `${item.events} events; ${item.conversionRate}% conversion`));
+  Object.entries(stats.recommendations || {}).filter(([, value]) => typeof value !== 'object').forEach(([metric, value]) => add('Recommendations', metric, value));
+  Object.entries(stats.generation || {}).filter(([, value]) => typeof value !== 'object').forEach(([metric, value]) => add('Generation', metric, value));
+  (stats.topProducts || []).forEach((item) => add('Products', item.name, item.events, `${item.views} views; ${item.tryOns} try-ons; ${item.shopClicks} shop clicks`));
+  (stats.searches || []).forEach((item) => add('Searches', item.query, item.count, `${item.users} users; ${item.clicks} clicks; ${item.clickRate}% click rate; ${item.zeroResults} zero-result searches`));
+  const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  link.download = `lookmefy-analytics-${stats.period?.from ? String(stats.period.from).slice(0, 10) : 'export'}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function AnalyticsTrendChart({ items = [] }) {
+  const width = 760;
+  const height = 220;
+  const padding = 28;
+  const maxEvents = Math.max(...items.map((item) => Number(item.events || 0)), 1);
+  const maxUsers = Math.max(...items.map((item) => Number(item.users || 0)), 1);
+  const points = (field, maximum) => items.map((item, index) => {
+    const x = items.length <= 1 ? width / 2 : padding + (index * (width - padding * 2) / (items.length - 1));
+    const y = height - padding - ((Number(item[field] || 0) / maximum) * (height - padding * 2));
+    return `${Math.round(x)},${Math.round(y)}`;
+  }).join(' ');
+  const labels = items.length ? [items[0], items[Math.floor((items.length - 1) / 2)], items[items.length - 1]] : [];
+
+  return (
+    <div className="analytics-trend-chart">
+      <div className="analytics-chart-legend"><span className="events">Events</span><span className="users">Active users</span></div>
+      {items.length === 0 ? <StatusPanel text="No activity in this period." /> : (
+        <>
+          <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Daily events and active users">
+            {[0, 1, 2, 3].map((line) => <line x1={padding} x2={width - padding} y1={padding + line * ((height - padding * 2) / 3)} y2={padding + line * ((height - padding * 2) / 3)} key={line} />)}
+            <polyline className="trend-events" points={points('events', maxEvents)} />
+            <polyline className="trend-users" points={points('users', maxUsers)} />
+          </svg>
+          <div className="analytics-chart-labels">{labels.map((item, index) => <span key={`${item.date}-${index}`}>{formatCatalogDate(item.date)}</span>)}</div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AnalyticsFunnel({ items = [] }) {
+  const maximum = Math.max(...items.map((item) => Number(item.users || 0)), 1);
+  return (
+    <div className="analytics-funnel">
+      {items.map((item, index) => (
+        <div className="funnel-stage" key={item.type}>
+          <div><span>{index + 1}</span><strong>{item.label}</strong><b>{formatNumber(item.users)} users</b></div>
+          <div className="funnel-track"><span style={{ width: `${Math.max(item.users ? 5 : 0, Math.round((Number(item.users || 0) / maximum) * 100))}%` }} /></div>
+          <small>{index ? `${formatPercent(item.conversionRate)} from previous stage` : `${formatNumber(item.events)} recorded impressions`}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AnalyticsProductTable({ items = [] }) {
+  const [sort, setSort] = useState('events');
+  const sorted = useMemo(() => [...items].sort((left, right) => Number(right[sort] || 0) - Number(left[sort] || 0)), [items, sort]);
+  return (
+    <>
+      <div className="analytics-table-toolbar">
+        <span>{formatNumber(items.length)} products with activity</span>
+        <label className="field"><span>Sort products</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="events">Total activity</option><option value="views">Views</option><option value="tryOns">Try-ons</option><option value="shopClicks">Shop clicks</option><option value="recommendationCtr">Recommendation CTR</option><option value="engagementRate">Engagement rate</option></select></label>
+      </div>
+      <div className="analytics-table-scroll">
+        <table className="analytics-table">
+          <thead><tr><th>Product</th><th>Views</th><th>Rec. CTR</th><th>Wishlist</th><th>Try-ons</th><th>Shop</th><th>Engagement</th></tr></thead>
+          <tbody>{sorted.slice(0, 20).map((item) => <tr key={item.id}><td><strong>{item.name}</strong><span>{item.brand || item.category || 'Catalog product'}</span></td><td>{formatNumber(item.views)}</td><td>{item.recommendationImpressions ? formatPercent(item.recommendationCtr) : '-'}</td><td>{formatNumber(item.wishlists)}</td><td>{formatNumber(item.tryOns)}</td><td>{formatNumber(item.shopClicks)}</td><td>{formatPercent(item.engagementRate)}</td></tr>)}</tbody>
+        </table>
+      </div>
+      {!items.length && <StatusPanel text="No product activity in this period." />}
+    </>
+  );
+}
+
+function SearchAnalyticsTable({ items = [] }) {
+  return (
+    <div className="analytics-table-scroll">
+      <table className="analytics-table search-analytics-table">
+        <thead><tr><th>Search</th><th>Searches</th><th>Users</th><th>Clicks</th><th>Click rate</th><th>Zero results</th><th>Last searched</th></tr></thead>
+        <tbody>{items.slice(0, 15).map((item) => <tr key={item.query}><td><strong>{item.query}</strong></td><td>{formatNumber(item.count)}</td><td>{formatNumber(item.users)}</td><td>{formatNumber(item.clicks)}</td><td>{formatPercent(item.clickRate)}</td><td className={item.zeroResults ? 'analytics-warning-value' : ''}>{formatNumber(item.zeroResults)}</td><td>{formatSignalDate(item.lastAt)}</td></tr>)}</tbody>
+      </table>
+      {!items.length && <StatusPanel text="No searches recorded in this period." />}
+    </div>
+  );
+}
+
+function RecommendationStatsCard({ state, onRefresh, period, onPeriodChange, categoryDistribution = [], categoryTotal = 0 }) {
   const stats = state.stats;
   const totals = stats?.totals || {};
   const eventCounts = stats?.eventCounts || [];
@@ -2022,75 +3010,51 @@ function RecommendationStatsCard({ state, onRefresh, categoryDistribution = [], 
   const topTags = stats?.topTags || [];
   const topGenders = stats?.topGenders || [];
   const recentEvents = stats?.recentEvents || [];
-  const topEvent = eventCounts[0];
-  const topProduct = topProducts[0];
-  const topCategory = topCategories[0];
+  const recommendations = stats?.recommendations || {};
+  const generation = stats?.generation || {};
+  const setRange = (range) => {
+    if (range !== 'custom') return onPeriodChange({ range, from: '', to: '' });
+    const to = analyticsDateInput();
+    const from = analyticsDateInput(new Date(Date.now() - (29 * 24 * 60 * 60 * 1000)));
+    onPeriodChange({ range, from, to });
+  };
 
   return (
-    <section className="admin-card recommendation-card">
-      <div className="section-head">
-        <div>
-          <h2>User Activity</h2>
-          <p>Searches, clicks, try-ons, shop clicks, and product interest.</p>
+    <section className="analytics-page">
+      <header className="admin-card analytics-command-card">
+        <div><span>Measurement window</span><h2>Product and recommendation analytics</h2><p>{stats?.period?.label || 'Choose a reporting period.'}</p></div>
+        <div className="analytics-command-actions">
+          <label className="field"><span>Date range</span><select value={period.range} onChange={(event) => setRange(event.target.value)}><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="custom">Custom range</option></select></label>
+          {period.range === 'custom' && <><label className="field"><span>From</span><input type="date" value={period.from} onChange={(event) => onPeriodChange({ ...period, from: event.target.value })} /></label><label className="field"><span>To</span><input type="date" value={period.to} onChange={(event) => onPeriodChange({ ...period, to: event.target.value })} /></label></>}
+          <button type="button" onClick={onRefresh}>Refresh</button>
+          <button type="button" onClick={() => stats && exportAnalyticsCsv(stats)} disabled={!stats}>Export CSV</button>
         </div>
-        <button type="button" onClick={onRefresh}>Refresh Data</button>
-      </div>
+      </header>
       {state.loading && <StatusPanel text="Loading user activity..." />}
       {state.error && <StatusPanel text={state.error} />}
       {!state.loading && !state.error && !stats && <StatusPanel text="Sign in to load user activity." />}
       {stats && (
         <>
           <div className="stats-grid">
-            <StatBox label="Events" value={formatNumber(totals.events || 0)} meta={`${eventCounts.length || 0} signal types`} />
-            <StatBox label="Users 30d" value={formatNumber(totals.activeUsers30d || 0)} meta="active in the last month" />
-            <StatBox label="Profiles" value={formatNumber(totals.preferenceProfiles || 0)} meta="saved preference profiles" />
-            <StatBox label="Avg wanted price" value={totals.averagePreferredPrice ? formatMoney(totals.averagePreferredPrice, 'INR') : '-'} meta="based on user activity" />
+            <StatBox label="Events" value={formatNumber(totals.events || 0)} meta={analyticsChange(stats.comparison?.events)} />
+            <StatBox label="Active users" value={formatNumber(totals.activeUsers || 0)} meta={analyticsChange(stats.comparison?.activeUsers)} />
+            <StatBox label="Sessions" value={formatNumber(totals.sessions || 0)} meta={analyticsChange(stats.comparison?.sessions)} />
+            <StatBox label="Avg session" value={totals.averageSessionMinutes ? `${totals.averageSessionMinutes} min` : '-'} meta={`${formatNumber(totals.returningUsers || 0)} returning / ${formatPercent(totals.returningRate)} rate`} />
           </div>
-          <div className="recommendation-overview">
-            <div className="signal-column">
-              <div className="signal-spotlight">
-                <div>
-                  <span>Top action</span>
-                  <strong>{topEvent ? formatEventType(topEvent.type) : 'No activity yet'}</strong>
-                  <p>{topEvent ? `${formatNumber(topEvent.count)} times users did this.` : 'User actions will appear here once people use the app.'}</p>
-                </div>
-                <div>
-                  <span>Strongest category</span>
-                  <strong>{topCategory?.label || 'No category yet'}</strong>
-                  <p>{topCategory ? `${formatWeight(topCategory.weight)} interest score.` : 'This needs more user activity.'}</p>
-                </div>
-                <div>
-                  <span>Top product</span>
-                  <strong>{topProduct?.name || 'No product yet'}</strong>
-                  <p>{topProduct ? `${displayBrand(topProduct)} - ${displayCategory(topProduct)} - ${formatNumber(topProduct.count)} actions.` : 'Top products will appear after clicks, try-ons, and shop taps.'}</p>
-                </div>
-              </div>
-              {categoryDistribution.length > 0 ? (
-                <CategoryDistribution items={categoryDistribution} total={categoryTotal} />
-              ) : (
-                <StatusPanel text="No category data yet." />
-              )}
-            </div>
-            <StatsList
-              title="Action Mix"
-              items={eventCounts.map((item) => ({
-                label: formatEventType(item.type),
-                value: item.count,
-                meta: `${formatWeight(item.weight)} activity score`
-              }))}
-              valueLabel={(value) => formatNumber(value)}
-            />
+          <section className="analytics-secondary-metrics" aria-label="Engagement metrics"><div><span>DAU average</span><strong>{formatNumber(totals.dau)}</strong></div><div><span>WAU</span><strong>{formatNumber(totals.wau)}</strong></div><div><span>MAU</span><strong>{formatNumber(totals.mau)}</strong></div><div><span>Events per user</span><strong>{formatNumber(totals.eventsPerUser)}</strong></div><div><span>New users</span><strong>{formatNumber(totals.newUsers)}</strong></div><div><span>Interacted price</span><strong>{totals.averageInteractedPrice ? formatMoney(totals.averageInteractedPrice, 'INR') : '-'}</strong></div></section>
+          <section className="admin-card analytics-section"><div className="section-head"><div><h2>Engagement trend</h2><p>Daily activity and unique users inside the selected period.</p></div></div><AnalyticsTrendChart items={stats.trend || []} /></section>
+          <div className="analytics-two-column">
+            <section className="admin-card analytics-section"><div className="section-head"><div><h2>Recommendation funnel</h2><p>Unique users progressing from exposure to outbound shopping.</p></div></div><AnalyticsFunnel items={stats.funnel || []} /></section>
+            <section className="admin-card analytics-section recommendation-health"><div className="section-head"><div><h2>Recommendation health</h2><p>Measured from algorithm-tagged impressions and actions.</p></div></div><div className="analytics-health-grid"><div><span>Impressions</span><strong>{formatNumber(recommendations.impressions)}</strong></div><div><span>Clicks</span><strong>{formatNumber(recommendations.clicks)}</strong></div><div><span>CTR</span><strong>{formatPercent(recommendations.ctr)}</strong></div><div><span>Catalog coverage</span><strong>{formatPercent(recommendations.coverageRate)}</strong></div><div><span>Category diversity</span><strong>{formatNumber(recommendations.categoryDiversity)}</strong></div><div><span>Brand diversity</span><strong>{formatNumber(recommendations.brandDiversity)}</strong></div><div><span>Cold-start share</span><strong>{formatPercent(recommendations.coldStartRate)}</strong></div><div><span>Attributed try-ons</span><strong>{formatNumber(recommendations.attributedTryOns)}</strong></div><div><span>Attributed shop clicks</span><strong>{formatNumber(recommendations.attributedShopClicks)}</strong></div></div><div className="analytics-two-column compact"><StatsList title="Recommendation sources" items={(recommendations.sources || []).map((item) => ({ label: item.source, value: item.impressions, meta: `${formatPercent(item.ctr)} CTR` }))} valueLabel={formatNumber} /><StatsList title="Algorithm versions" items={(recommendations.algorithmVersions || []).map((item) => ({ label: item.version, value: item.impressions, meta: `${formatPercent(item.ctr)} CTR` }))} valueLabel={formatNumber} /></div></section>
           </div>
-          <div className="stats-columns">
-            <StatsList title="Top Categories" items={topCategories.map((item) => ({ label: item.label, value: item.weight }))} />
-            <StatsList title="Top Brands" items={topBrands.map((item) => ({ label: item.label, value: item.weight }))} />
-            <StatsList title="Top Tags" items={topTags.map((item) => ({ label: item.label, value: item.weight }))} />
-            <StatsList title="Audience" items={topGenders.map((item) => ({ label: item.label, value: item.weight }))} />
+          <section className="admin-card analytics-section"><div className="section-head"><div><h2>AI generation health</h2><p>Server-recorded image and video outcomes, including restored credits.</p></div></div><div className="analytics-health-grid generation-health-grid"><div><span>Attempts</span><strong>{formatNumber(generation.attempts)}</strong></div><div><span>Success rate</span><strong>{formatPercent(generation.successRate)}</strong></div><div><span>Failures</span><strong>{formatNumber(generation.failed)}</strong></div><div><span>Rejected</span><strong>{formatNumber(generation.rejected)}</strong></div><div><span>Average time</span><strong>{formatDurationMs(generation.averageDurationMs)}</strong></div><div><span>Credits charged</span><strong>{formatNumber(generation.tokensCharged)}</strong></div><div><span>Credits restored</span><strong>{formatNumber(generation.tokensRefunded)}</strong></div><div><span>Tracked provider cost</span><strong>{formatMoney(generation.providerCostUsd || 0, 'USD')}</strong></div></div><div className="generation-breakdown"><StatsList title="Providers" items={(generation.providers || []).map((item) => ({ label: item.provider, value: item.total, meta: `${formatPercent(item.successRate)} success` }))} valueLabel={formatNumber} /><StatsList title="Generation types" items={(generation.types || []).map((item) => ({ label: formatEventType(item.type), value: item.total, meta: `${formatPercent(item.successRate)} success` }))} valueLabel={formatNumber} /><StatsList title="Failure categories" items={(generation.errors || []).map((item) => ({ label: formatEventType(item.category), value: item.count }))} valueLabel={formatNumber} /></div></section>
+          <section className="admin-card analytics-section"><div className="section-head"><div><h2>Product performance</h2><p>Views, recommendation response, try-ons, and outbound shopping by product.</p></div></div><AnalyticsProductTable items={topProducts} /></section>
+          <div className="analytics-two-column">
+            <section className="admin-card analytics-section"><div className="section-head"><div><h2>Search intelligence</h2><p>Demand signals and searches returning no catalog results.</p></div></div><SearchAnalyticsTable items={stats.searches || []} /></section>
+            <section className="admin-card analytics-section"><div className="section-head"><div><h2>Action mix</h2><p>Event volume and unique users by tracked action.</p></div></div><StatsList title="Actions" items={eventCounts.map((item) => ({ label: formatEventType(item.type), value: item.count, meta: `${formatNumber(item.users)} users` }))} valueLabel={formatNumber} /></section>
           </div>
-          <div className="stats-columns two">
-            <TopProductsList items={topProducts} />
-            <RecentSignalsList items={recentEvents} />
-          </div>
+          <section className="admin-card analytics-section"><div className="section-head"><div><h2>Interest signals</h2><p>Weighted product attributes from activity in this reporting period.</p></div></div><div className="stats-columns"><StatsList title="Categories" items={topCategories.map((item) => ({ label: item.label, value: item.weight }))} /><StatsList title="Brands" items={topBrands.map((item) => ({ label: item.label, value: item.weight }))} /><StatsList title="Tags" items={topTags.map((item) => ({ label: item.label, value: item.weight }))} /><StatsList title="Audience" items={topGenders.map((item) => ({ label: item.label, value: item.weight }))} /></div></section>
+          <div className="analytics-two-column"><section className="admin-card analytics-section">{categoryDistribution.length > 0 ? <CategoryDistribution items={categoryDistribution} total={categoryTotal} /> : <StatusPanel text="No live catalog category data." />}</section><section className="admin-card analytics-section"><RecentSignalsList items={recentEvents} /></section></div>
         </>
       )}
     </section>
@@ -2179,6 +3143,122 @@ function AdminProductSkeleton() {
           <span className="admin-skeleton-action" />
         </article>
       ))}
+    </div>
+  );
+}
+
+function OverviewSkeleton() {
+  return (
+    <section className="overview-skeleton" aria-label="Loading overview">
+      {Array.from({ length: 8 }).map((_, index) => <span key={index} />)}
+    </section>
+  );
+}
+
+function UserRowsSkeleton() {
+  return (
+    <div className="user-rows-skeleton" aria-label="Loading users">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index}><span /><span /><span /><span /></div>
+      ))}
+    </div>
+  );
+}
+
+function ProductThumbnail({ product, decorative = false }) {
+  const [failed, setFailed] = useState(false);
+  const label = String(product?.name || 'Product').trim();
+  const showFallback = failed || !product?.imageUrl;
+  return (
+    <span className={`product-thumbnail ${showFallback ? 'fallback' : ''}`}>
+      {!showFallback
+        ? <img src={mediaUrl(product.imageUrl)} alt={decorative ? '' : label} onError={() => setFailed(true)} />
+        : <span aria-hidden="true">{label.slice(0, 2).toUpperCase()}</span>}
+    </span>
+  );
+}
+
+function userAvatarStyle(value) {
+  const palette = [
+    ['#204c3a', '#ffffff'],
+    ['#7a3d32', '#ffffff'],
+    ['#365477', '#ffffff'],
+    ['#765a22', '#ffffff'],
+    ['#5b4774', '#ffffff'],
+    ['#2f6665', '#ffffff']
+  ];
+  const index = [...String(value || 'user')].reduce((total, character) => total + character.charCodeAt(0), 0) % palette.length;
+  return { background: palette[index][0], color: palette[index][1] };
+}
+
+function AdminToast({ message, onDismiss }) {
+  return (
+    <div className="admin-toast" role="status" aria-live="polite">
+      <span>{message}</span>
+      <button type="button" onClick={onDismiss} aria-label="Dismiss notification">x</button>
+    </div>
+  );
+}
+
+function AdminConfirmDialog({ action, busy, onCancel, onConfirm }) {
+  const [reason, setReason] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const target = action.user?.name || action.user?.email || action.product?.name || 'this record';
+  let title = 'Confirm change';
+  let detail = '';
+  let confirmLabel = 'Confirm';
+  let destructive = false;
+
+  if (action.type === 'tokens') {
+    title = action.mode === 'add' ? 'Add tokens?' : 'Set token balance?';
+    detail = action.mode === 'add'
+      ? `Add ${formatNumber(action.amount)} tokens to ${target}.`
+      : `Replace ${target}'s balance with ${formatNumber(action.amount)} tokens.`;
+    confirmLabel = action.mode === 'add' ? 'Add Tokens' : 'Set Balance';
+  } else if (action.type === 'user-status') {
+    const banning = action.status === 'banned';
+    title = banning ? 'Ban user?' : 'Restore user access?';
+    detail = banning ? `${target}'s current sessions will stop working.` : `${target} will be able to sign in again.`;
+    confirmLabel = banning ? 'Ban User' : 'Restore Access';
+    destructive = banning;
+  } else if (action.type === 'remove-user') {
+    title = 'Remove user?';
+    detail = `${target}'s personal data, sessions, profile media, and generated try-ons will be removed. Payment records will be preserved for reconciliation.`;
+    confirmLabel = 'Remove User';
+    destructive = true;
+  } else if (action.type === 'delete-product') {
+    title = 'Permanently delete product?';
+    detail = `${target}, its generated try-ons, and wishlist references will be deleted. This cannot be undone.`;
+    confirmLabel = 'Delete Product';
+    destructive = true;
+  }
+
+  const needsReason = action.type === 'user-status' && action.status === 'banned';
+  const needsDeleteText = action.type === 'delete-product';
+  const disabled = busy || (needsReason && !reason.trim()) || (needsDeleteText && confirmation !== 'DELETE');
+
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape' && !busy) onCancel();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [busy, onCancel]);
+
+  return (
+    <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onCancel()}>
+      <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div>
+          <span className={`confirm-symbol ${destructive ? 'destructive' : ''}`} aria-hidden="true">{destructive ? '!' : '?'}</span>
+          <div><h2 id="confirm-title">{title}</h2><p>{detail}</p></div>
+        </div>
+        {needsReason && <label className="field"><span>Reason for ban</span><textarea rows="3" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the audit log" autoFocus /></label>}
+        {needsDeleteText && <label className="field"><span>Type DELETE to confirm</span><input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" autoFocus /></label>}
+        <div className="confirm-actions">
+          <button type="button" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button className={destructive ? 'destructive' : 'primary'} type="button" onClick={() => onConfirm({ reason, confirmation })} disabled={disabled}>{busy ? 'Working...' : confirmLabel}</button>
+        </div>
+      </section>
     </div>
   );
 }

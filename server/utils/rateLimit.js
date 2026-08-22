@@ -64,6 +64,11 @@ function defaultMessage(retryAfterSeconds) {
   return `Too many requests. Please try again in ${Math.max(1, Math.ceil(retryAfterSeconds / 60))} minute${retryAfterSeconds > 60 ? 's' : ''}.`;
 }
 
+function developmentRateLimitBypass(flagName, env = process.env) {
+  if (String(env.NODE_ENV || '').toLowerCase() === 'production') return false;
+  return ['1', 'true', 'yes', 'on'].includes(String(env[flagName] || '').toLowerCase());
+}
+
 function setHeaders(res, { limit, remaining, resetAt, retryAfterSeconds }) {
   res.setHeader('RateLimit-Limit', String(limit));
   res.setHeader('RateLimit-Remaining', String(Math.max(0, remaining)));
@@ -131,4 +136,4 @@ const rateLimitKeys = {
   otpSession: (req) => `otp-session:${otpSession(req) || normalizedBodyPhone(req) || clientIp(req)}`
 };
 
-export { clientIp, createRateLimiter, rateLimitKeys };
+export { clientIp, createRateLimiter, developmentRateLimitBypass, rateLimitKeys };

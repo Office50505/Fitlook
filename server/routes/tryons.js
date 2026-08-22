@@ -11,10 +11,13 @@ import Product from '../models/Product.js';
 import TryOn, { tryOnToClient } from '../models/TryOn.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
+import { accountAccessError } from '../utils/accountState.js';
+import { availableStatusClause } from '../utils/productAvailability.js';
 import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
 import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility } from '../utils/genderPreference.js';
 import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
+import { recordGenerationMetric } from '../utils/generationMetrics.js';
 import { enqueueJob, enqueueJobAndWait, safeJobId } from '../utils/jobQueue.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { readStoredFile, saveBuffer, storedFileSignature } from '../utils/storage.js';
@@ -1787,7 +1790,11 @@ async function reserveToken(user, timer, cost = tokenCost()) {
     return user;
   }
   const chargedUser = await User.findOneAndUpdate(
-    { _id: user._id, tokens: { $gte: cost } },
+    {
+      _id: user._id,
+      tokens: { $gte: cost },
+      $or: [{ accountStatus: 'active' }, { accountStatus: { $exists: false } }]
+    },
     { $inc: { tokens: -cost } },
     { new: true }
   );
@@ -1801,7 +1808,11 @@ async function refundToken(user, timer, cost = tokenCost()) {
     timer.mark('dev mode refund skipped', { tokensRemaining: user.tokens, cost: 0 });
     return user;
   }
-  const refundedUser = await User.findByIdAndUpdate(user._id, { $inc: { tokens: cost } }, { new: true });
+  const refundedUser = await User.findOneAndUpdate(
+    { _id: user._id, accountStatus: { $ne: 'deleted' } },
+    { $inc: { tokens: cost } },
+    { new: true }
+  );
   if (refundedUser) timer.mark('token refunded', { cost, tokensRemaining: refundedUser.tokens });
   return refundedUser || user;
 }
@@ -1811,6 +1822,7 @@ function tryOnQueueMode() {
 }
 
 async function runProductTryOnJob({ userId, productId, requestedModel = '', forceGenerate = false }) {
+  const analyticsStartedAt = Date.now();
   const timer = createTimer('generate', {
     userId: userId.toString(),
     productId,
@@ -1823,10 +1835,18 @@ async function runProductTryOnJob({ userId, productId, requestedModel = '', forc
 
   try {
     if (!user) return { status: 401, body: { message: 'User not found' } };
+    const accessError = accountAccessError(user);
+    if (accessError) {
+      await recordGenerationMetric({ user: user._id, product: productId, type: 'product_image', status: 'rejected', durationMs: Date.now() - analyticsStartedAt, error: accessError.message });
+      return { status: accessError.statusCode, body: { message: accessError.message } };
+    }
     const requested = normalizeTryOnModel(requestedModel);
     const hasRequestedModel = Boolean(requestedModel);
-    const product = await Product.findOne({ _id: productId, isActive: true });
-    if (!product) return { status: 404, body: { message: 'Product not found' } };
+    const product = await Product.findOne({ _id: productId, isActive: true, $and: [availableStatusClause()] });
+    if (!product) {
+      await recordGenerationMetric({ user: user._id, type: 'product_image', status: 'rejected', durationMs: Date.now() - analyticsStartedAt, error: 'Product not found' });
+      return { status: 404, body: { message: 'Product not found' } };
+    }
     const existing = await TryOn.findOne({ user: user._id, product: productId });
     const selectedModel = hasRequestedModel ? requested : tryOnModelForProduct(product);
     timer.mark('product loaded', {
@@ -1836,6 +1856,7 @@ async function runProductTryOnJob({ userId, productId, requestedModel = '', forc
 
     if (existing && !forceGenerate) {
       timer.end({ reused: true });
+      await recordGenerationMetric({ user: user._id, product: product._id, type: 'product_image', status: 'reused', provider: existing.provider, model: existing.model, durationMs: Date.now() - analyticsStartedAt });
       return { status: 200, body: { tryOn: existing.toClient(), user: user.toClient(), reused: true } };
     }
 
@@ -1843,6 +1864,7 @@ async function runProductTryOnJob({ userId, productId, requestedModel = '', forc
     const chargedUser = await reserveToken(user, timer);
     if (!chargedUser) {
       timer.end({ error: 'insufficient tokens' });
+      await recordGenerationMetric({ user: user._id, product: product._id, type: 'product_image', status: 'rejected', model: selectedModel, durationMs: Date.now() - analyticsStartedAt, error: 'insufficient tokens' });
       return { status: 402, body: { message: 'Not enough tokens for AI try-on' } };
     }
     reserved = true;
@@ -1852,23 +1874,28 @@ async function runProductTryOnJob({ userId, productId, requestedModel = '', forc
       ? await replaceGeneratedTryOn({ user, product, tryOnModel: selectedModel, timer })
       : await saveGeneratedTryOn({ user, product, tryOnModel: selectedModel, timer });
     timer.end({ reused: false, tokensRemaining: user.tokens });
+    await recordGenerationMetric({ user: user._id, product: product._id, type: 'product_image', status: 'succeeded', provider: tryOn.provider, model: tryOn.model, providerCostUsd: tryOn.providerCostUsd, tokensCharged: chargedTokenCost(user), durationMs: Date.now() - analyticsStartedAt });
 
     return { status: 201, body: { tryOn: tryOn.toClient(), user: user.toClient(), reused: false } };
   } catch (error) {
     if (error.code === 11000) {
       const existing = await TryOn.findOne({ user: user?._id, product: productId });
       if (existing) {
+        const duplicateRefund = reserved ? chargedTokenCost(user) : 0;
         if (reserved) {
           user = await refundToken(user, timer);
           reserved = false;
         }
         timer.end({ reused: true, duplicate: true });
+        await recordGenerationMetric({ user: user._id, product: productId, type: 'product_image', status: 'reused', provider: existing.provider, model: existing.model, tokensCharged: duplicateRefund, tokensRefunded: duplicateRefund, durationMs: Date.now() - analyticsStartedAt });
         return { status: 200, body: { tryOn: existing.toClient(), user: user.toClient(), reused: true } };
       }
     }
+    const tokensRefunded = reserved ? chargedTokenCost(user) : 0;
     if (reserved) user = await refundToken(user, timer);
     const message = readableError(error, 'Could not generate AI try-on');
     timer.end({ error: message });
+    await recordGenerationMetric({ user: user?._id || userId, product: productId, type: 'product_image', status: 'failed', model: requestedModel, durationMs: Date.now() - analyticsStartedAt, tokensCharged: tokensRefunded, tokensRefunded, error: message });
     return { status: 400, body: { message } };
   }
 }
@@ -1913,16 +1940,21 @@ router.get('/:tryOnId/video/media', async (req, res) => {
 });
 
 router.post('/custom', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLimiter, upload.single('garment'), async (req, res) => {
+  const analyticsStartedAt = Date.now();
   const timer = createTimer('custom', { userId: req.user._id.toString() });
   let reserved = false;
 
   try {
-    if (!req.file) return res.status(400).json({ message: 'Upload a clothing image first' });
+    if (!req.file) {
+      await recordGenerationMetric({ user: req.user._id, type: 'custom_image', status: 'rejected', durationMs: Date.now() - analyticsStartedAt, error: 'Upload a clothing image first' });
+      return res.status(400).json({ message: 'Upload a clothing image first' });
+    }
     ensureTryOnProfileReady(req.user);
     const garmentFile = await normalizeMemoryImageFile(req.file, 'garment', timer);
     const chargedUser = await reserveToken(req.user, timer);
     if (!chargedUser) {
       timer.end({ error: 'insufficient tokens' });
+      await recordGenerationMetric({ user: req.user._id, type: 'custom_image', status: 'rejected', durationMs: Date.now() - analyticsStartedAt, error: 'insufficient tokens' });
       return res.status(402).json({ message: 'Not enough tokens for AI try-on' });
     }
     reserved = true;
@@ -1936,16 +1968,20 @@ router.post('/custom', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLimi
       timer
     });
     timer.end({ tokensRemaining: req.user.tokens });
+    await recordGenerationMetric({ user: req.user._id, type: 'custom_image', status: 'succeeded', provider: tryOn.provider, model: tryOn.model, providerCostUsd: tryOn.providerCostUsd, tokensCharged: chargedTokenCost(req.user), durationMs: Date.now() - analyticsStartedAt });
     res.status(201).json({ tryOn: tryOn.toClient(), user: req.user.toClient() });
   } catch (error) {
+    const tokensRefunded = reserved ? chargedTokenCost(req.user) : 0;
     if (reserved) req.user = await refundToken(req.user, timer);
     const message = readableError(error, 'Could not generate custom AI try-on');
     timer.end({ error: message });
+    await recordGenerationMetric({ user: req.user._id, type: 'custom_image', status: 'failed', durationMs: Date.now() - analyticsStartedAt, tokensCharged: tokensRefunded, tokensRefunded, error: message });
     res.status(400).json({ message });
   }
 });
 
 router.post('/external', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLimiter, async (req, res) => {
+  const analyticsStartedAt = Date.now();
   let product;
   try {
     product = externalProductFromBody(req.body?.product);
@@ -1972,6 +2008,7 @@ router.post('/external', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLi
     const existing = await ExternalTryOn.findOne({ user: req.user._id, sourceUrl: product.sourceUrl });
     if (existing) {
       timer.end({ reused: true });
+      await recordGenerationMetric({ user: req.user._id, type: 'external_image', status: 'reused', provider: existing.provider, model: existing.model, durationMs: Date.now() - analyticsStartedAt });
       return res.json({ tryOn: existing.toClient(), user: req.user.toClient(), reused: true });
     }
 
@@ -1979,6 +2016,7 @@ router.post('/external', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLi
     const chargedUser = await reserveToken(req.user, timer);
     if (!chargedUser) {
       timer.end({ error: 'insufficient tokens' });
+      await recordGenerationMetric({ user: req.user._id, type: 'external_image', status: 'rejected', durationMs: Date.now() - analyticsStartedAt, error: 'insufficient tokens' });
       return res.status(402).json({ message: 'Not enough tokens for AI try-on' });
     }
     reserved = true;
@@ -1986,27 +2024,33 @@ router.post('/external', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLi
 
     const tryOn = await saveGeneratedExternalTryOn({ user: req.user, product, timer });
     timer.end({ reused: false, tokensRemaining: req.user.tokens });
+    await recordGenerationMetric({ user: req.user._id, type: 'external_image', status: 'succeeded', provider: tryOn.provider, model: tryOn.model, providerCostUsd: tryOn.providerCostUsd, tokensCharged: chargedTokenCost(req.user), durationMs: Date.now() - analyticsStartedAt });
     res.status(201).json({ tryOn: tryOn.toClient(), user: req.user.toClient(), reused: false });
   } catch (error) {
     if (error.code === 11000) {
       const existing = await ExternalTryOn.findOne({ user: req.user._id, sourceUrl: product.sourceUrl });
       if (existing) {
+        const duplicateRefund = reserved ? chargedTokenCost(req.user) : 0;
         if (reserved) {
           req.user = await refundToken(req.user, timer);
           reserved = false;
         }
         timer.end({ reused: true, duplicate: true });
+        await recordGenerationMetric({ user: req.user._id, type: 'external_image', status: 'reused', provider: existing.provider, model: existing.model, tokensCharged: duplicateRefund, tokensRefunded: duplicateRefund, durationMs: Date.now() - analyticsStartedAt });
         return res.json({ tryOn: existing.toClient(), user: req.user.toClient(), reused: true });
       }
     }
+    const tokensRefunded = reserved ? chargedTokenCost(req.user) : 0;
     if (reserved) req.user = await refundToken(req.user, timer);
     const message = readableError(error, 'Could not generate external AI try-on');
     timer.end({ error: message });
+    await recordGenerationMetric({ user: req.user._id, type: 'external_image', status: 'failed', durationMs: Date.now() - analyticsStartedAt, tokensCharged: tokensRefunded, tokensRefunded, error: message });
     res.status(400).json({ message });
   }
 });
 
 router.post('/:productId/video', requireUser, async (req, res) => {
+  const analyticsStartedAt = Date.now();
   const forceGenerate = Boolean(req.body?.force || req.body?.refresh);
   const timer = createTimer('video', {
     userId: req.user._id.toString(),
@@ -2018,7 +2062,7 @@ router.post('/:productId/video', requireUser, async (req, res) => {
 
   try {
     const [product, existing] = await Promise.all([
-      Product.findOne({ _id: req.params.productId, isActive: true }),
+      Product.findOne({ _id: req.params.productId, isActive: true, $and: [availableStatusClause()] }),
       TryOn.findOne({ user: req.user._id, product: req.params.productId })
     ]);
     timer.mark('video prerequisites loaded', {
@@ -2029,10 +2073,12 @@ router.post('/:productId/video', requireUser, async (req, res) => {
     });
     if (!product) {
       timer.end({ error: 'product not found' });
+      await recordGenerationMetric({ user: req.user._id, type: 'product_video', status: 'rejected', durationMs: Date.now() - analyticsStartedAt, error: 'product not found' });
       return res.status(404).json({ message: 'Product not found' });
     }
     if (!existing?.image?.path) {
       timer.end({ error: 'missing try-on image' });
+      await recordGenerationMetric({ user: req.user._id, product: product._id, type: 'product_video', status: 'rejected', durationMs: Date.now() - analyticsStartedAt, error: 'missing try-on image' });
       return res.status(400).json({ message: 'Generate the AI clothing try-on image before creating a video.' });
     }
     if ((existing.video?.path || existing.video?.url || existing.video?.providerOutputUrl) && !forceGenerate) {
@@ -2045,6 +2091,7 @@ router.post('/:productId/video', requireUser, async (req, res) => {
         videoStorageStatus: existing.video?.storageStatus || ''
       });
       timer.end({ reused: true });
+      await recordGenerationMetric({ user: req.user._id, product: product._id, type: 'product_video', status: 'reused', provider: existing.video?.provider, model: existing.video?.model, durationMs: Date.now() - analyticsStartedAt });
       return res.json({ tryOn: existing.toClient(), user: req.user.toClient(), reused: true });
     }
     logPrunaVideo('generating video', {
@@ -2063,6 +2110,7 @@ router.post('/:productId/video', requireUser, async (req, res) => {
     const chargedUser = await reserveToken(req.user, timer, cost);
     if (!chargedUser) {
       timer.end({ error: 'insufficient tokens' });
+      await recordGenerationMetric({ user: req.user._id, product: product._id, type: 'product_video', status: 'rejected', durationMs: Date.now() - analyticsStartedAt, error: 'insufficient tokens' });
       return res.status(402).json({ message: 'Not enough tokens for video try-on' });
     }
     reserved = true;
@@ -2137,11 +2185,14 @@ router.post('/:productId/video', requireUser, async (req, res) => {
       timer.mark('video background save queued', { filename });
     }
     timer.end({ reused: false, tokensRemaining: req.user.tokens, path: video.path || '', proxyUrl: video.url || '' });
+    await recordGenerationMetric({ user: req.user._id, product: product._id, type: 'product_video', status: 'succeeded', provider: generated.provider, model: generated.model, providerCostUsd: generated.providerCostUsd, tokensCharged: chargedVideoTokenCost(req.user), durationMs: Date.now() - analyticsStartedAt });
     res.status(201).json({ tryOn: updated.toClient(), user: req.user.toClient(), reused: false });
   } catch (error) {
+    const tokensRefunded = reserved ? chargedVideoTokenCost(req.user) : 0;
     if (reserved) req.user = await refundToken(req.user, timer, cost);
     const message = readableVideoError(error, 'Could not generate video try-on');
     timer.end({ error: message });
+    await recordGenerationMetric({ user: req.user._id, product: req.params.productId, type: 'product_video', status: 'failed', durationMs: Date.now() - analyticsStartedAt, tokensCharged: tokensRefunded, tokensRefunded, error: message });
     res.status(400).json({ message });
   }
 });

@@ -3,12 +3,18 @@ import mongoose from 'mongoose';
 import Product, { productToClient } from '../models/Product.js';
 import UserEvent from '../models/UserEvent.js';
 import UserPreference from '../models/UserPreference.js';
+import { loadAdminAnalytics } from '../services/adminAnalytics.js';
+import { analyticsPeriodFromQuery } from '../utils/analyticsPeriod.js';
+import { availableStatusClause } from '../utils/productAvailability.js';
 import { requireUser } from './auth.js';
 import { createHybridCache } from '../utils/cache.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
-import { requireAdmin } from '../utils/adminAccess.js';
+import { requireAdmin, requireAdminSection } from '../utils/adminAccess.js';
+import { ADMIN_SECTIONS } from '../utils/adminPermissions.js';
+import { normalizeSessionPath, touchUserSession } from '../utils/userSessions.js';
 
 const router = express.Router();
+const requireUserOperationsAdmin = requireAdminSection(ADMIN_SECTIONS.USER_OPERATIONS);
 const recommendationCacheTtlMs = Number(process.env.RECOMMENDATION_READ_CACHE_TTL_MS || 5 * 60 * 1000);
 const productPoolCache = createHybridCache('recommendations:product-pool', { ttlMs: recommendationCacheTtlMs, maxItems: 20 });
 const similarProductsCache = createHybridCache('recommendations:similar', { ttlMs: recommendationCacheTtlMs, maxItems: 300 });
@@ -31,6 +37,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const RECENT_EVENT_WINDOW_DAYS = 90;
 const RECENT_EVENT_HALF_LIFE_DAYS = 14;
 const RECOMMENDATION_ALGORITHM_VERSION = 'hybrid-v2';
+const SIMILAR_ALGORITHM_VERSION = 'similar-v1';
 const DIVERSITY_CATEGORY_PENALTY = 0.9;
 const DIVERSITY_BRAND_PENALTY = 0.55;
 const recommendationCandidatePoolSize = Math.min(1000, Math.max(100, Math.floor(Number(process.env.RECOMMENDATION_CANDIDATE_POOL_SIZE) || 400)));
@@ -47,8 +54,11 @@ const EVENT_WEIGHTS = {
   search: 1,
   filter: 1.25,
   wishlist: 4,
+  wishlist_remove: 0,
   product_view: 1.5,
   product_click: 2.5,
+  recommendation_impression: 0,
+  recommendation_click: 2.5,
   style_bot_query: 2,
   custom_tryon: 2,
   try_on: 6,
@@ -57,7 +67,10 @@ const EVENT_WEIGHTS = {
 
 function catalogFilter(extra = {}) {
   const botAmazonRecord = { badge: 'Amazon', $or: [{ sourceUrl: /amazon\.[a-z.]+\/dp\//i }, { affiliateLink: /amazon\.[a-z.]+\/dp\//i }] };
-  return { isActive: true, $nor: [botAmazonRecord], ...extra };
+  const extraAnd = Array.isArray(extra.$and) ? extra.$and : [];
+  const filter = { ...extra };
+  delete filter.$and;
+  return { ...filter, isActive: true, $nor: [botAmazonRecord], $and: [availableStatusClause(), ...extraAnd] };
 }
 
 function normalizeKey(value = '') {
@@ -107,7 +120,48 @@ function genderSignalValue(map, gender) {
 }
 
 function eventWeight(type) {
-  return EVENT_WEIGHTS[type] || 1;
+  return EVENT_WEIGHTS[type] ?? 1;
+}
+
+const EVENT_METADATA_KEYS = new Set([
+  'brand',
+  'algorithmVersion',
+  'category',
+  'durationMs',
+  'gender',
+  'generationType',
+  'generatedForVideo',
+  'listId',
+  'model',
+  'newArrival',
+  'personalized',
+  'provider',
+  'rank',
+  'regenerated',
+  'recommendationSource',
+  'resultCount',
+  'sort',
+  'status',
+  'tag',
+  'tokensCharged',
+  'tokensRefunded',
+  'tryOnModel',
+  'video'
+]);
+
+function safeEventMetadata(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).flatMap(([key, raw]) => {
+    if (!EVENT_METADATA_KEYS.has(key)) return [];
+    if (typeof raw === 'boolean') return [[key, raw]];
+    if (typeof raw === 'number' && Number.isFinite(raw)) return [[key, raw]];
+    if (typeof raw === 'string') return [[key, raw.trim().slice(0, 100)]];
+    return [];
+  }));
+}
+
+function safeEventSource(value = '') {
+  return String(value || '').trim().replace(/[^a-z0-9_-]+/gi, '_').slice(0, 80);
 }
 
 function productPreferenceIncrements(product, weight) {
@@ -141,6 +195,7 @@ function queryPreferenceIncrements(query, weight) {
 
 async function updatePreference({ userId, type, product, query, metadata }) {
   const weight = eventWeight(type);
+  if (weight <= 0) return null;
   const preferenceSource = product || metadata?.product || metadata;
   const increments = {
     ...queryPreferenceIncrements(query, weight),
@@ -192,6 +247,7 @@ function buildRecentProfile(events = [], now = new Date()) {
     if (!Number.isFinite(createdAtMs) || ageDays > RECENT_EVENT_WINDOW_DAYS) continue;
 
     const weight = eventWeight(event.type) * Math.pow(0.5, ageDays / RECENT_EVENT_HALF_LIFE_DAYS);
+    if (weight <= 0) continue;
     const source = event.product || event.metadata?.product || event.metadata || {};
     let contributed = false;
     contributed = addProfileValue(profile.categories, source.category, weight) || contributed;
@@ -385,23 +441,32 @@ function similarScore(base, product) {
 router.post('/events', requireUser, recommendationEventLimiter, async (req, res) => {
   try {
     const type = String(req.body?.type || '').trim();
-    if (!EVENT_WEIGHTS[type]) return res.json({ ok: false, ignored: true });
+    if (!Object.hasOwn(EVENT_WEIGHTS, type)) return res.json({ ok: false, ignored: true });
 
     const productId = String(req.body?.productId || '').trim();
-    const query = String(req.body?.query || '').trim();
+    const query = String(req.body?.query || '').trim().slice(0, 240);
+    const path = normalizeSessionPath(req.body?.path);
+    const source = safeEventSource(req.body?.source);
+    const metadata = safeEventMetadata(req.body?.metadata);
     const product = mongoose.Types.ObjectId.isValid(productId)
-      ? await Product.findOne({ _id: productId, isActive: true }).lean()
+      ? await Product.findOne(catalogFilter({ _id: productId })).lean()
       : null;
 
-    await UserEvent.create({
-      user: req.user._id,
-      type,
-      product: product?._id,
-      query,
-      weight: eventWeight(type),
-      metadata: req.body?.metadata || {}
-    });
-    await updatePreference({ userId: req.user._id, type, product, query, metadata: req.body?.metadata || {} });
+    await Promise.all([
+      UserEvent.create({
+        user: req.user._id,
+        session: req.userSession?._id,
+        type,
+        product: product?._id,
+        query,
+        path,
+        source,
+        weight: eventWeight(type),
+        metadata
+      }),
+      touchUserSession({ userId: req.user._id, sessionId: req.sessionId, path, eventType: type }),
+      updatePreference({ userId: req.user._id, type, product, query, metadata })
+    ]);
     res.status(201).json({ ok: true });
   } catch (error) {
     console.warn('[recommendations:events] ignored event', error.message);
@@ -409,76 +474,47 @@ router.post('/events', requireUser, recommendationEventLimiter, async (req, res)
   }
 });
 
-router.get('/admin/stats', requireAdmin, async (_req, res) => {
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const [totalEvents, activeUsers, eventCounts, topProducts, preferences, recentEvents] = await Promise.all([
-    UserEvent.countDocuments(),
-    UserEvent.distinct('user', { createdAt: { $gte: since } }),
-    UserEvent.aggregate([
-      { $group: { _id: '$type', count: { $sum: 1 }, weight: { $sum: '$weight' } } },
-      { $sort: { count: -1 } }
-    ]),
-    UserEvent.aggregate([
-      { $match: { product: { $exists: true, $ne: null } } },
-      { $group: { _id: '$product', count: { $sum: 1 }, weight: { $sum: '$weight' } } },
-      { $sort: { weight: -1, count: -1 } },
-      { $limit: 8 },
-      { $lookup: { from: 'products', localField: '_id', foreignField: '_id', as: 'product' } },
-      { $unwind: '$product' },
-      { $project: { count: 1, weight: 1, name: '$product.name', brand: '$product.brand', category: '$product.category' } }
-    ]),
-    UserPreference.find({}).limit(500).lean(),
-    UserEvent.find({}).sort({ createdAt: -1 }).limit(12).populate('product', 'name brand category').lean()
-  ]);
-
-  const rollup = (bucket) => {
-    const totals = new Map();
-    preferences.forEach((preference) => {
-      const entries = preference[bucket] instanceof Map ? preference[bucket].entries() : Object.entries(preference[bucket] || {});
-      for (const [key, value] of entries) totals.set(key, (totals.get(key) || 0) + Number(value || 0));
+router.post('/events/batch', requireUser, recommendationEventLimiter, async (req, res) => {
+  try {
+    const inputs = Array.isArray(req.body?.events) ? req.body.events.slice(0, 24) : [];
+    const impressions = inputs.filter((item) => item?.type === 'recommendation_impression');
+    const productIds = [...new Set(impressions.map((item) => String(item.productId || '')).filter((id) => mongoose.Types.ObjectId.isValid(id)))];
+    const products = productIds.length ? await Product.find(catalogFilter({ _id: { $in: productIds } })).select('_id').lean() : [];
+    const allowedProducts = new Set(products.map((product) => String(product._id)));
+    const rows = impressions.flatMap((item) => {
+      const productId = String(item.productId || '');
+      if (!allowedProducts.has(productId)) return [];
+      return [{
+        user: req.user._id,
+        session: req.userSession?._id,
+        type: 'recommendation_impression',
+        product: productId,
+        path: normalizeSessionPath(item.path || req.body?.path),
+        source: safeEventSource(item.source),
+        weight: 0,
+        metadata: safeEventMetadata(item.metadata)
+      }];
     });
-    return [...totals.entries()]
-      .map(([key, weight]) => ({ key, label: key.replace(/_/g, ' '), weight: Math.round(weight * 10) / 10 }))
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, 10);
-  };
+    if (rows.length) {
+      await Promise.all([
+        UserEvent.insertMany(rows),
+        touchUserSession({ userId: req.user._id, sessionId: req.sessionId, path: rows[0].path, eventType: 'recommendation_impression' })
+      ]);
+    }
+    res.status(201).json({ ok: true, accepted: rows.length });
+  } catch (error) {
+    console.warn('[recommendations:events-batch] ignored batch', error.message);
+    res.json({ ok: false, ignored: true, accepted: 0 });
+  }
+});
 
-  const priceTotal = preferences.reduce((sum, preference) => sum + Number(preference.priceTotal || 0), 0);
-  const priceCount = preferences.reduce((sum, preference) => sum + Number(preference.priceCount || 0), 0);
-
-  res.json({
-    totals: {
-      events: totalEvents,
-      activeUsers30d: activeUsers.length,
-      preferenceProfiles: preferences.length,
-      averagePreferredPrice: priceCount ? Math.round(priceTotal / priceCount) : 0
-    },
-    eventCounts: eventCounts.map((item) => ({ type: item._id, count: item.count, weight: Math.round(item.weight * 10) / 10 })),
-    topProducts: topProducts.map((item) => ({
-      id: item._id.toString(),
-      name: item.name,
-      brand: item.brand,
-      category: item.category,
-      count: item.count,
-      weight: Math.round(item.weight * 10) / 10
-    })),
-    topCategories: rollup('categories'),
-    topBrands: rollup('brands'),
-    topTags: rollup('tags'),
-    topGenders: rollup('genders'),
-    recentEvents: recentEvents.map((event) => ({
-      id: event._id.toString(),
-      type: event.type,
-      query: event.query,
-      weight: event.weight,
-      product: event.product ? {
-        name: event.product.name,
-        brand: event.product.brand,
-        category: event.product.category
-      } : null,
-      createdAt: event.createdAt
-    }))
-  });
+router.get('/admin/stats', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
+  try {
+    const period = analyticsPeriodFromQuery(req.query);
+    res.json(await loadAdminAnalytics(period));
+  } catch (error) {
+    res.status(400).json({ message: error.message || 'Could not load analytics' });
+  }
 });
 
 router.get('/for-you', requireUser, recommendationReadLimiter, async (req, res) => {
@@ -508,16 +544,23 @@ router.get('/for-you', requireUser, recommendationReadLimiter, async (req, res) 
       });
       return { product, ...result };
     });
+    const personalized = Boolean(preference || recentProfile.signalCount || ['male', 'female'].includes(normalizeGender(req.user.genderPreference)));
     const ranked = rerankDiverse(scoredProducts, limit)
-      .map(({ product, score, reasons }) => ({
+      .map(({ product, score, reasons }, index) => ({
         ...productToClient(product),
         recommendationScore: Math.round(score * 100) / 100,
-        recommendationReasons: reasons
+        recommendationReasons: reasons,
+        recommendationContext: {
+          source: 'for_you',
+          algorithmVersion: RECOMMENDATION_ALGORITHM_VERSION,
+          rank: index + 1,
+          personalized
+        }
       }));
 
     res.json({
       products: ranked,
-      personalized: Boolean(preference || recentProfile.signalCount || ['male', 'female'].includes(normalizeGender(req.user.genderPreference))),
+      personalized,
       algorithmVersion: RECOMMENDATION_ALGORITHM_VERSION,
       signalCount: recentProfile.signalCount
     });
@@ -533,7 +576,7 @@ router.get('/similar/:productId', recommendationReadLimiter, async (req, res) =>
   const cacheKey = `${req.params.productId}:${limit}`;
   try {
     const payload = await similarProductsCache.remember(cacheKey, async () => {
-      const base = await Product.findOne({ _id: req.params.productId, isActive: true }).lean();
+      const base = await Product.findOne(catalogFilter({ _id: req.params.productId })).lean();
       if (!base) {
         const error = new Error('Product not found');
         error.statusCode = 404;
@@ -544,8 +587,17 @@ router.get('/similar/:productId', recommendationReadLimiter, async (req, res) =>
         .map((product) => ({ product, score: similarScore(base, product) }))
         .sort((a, b) => b.score - a.score)
         .slice(0, limit)
-        .map(({ product, score }) => ({ ...productToClient(product), recommendationScore: Math.round(score * 100) / 100 }));
-      return { products: ranked };
+        .map(({ product, score }, index) => ({
+          ...productToClient(product),
+          recommendationScore: Math.round(score * 100) / 100,
+          recommendationContext: {
+            source: 'similar',
+            algorithmVersion: SIMILAR_ALGORITHM_VERSION,
+            rank: index + 1,
+            personalized: false
+          }
+        }));
+      return { products: ranked, algorithmVersion: SIMILAR_ALGORITHM_VERSION };
     });
     res.json(payload);
   } catch (error) {

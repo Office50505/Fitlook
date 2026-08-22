@@ -17,6 +17,13 @@ const FEATURE_ENV_GROUPS = [
   }
 ];
 
+const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'off', 'disabled']);
+
+export function phonePeEnabled(env = process.env) {
+  const value = String(env.PHONEPE_ENABLED || '').trim().toLowerCase();
+  return value ? !FALSE_ENV_VALUES.has(value) : true;
+}
+
 export function validateServerEnv(env = process.env) {
   const errors = [];
   const missing = REQUIRED_SERVER_ENV.filter((key) => !String(env[key] || '').trim());
@@ -33,22 +40,19 @@ export function validateServerEnv(env = process.env) {
     }
   };
 
-  if (production) {
-    if (String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase() !== 'webhook') {
-      errors.push('Production requires OTP_DELIVERY_PROVIDER=webhook.');
-    }
-    ['OTP_DELIVERY_WEBHOOK_URL'].forEach((key) => {
-      if (!String(env[key] || '').trim()) errors.push(`Missing required production OTP variable: ${key}`);
-    });
+  const otpProvider = String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase();
+  const paymentsEnabled = phonePeEnabled(env);
+  if (production && !['webhook', 'disabled'].includes(otpProvider)) {
+    errors.push('Production requires OTP_DELIVERY_PROVIDER=webhook or disabled.');
   }
 
   const warnings = FEATURE_ENV_GROUPS.flatMap((group) => {
+    if (group.name === 'PhonePe payments' && !paymentsEnabled) return [];
     const present = group.keys.filter((key) => String(env[key] || '').trim());
     if (!present.length || present.length === group.keys.length) return [];
     const missingFeatureKeys = group.keys.filter((key) => !String(env[key] || '').trim());
     return [`${group.name} is partially configured. Missing: ${missingFeatureKeys.join(', ')}`];
   });
-  const otpProvider = String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase();
   if (otpProvider && !['disabled', 'mock', 'webhook'].includes(otpProvider)) {
     warnings.push(`OTP delivery provider "${otpProvider}" is unsupported.`);
   }
@@ -79,11 +83,11 @@ export function validateServerEnv(env = process.env) {
     warnings.push('Mock OTP delivery is configured but OTP_MOCK_STORE_PATH is missing.');
   }
 
-  assertUrl('PHONEPE_REDIRECT_URL');
+  if (paymentsEnabled) assertUrl('PHONEPE_REDIRECT_URL');
   assertUrl('CLIENT_ORIGIN');
   const phonePeKeys = FEATURE_ENV_GROUPS.find((group) => group.name === 'PhonePe payments').keys;
   const presentPhonePeKeys = phonePeKeys.filter((key) => String(env[key] || '').trim());
-  if (production && presentPhonePeKeys.length && presentPhonePeKeys.length !== phonePeKeys.length) {
+  if (production && paymentsEnabled && presentPhonePeKeys.length && presentPhonePeKeys.length !== phonePeKeys.length) {
     const missingPhonePeKeys = phonePeKeys.filter((key) => !String(env[key] || '').trim());
     errors.push(`PhonePe payments are partially configured. Missing: ${missingPhonePeKeys.join(', ')}`);
   }
@@ -94,6 +98,7 @@ export function validateServerEnv(env = process.env) {
 
 export function configurationReadiness(env = process.env) {
   const otpProvider = String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase();
+  const paymentsEnabled = phonePeEnabled(env);
   const phonePeKeys = ['PHONEPE_CLIENT_ID', 'PHONEPE_CLIENT_SECRET', 'PHONEPE_CLIENT_VERSION', 'PHONEPE_CALLBACK_USERNAME', 'PHONEPE_CALLBACK_PASSWORD'];
   const phonePeConfigured = phonePeKeys.every((key) => Boolean(String(env[key] || '').trim()));
   const otpConfigured = otpProvider === 'webhook'
@@ -103,8 +108,8 @@ export function configurationReadiness(env = process.env) {
       : false;
 
   return {
-    otpProvider: otpConfigured ? 'configured' : 'not_configured',
+    otpProvider: otpProvider === 'disabled' ? 'disabled' : otpConfigured ? 'configured' : 'not_configured',
     otpProviderType: otpProvider || 'disabled',
-    phonePe: phonePeConfigured ? 'configured' : 'not_configured'
+    phonePe: !paymentsEnabled ? 'disabled' : phonePeConfigured ? 'configured' : 'not_configured'
   };
 }

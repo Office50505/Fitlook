@@ -1,31 +1,41 @@
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import AdminAuditLog from '../server/models/AdminAuditLog.js';
+import AdminUser from '../server/models/AdminUser.js';
 import ClosetItem from '../server/models/ClosetItem.js';
 import ClosetOutfit from '../server/models/ClosetOutfit.js';
 import CustomTryOn from '../server/models/CustomTryOn.js';
 import ExternalTryOn from '../server/models/ExternalTryOn.js';
+import GenerationMetric from '../server/models/GenerationMetric.js';
+import OtpDeliveryMetric from '../server/models/OtpDeliveryMetric.js';
 import Product from '../server/models/Product.js';
 import TokenOrder from '../server/models/TokenOrder.js';
 import TryOn from '../server/models/TryOn.js';
 import User from '../server/models/User.js';
 import UserEvent from '../server/models/UserEvent.js';
 import UserPreference from '../server/models/UserPreference.js';
+import UserSession from '../server/models/UserSession.js';
+import SystemIncident from '../server/models/SystemIncident.js';
 
-dotenv.config();
+dotenv.config({ path: process.env.ENV_FILE || '.env' });
 
 const models = [
   AdminAuditLog,
+  AdminUser,
   ClosetItem,
   ClosetOutfit,
   CustomTryOn,
   ExternalTryOn,
+  GenerationMetric,
+  OtpDeliveryMetric,
   Product,
   TokenOrder,
   TryOn,
   User,
   UserEvent,
-  UserPreference
+  UserPreference,
+  UserSession,
+  SystemIncident
 ];
 
 async function main() {

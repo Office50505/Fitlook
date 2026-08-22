@@ -4,27 +4,42 @@ import heicConvert from 'heic-convert';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import multer from 'multer';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import AdminAuditLog from '../models/AdminAuditLog.js';
+import AdminUser from '../models/AdminUser.js';
 import ClosetItem from '../models/ClosetItem.js';
 import ClosetOutfit from '../models/ClosetOutfit.js';
 import CustomTryOn from '../models/CustomTryOn.js';
 import ExternalTryOn from '../models/ExternalTryOn.js';
+import GenerationMetric from '../models/GenerationMetric.js';
 import Product, { productToClient } from '../models/Product.js';
 import TokenOrder from '../models/TokenOrder.js';
 import TryOn from '../models/TryOn.js';
 import User from '../models/User.js';
 import UserEvent from '../models/UserEvent.js';
 import UserPreference from '../models/UserPreference.js';
+import UserSession from '../models/UserSession.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
-import { requireAdmin, signAdminSession } from '../utils/adminAccess.js';
+import { requireAdmin, requireAdminSection, signAdminSession } from '../utils/adminAccess.js';
+import { adminPasswordError, normalizeAdminName } from '../utils/adminCredentials.js';
+import { ADMIN_SECTIONS, adminToClient, normalizeAdminEmail } from '../utils/adminPermissions.js';
+import { buildAdminUserSearchFilter, buildAdminUserTokenFilter } from '../utils/adminUserSearch.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
 import { enqueueJob, safeJobId } from '../utils/jobQueue.js';
 import { normalizeIndianMobile } from '../utils/phone.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
-import { deleteStoredFile, readStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
+import { deleteStoredFile, deleteStoredPrefix, publicUrlForStoredFile, readStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
+import {
+  accountAccessError,
+  accountStatusFor,
+  anonymizedIdentity,
+  tokenBalanceAfter
+} from '../utils/accountState.js';
+import { availableStatusClause } from '../utils/productAvailability.js';
+import { adminMediaUsage } from '../services/adminMediaUsage.js';
 import {
   cancelOtpChallenge,
   createOtpChallenge,
@@ -41,6 +56,16 @@ import {
   safeFetchBuffer
 } from '../utils/security.js';
 import { createTempSessionStore } from '../utils/tempSessions.js';
+import {
+  createUserSession,
+  endUserSession,
+  findActiveUserSession,
+  normalizeSessionPath,
+  revokeUserSessions,
+  sessionDisplayState,
+  sessionToAdmin,
+  touchUserSession
+} from '../utils/userSessions.js';
 
 const router = express.Router();
 const avifExtensions = new Set(['.avif']);
@@ -53,6 +78,8 @@ const signupOtpSessions = createTempSessionStore('otp:signup', { ttlMs: signupOt
 const loginOtpSessions = createTempSessionStore('otp:login', { ttlMs: signupOtpTtlMs });
 const signupOtpCurrentSessions = createTempSessionStore('otp:signup-current', { ttlMs: signupOtpTtlMs });
 const loginOtpCurrentSessions = createTempSessionStore('otp:login-current', { ttlMs: signupOtpTtlMs });
+const requireUserOperationsAdmin = requireAdminSection(ADMIN_SECTIONS.USER_OPERATIONS);
+const requireSystemAdmin = requireAdminSection(ADMIN_SECTIONS.SYSTEM_MANAGEMENT);
 const authIpLimiter = createRateLimiter({
   name: 'auth:ip',
   windowMs: 15 * 60 * 1000,
@@ -95,13 +122,6 @@ const loginAttemptLimiter = createRateLimiter({
   keyGenerator: rateLimitKeys.bodyIdentifier,
   message: 'Too many login attempts. Please wait before trying again.'
 });
-const adminLoginLimiter = createRateLimiter({
-  name: 'auth:admin-login',
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  keyGenerator: rateLimitKeys.bodyIdentifier,
-  message: 'Too many admin login attempts. Please wait before trying again.'
-});
 const usernameSuggestionLimiter = createRateLimiter({
   name: 'auth:username-suggestions',
   windowMs: 10 * 60 * 1000,
@@ -136,6 +156,13 @@ const adminWriteLimiter = createRateLimiter({
   max: 30,
   keyGenerator: rateLimitKeys.userOrIp,
   message: 'Too many admin changes. Please pause briefly and try again.'
+});
+const sessionHeartbeatLimiter = createRateLimiter({
+  name: 'auth:session-heartbeat',
+  windowMs: 5 * 60 * 1000,
+  max: 30,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Session activity is temporarily limited.'
 });
 
 function profileImageModel() {
@@ -519,8 +546,17 @@ async function generateFullBodyProfileInBackground(userId, sourceBodyPhoto, { en
   });
 }
 
-function sign(user) {
-  return jwt.sign({ sub: user._id.toString() }, process.env.JWT_SECRET, { expiresIn: '14d' });
+function sign(user, sessionId) {
+  return jwt.sign({ sub: user._id.toString(), ...(sessionId ? { sid: sessionId } : {}) }, process.env.JWT_SECRET, { expiresIn: '14d' });
+}
+
+async function authenticatedUserPayload(user, req, authMethod) {
+  const sessionId = await createUserSession({
+    userId: user._id,
+    authMethod,
+    userAgent: req.headers?.['user-agent'] || ''
+  });
+  return { token: sign(user, sessionId), user: user.toClient() };
 }
 
 function normalizeUsername(value = '') {
@@ -560,9 +596,17 @@ async function requireUser(req, res, next) {
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (!token) return res.status(401).json({ message: 'Authentication required' });
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.sub);
+    const [user, session] = await Promise.all([
+      User.findById(decoded.sub),
+      decoded.sid ? findActiveUserSession({ userId: decoded.sub, sessionId: decoded.sid }) : null
+    ]);
     if (!user) return res.status(401).json({ message: 'User not found' });
+    if (decoded.sid && !session) return res.status(401).json({ message: 'Session has ended. Please sign in again.' });
+    const accessError = accountAccessError(user);
+    if (accessError) return res.status(accessError.statusCode).json({ message: accessError.message });
     req.user = user;
+    req.userSession = session;
+    req.sessionId = decoded.sid || '';
     next();
   } catch {
     res.status(401).json({ message: 'Invalid or expired session' });
@@ -690,7 +734,7 @@ router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) =
     await generateFullBodyProfileInBackground(user._id, bodyPhoto, { enabled: generateFullBody });
     await signupOtpSessions.remove(otpSession);
     await removeCurrentSession({ currentSessions: signupOtpCurrentSessions, purpose: 'signup', phone });
-    res.status(201).json({ token: sign(user), user: user.toClient() });
+    res.status(201).json(await authenticatedUserPayload(user, req, 'signup'));
   } catch (error) {
     if (isBodyPhotoPreparationError(error)) return res.status(400).json({ message: error.message });
     if (error.code === 11000 && error.keyPattern?.username) return res.status(409).json({ message: 'This username is already taken' });
@@ -711,7 +755,7 @@ router.get('/username-suggestions', usernameSuggestionLimiter, async (req, res) 
   res.json({ suggestions });
 });
 
-router.post('/login', authIpLimiter, loginAttemptLimiter, async (req, res) => {
+router.post('/login', authIpLimiter, loginAttemptLimiter, asyncRoute(async (req, res) => {
   const identifier = String(req.body.email || req.body.username || '').trim().toLowerCase();
   const { password } = req.body;
   if (!identifier || !password) return res.status(400).json({ message: 'Email or username and password are required' });
@@ -724,14 +768,18 @@ router.post('/login', authIpLimiter, loginAttemptLimiter, async (req, res) => {
   if (!user) return res.status(401).json({ message: 'Invalid email/username or password' });
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ message: 'Invalid email/username or password' });
-  res.json({ token: sign(user), user: user.toClient() });
-});
+  const accessError = accountAccessError(user);
+  if (accessError) return res.status(accessError.statusCode).json({ message: accessError.message });
+  res.json(await authenticatedUserPayload(user, req, 'password'));
+}));
 
 router.post('/login/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, otpRequestPhoneHourlyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   if (!phone) return res.status(400).json({ message: 'Enter a valid mobile number.' });
   const user = await User.findOne({ phone });
   if (!user) return res.status(404).json({ message: 'No Lookmefy account found for this phone number' });
+  const accessError = accountAccessError(user);
+  if (accessError) return res.status(accessError.statusCode).json({ message: accessError.message });
 
   const { otpSession, otp, expiresAt } = await createOtpChallenge({
     sessions: loginOtpSessions,
@@ -772,7 +820,26 @@ router.post('/login/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(asy
   await loginOtpSessions.remove(otpSession);
   await removeCurrentSession({ currentSessions: loginOtpCurrentSessions, purpose: 'login', phone });
   if (!user) return res.status(401).json({ message: 'Account not found. Please sign up again.' });
-  res.json({ token: sign(user), user: user.toClient() });
+  const accessError = accountAccessError(user);
+  if (accessError) return res.status(accessError.statusCode).json({ message: accessError.message });
+  res.json(await authenticatedUserPayload(user, req, 'otp'));
+}));
+
+router.post('/session/heartbeat', requireUser, sessionHeartbeatLimiter, asyncRoute(async (req, res) => {
+  if (!req.sessionId) return res.json({ tracked: false, legacySession: true });
+  const session = await touchUserSession({
+    userId: req.user._id,
+    sessionId: req.sessionId,
+    path: normalizeSessionPath(req.body?.path)
+  });
+  res.json({ tracked: Boolean(session), lastSeenAt: session?.lastSeenAt || null });
+}));
+
+router.post('/logout', requireUser, asyncRoute(async (req, res) => {
+  const session = req.sessionId
+    ? await endUserSession({ userId: req.user._id, sessionId: req.sessionId, path: req.body?.path })
+    : null;
+  res.json({ loggedOut: true, tracked: Boolean(session), logoutAt: session?.logoutAt || null });
 }));
 
 router.post('/login/cancel-otp', authIpLimiter, asyncRoute(async (req, res) => {
@@ -788,82 +855,554 @@ router.post('/login/cancel-otp', authIpLimiter, asyncRoute(async (req, res) => {
   res.json({ cancelled: true });
 }));
 
-router.post('/admin-login', authIpLimiter, adminLoginLimiter, async (req, res) => {
-  const adminKey = String(req.body?.adminKey || '');
-  if (!adminKey) return res.status(400).json({ message: 'Admin key is required' });
-  if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ message: 'Invalid admin key' });
-  const token = await signAdminSession();
-  res.json({ token, admin: { method: 'admin-key' } });
+router.post('/admin-request-access', asyncRoute(async (req, res) => {
+  const email = normalizeAdminEmail(req.body?.email);
+  const password = String(req.body?.password || '');
+  const name = normalizeAdminName(req.body?.name, email);
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ message: 'A valid admin email is required' });
+  const passwordError = adminPasswordError(password);
+  if (passwordError) return res.status(400).json({ message: passwordError });
+
+  const existing = await AdminUser.findOne({ email }).lean();
+  if (existing) {
+    const message = existing.status === 'pending'
+      ? 'Your access request is already waiting for Master approval'
+      : 'An administrator account already exists for this email. Sign in instead.';
+    return res.status(409).json({ message });
+  }
+
+  let admin;
+  try {
+    admin = await AdminUser.create({
+      name,
+      email,
+      credentialHash: await bcrypt.hash(password, 12),
+      role: 'developer',
+      sectionAccess: [],
+      status: 'pending'
+    });
+  } catch (error) {
+    if (error?.code === 11000) return res.status(409).json({ message: 'An access request already exists for this email' });
+    throw error;
+  }
+
+  await recordAdminAudit(req, {
+    action: 'admin_access_requested',
+    entityType: 'admin_user',
+    entityId: String(admin._id),
+    label: admin.email,
+    detail: { status: admin.status }
+  });
+  res.status(201).json({
+    admin: adminToClient(admin),
+    message: 'Access request received. You currently have no permissions; a Master must approve your account.'
+  });
+}));
+
+router.post('/admin-login', asyncRoute(async (req, res) => {
+  const email = normalizeAdminEmail(req.body?.email);
+  const password = String(req.body?.password || '');
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ message: 'A valid admin email is required' });
+  if (!password) return res.status(400).json({ message: 'Password is required' });
+
+  const admin = await AdminUser.findOne({ email }).select('+credentialHash');
+  if (!admin) return res.status(401).json({ message: 'Invalid admin email or password' });
+  const validPassword = await bcrypt.compare(password, admin.credentialHash || '');
+  if (!validPassword) return res.status(401).json({ message: 'Invalid admin email or password' });
+  if (admin.status === 'pending') {
+    return res.status(403).json({ message: 'Your account has no permissions yet. A Master must approve your access.' });
+  }
+  if (admin.status !== 'active') return res.status(403).json({ message: 'This admin account is disabled' });
+
+  admin.lastLoginAt = new Date();
+  await admin.save();
+  const token = await signAdminSession(admin);
+  res.json({ token, admin: adminToClient(admin) });
+}));
+
+router.get('/admin-session', requireAdmin, (req, res) => {
+  res.json({ admin: adminToClient(req.admin) });
 });
 
-router.get('/admin/users', requireAdmin, adminReadLimiter, async (req, res) => {
-  const q = String(req.query.q || '').trim();
-  const limit = Math.min(Math.max(Number(req.query.limit) || 80, 1), 150);
-  const filter = q ? {
+const userOwnedModels = [
+  ['closetItems', ClosetItem],
+  ['closetOutfits', ClosetOutfit],
+  ['customTryOns', CustomTryOn],
+  ['externalTryOns', ExternalTryOn],
+  ['generationMetrics', GenerationMetric],
+  ['tryOns', TryOn],
+  ['events', UserEvent],
+  ['preferences', UserPreference],
+  ['sessions', UserSession]
+];
+
+function userAccountFilter(status) {
+  if (status === 'active') return { $or: [{ accountStatus: 'active' }, { accountStatus: { $exists: false } }] };
+  if (['banned', 'deleted'].includes(status)) return { accountStatus: status };
+  return null;
+}
+
+function adminUserPayload(user, lastOrder = null, activity = {}) {
+  const latestSession = activity.latestSession || null;
+  const lastSeenCandidates = [latestSession?.lastSeenAt, activity.latestEventAt]
+    .map((value) => value ? new Date(value) : null)
+    .filter((value) => value && Number.isFinite(value.getTime()));
+  const lastActiveAt = lastSeenCandidates.sort((left, right) => right - left)[0] || null;
+  return {
+    id: String(user._id),
+    name: user.name,
+    email: user.email,
+    phone: user.phone || '',
+    username: user.username,
+    genderPreference: user.genderPreference || 'other',
+    tokens: user.tokens || 0,
+    accountStatus: accountStatusFor(user),
+    bannedAt: user.bannedAt || null,
+    banReason: user.banReason || '',
+    deletedAt: user.deletedAt || null,
+    devMode: Boolean(user.devMode),
+    subscription: {
+      planId: user.subscription?.planId || null,
+      status: user.subscription?.status || 'none',
+      tokensPerMonth: user.subscription?.tokensPerMonth || 0,
+      currentPeriodStart: user.subscription?.currentPeriodStart || null,
+      currentPeriodEnd: user.subscription?.currentPeriodEnd || null
+    },
+    bodyPhotoStatus: user.bodyPhoto?.status || (accountStatusFor(user) === 'deleted' ? 'removed' : 'uploaded'),
+    joinedAt: user.createdAt,
+    lastLoginAt: activity.lastLoginAt || latestSession?.loginAt || null,
+    lastActiveAt,
+    sessionStatus: latestSession ? sessionDisplayState(latestSession) : (activity.latestEventAt ? 'legacy_activity' : 'not_tracked'),
+    totalActiveMs: Number(activity.totalActiveMs || 0),
+    sessionCount: Number(activity.sessionCount || 0),
+    activityCount: Number(activity.activityCount || 0),
+    lastOrder: lastOrder ? {
+      id: String(lastOrder._id),
+      planName: lastOrder.planName,
+      tokens: lastOrder.tokens,
+      amount: lastOrder.amount,
+      currency: lastOrder.currency,
+      status: lastOrder.status,
+      createdAt: lastOrder.createdAt
+    } : null
+  };
+}
+
+function preferenceEntries(preference, bucket, limit = 12) {
+  const value = preference?.[bucket];
+  const entries = value instanceof Map ? [...value.entries()] : Object.entries(value || {});
+  return entries
+    .map(([key, weight]) => ({ key, label: String(key).replace(/_/g, ' '), weight: Math.round(Number(weight || 0) * 10) / 10 }))
+    .filter((item) => item.key && item.weight > 0)
+    .sort((left, right) => right.weight - left.weight)
+    .slice(0, limit);
+}
+
+function activitySummaryFor(userId, sessionByUser, eventByUser) {
+  const key = String(userId);
+  const session = sessionByUser.get(key) || {};
+  const event = eventByUser.get(key) || {};
+  return {
+    latestSession: session.latestSession || null,
+    lastLoginAt: session.lastLoginAt || null,
+    latestEventAt: event.latestEventAt || null,
+    totalActiveMs: session.totalActiveMs || 0,
+    sessionCount: session.sessionCount || 0,
+    activityCount: event.activityCount || 0
+  };
+}
+
+async function removeUserOwnedData(userId) {
+  const results = await Promise.all(userOwnedModels.map(async ([label, model]) => {
+    const result = await model.deleteMany({ user: userId });
+    return [label, result.deletedCount || 0];
+  }));
+  return Object.fromEntries(results);
+}
+
+async function deleteUserMedia(userId, bodyPhoto) {
+  const files = [bodyPhoto, bodyPhoto?.original].filter(Boolean);
+  const results = await Promise.allSettled([
+    ...files.map((file) => deleteStoredFile(file)),
+    deleteStoredPrefix(`users/${userId}`)
+  ]);
+  return results.filter((result) => result.status === 'rejected').map((result) => result.reason?.message || 'Storage cleanup failed');
+}
+
+function storedFieldClause(field) {
+  return {
     $or: [
-      { name: { $regex: q, $options: 'i' } },
-      { email: { $regex: q, $options: 'i' } },
-      { username: { $regex: q, $options: 'i' } }
+      { [`${field}.path`]: { $type: 'string', $ne: '' } },
+      { [`${field}.storage`]: { $in: ['bunny', 'local'] } }
     ]
-  } : {};
+  };
+}
+
+function anyStoredFieldClause(fields) {
+  return { $or: fields.flatMap((field) => storedFieldClause(field).$or) };
+}
+
+function mediaOwner(user) {
+  if (!user) return null;
+  return {
+    id: String(user._id),
+    name: user.name || '',
+    email: user.email || '',
+    accountStatus: accountStatusFor(user)
+  };
+}
+
+function appendAdminMedia(items, file, metadata) {
+  const url = publicUrlForStoredFile(file);
+  if (!url) return;
+  items.push({
+    id: metadata.id,
+    group: metadata.group,
+    kind: metadata.kind,
+    title: metadata.title,
+    url,
+    path: file?.path || '',
+    storage: file?.storage || (file?.path ? (useBunny() ? 'bunny' : 'local') : 'linked'),
+    mimetype: file?.mimetype || '',
+    size: Number(file?.size || 0),
+    owner: metadata.owner || null,
+    related: metadata.related || null,
+    createdAt: metadata.createdAt || null
+  });
+}
+
+async function findStoredMediaRecords(Model, fields, { userId, userField = 'user', limit, populate = [] } = {}) {
+  const clauses = [anyStoredFieldClause(fields)];
+  if (userId) clauses.push({ [userField]: new mongoose.Types.ObjectId(userId) });
+  let query = Model.find(clauses.length === 1 ? clauses[0] : { $and: clauses })
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .limit(limit);
+  populate.forEach((entry) => {
+    query = query.populate(entry);
+  });
+  return query.lean();
+}
+
+async function loadAdminMedia({ type = 'all', userId = '', page = 1, limit = 24 } = {}) {
+  const offset = (page - 1) * limit;
+  const sourceLimit = offset + limit;
+  const include = (group) => type === 'all' || type === group;
+  const tasks = [];
+
+  if (include('profile')) {
+    tasks.push(findStoredMediaRecords(User, ['bodyPhoto', 'bodyPhoto.original'], {
+      userId,
+      userField: '_id',
+      limit: sourceLimit
+    }).then((records) => records.flatMap((user) => {
+      const items = [];
+      const owner = mediaOwner(user);
+      appendAdminMedia(items, user.bodyPhoto, { id: `profile:${user._id}:full`, group: 'profile', kind: 'Full body', title: 'Full-body profile', owner, createdAt: user.bodyPhoto?.generatedAt || user.updatedAt });
+      appendAdminMedia(items, user.bodyPhoto?.original, { id: `profile:${user._id}:original`, group: 'profile', kind: 'Original upload', title: 'Original profile upload', owner, createdAt: user.updatedAt });
+      return items;
+    })));
+  }
+
+  if (include('tryon')) {
+    tasks.push(findStoredMediaRecords(TryOn, ['image', 'transparentImage'], {
+      userId,
+      limit: sourceLimit,
+      populate: [{ path: 'user', select: 'name email accountStatus' }, { path: 'product', select: 'name brand' }]
+    }).then((records) => records.flatMap((record) => {
+      const items = [];
+      const owner = mediaOwner(record.user);
+      const related = record.product ? { id: String(record.product._id), label: record.product.name || record.product.brand || 'Catalog product' } : null;
+      appendAdminMedia(items, record.image, { id: `tryon:${record._id}:image`, group: 'tryon', kind: 'Catalog try-on', title: related?.label || 'Catalog try-on', owner, related, createdAt: record.createdAt });
+      appendAdminMedia(items, record.transparentImage, { id: `tryon:${record._id}:cutout`, group: 'tryon', kind: 'Try-on cutout', title: `${related?.label || 'Catalog try-on'} cutout`, owner, related, createdAt: record.updatedAt });
+      return items;
+    })));
+    tasks.push(findStoredMediaRecords(CustomTryOn, ['image', 'transparentImage'], {
+      userId,
+      limit: sourceLimit,
+      populate: [{ path: 'user', select: 'name email accountStatus' }]
+    }).then((records) => records.flatMap((record) => {
+      const items = [];
+      const owner = mediaOwner(record.user);
+      appendAdminMedia(items, record.image, { id: `custom:${record._id}:image`, group: 'tryon', kind: 'Custom try-on', title: 'Custom garment try-on', owner, createdAt: record.createdAt });
+      appendAdminMedia(items, record.transparentImage, { id: `custom:${record._id}:cutout`, group: 'tryon', kind: 'Try-on cutout', title: 'Custom try-on cutout', owner, createdAt: record.updatedAt });
+      return items;
+    })));
+    tasks.push(findStoredMediaRecords(ExternalTryOn, ['image', 'transparentImage'], {
+      userId,
+      limit: sourceLimit,
+      populate: [{ path: 'user', select: 'name email accountStatus' }]
+    }).then((records) => records.flatMap((record) => {
+      const items = [];
+      const owner = mediaOwner(record.user);
+      const related = { id: String(record._id), label: record.productName || record.brand || 'External product' };
+      appendAdminMedia(items, record.image, { id: `external:${record._id}:image`, group: 'tryon', kind: 'External try-on', title: related.label, owner, related, createdAt: record.createdAt });
+      appendAdminMedia(items, record.transparentImage, { id: `external:${record._id}:cutout`, group: 'tryon', kind: 'Try-on cutout', title: `${related.label} cutout`, owner, related, createdAt: record.updatedAt });
+      return items;
+    })));
+    tasks.push(findStoredMediaRecords(ClosetOutfit, ['image', 'transparentImage'], {
+      userId,
+      limit: sourceLimit,
+      populate: [{ path: 'user', select: 'name email accountStatus' }]
+    }).then((records) => records.flatMap((record) => {
+      const items = [];
+      const owner = mediaOwner(record.user);
+      appendAdminMedia(items, record.image, { id: `outfit:${record._id}:image`, group: 'tryon', kind: 'Closet outfit', title: record.title || 'Generated outfit', owner, createdAt: record.createdAt });
+      appendAdminMedia(items, record.transparentImage, { id: `outfit:${record._id}:cutout`, group: 'tryon', kind: 'Outfit cutout', title: `${record.title || 'Generated outfit'} cutout`, owner, createdAt: record.updatedAt });
+      return items;
+    })));
+  }
+
+  if (include('closet')) {
+    tasks.push(findStoredMediaRecords(CustomTryOn, ['garment'], { userId, limit: sourceLimit, populate: [{ path: 'user', select: 'name email accountStatus' }] }).then((records) => records.map((record) => {
+      const items = [];
+      appendAdminMedia(items, record.garment, { id: `custom:${record._id}:garment`, group: 'closet', kind: 'Custom garment', title: 'Custom garment upload', owner: mediaOwner(record.user), createdAt: record.createdAt });
+      return items[0];
+    }).filter(Boolean)));
+    tasks.push(findStoredMediaRecords(ClosetOutfit, ['garment'], { userId, limit: sourceLimit, populate: [{ path: 'user', select: 'name email accountStatus' }] }).then((records) => records.map((record) => {
+      const items = [];
+      appendAdminMedia(items, record.garment, { id: `outfit:${record._id}:garment`, group: 'closet', kind: 'Outfit garment', title: `${record.title || 'Generated outfit'} garment`, owner: mediaOwner(record.user), createdAt: record.createdAt });
+      return items[0];
+    }).filter(Boolean)));
+    tasks.push(findStoredMediaRecords(ClosetItem, ['image'], { userId, limit: sourceLimit, populate: [{ path: 'user', select: 'name email accountStatus' }] }).then((records) => records.map((record) => {
+      const items = [];
+      appendAdminMedia(items, record.image, { id: `closet:${record._id}:image`, group: 'closet', kind: 'Closet item', title: record.name || 'Closet item', owner: mediaOwner(record.user), createdAt: record.createdAt });
+      return items[0];
+    }).filter(Boolean)));
+  }
+
+  if (!userId && include('product')) {
+    tasks.push(findStoredMediaRecords(Product, ['image'], { limit: sourceLimit }).then((records) => records.map((record) => {
+      const items = [];
+      appendAdminMedia(items, record.image, { id: `product:${record._id}:image`, group: 'product', kind: 'Product image', title: record.name || 'Catalog product', related: { id: String(record._id), label: record.brand || record.category || 'Catalog product' }, createdAt: record.createdAt });
+      return items[0];
+    }).filter(Boolean)));
+  }
+
+  const [sourceItems, mediaUsage] = await Promise.all([Promise.all(tasks), adminMediaUsage(userId)]);
+  const { counts, usage } = mediaUsage;
+  const items = sourceItems.flat().sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0));
+  const total = type === 'all' ? counts.all : counts[type] || 0;
+  return {
+    items: items.slice(offset, offset + limit),
+    counts,
+    usage,
+    total,
+    page,
+    limit,
+    pages: Math.max(1, Math.ceil(total / limit)),
+    provider: useBunny() ? 'bunny' : 'local'
+  };
+}
+
+router.get('/admin/users', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  const status = String(req.query.status || '').trim().toLowerCase();
+  const limit = Math.min(Math.max(Number(req.query.limit) || 80, 1), 150);
+  if (status && !['active', 'banned', 'deleted'].includes(status)) return res.status(400).json({ message: 'Invalid account status' });
+  const clauses = [];
+  const statusFilter = userAccountFilter(status);
+  if (statusFilter) clauses.push(statusFilter);
+  const searchFilter = buildAdminUserSearchFilter(q);
+  if (searchFilter) clauses.push(searchFilter);
+  try {
+    const tokenFilter = buildAdminUserTokenFilter(req.query.minTokens, req.query.maxTokens);
+    if (tokenFilter) clauses.push(tokenFilter);
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
+  const filter = clauses.length ? { $and: clauses } : {};
 
   const users = await User.find(filter).sort({ createdAt: -1 }).limit(limit).lean();
   const userIds = users.map((user) => user._id);
-  const orders = await TokenOrder.find({ user: { $in: userIds } }).sort({ createdAt: -1 }).lean();
+  const [orders, sessionRollups, eventRollups] = await Promise.all([
+    TokenOrder.find({ user: { $in: userIds } }).sort({ createdAt: -1 }).lean(),
+    UserSession.aggregate([
+      { $match: { user: { $in: userIds } } },
+      { $sort: { lastSeenAt: -1 } },
+      {
+        $group: {
+          _id: '$user',
+          latestSession: { $first: '$$ROOT' },
+          lastLoginAt: { $max: '$loginAt' },
+          totalActiveMs: { $sum: '$activeDurationMs' },
+          sessionCount: { $sum: 1 }
+        }
+      }
+    ]),
+    UserEvent.aggregate([
+      { $match: { user: { $in: userIds } } },
+      { $group: { _id: '$user', latestEventAt: { $max: '$createdAt' }, activityCount: { $sum: 1 } } }
+    ])
+  ]);
   const latestOrderByUser = new Map();
   orders.forEach((order) => {
     const key = String(order.user);
     if (!latestOrderByUser.has(key)) latestOrderByUser.set(key, order);
   });
+  const sessionByUser = new Map(sessionRollups.map((item) => [String(item._id), item]));
+  const eventByUser = new Map(eventRollups.map((item) => [String(item._id), item]));
 
-  const [totalUsers, tokenTotal] = await Promise.all([
+  const [totalUsers, activeUsers, bannedUsers, deletedUsers, tokenTotal] = await Promise.all([
     User.countDocuments(),
-    User.aggregate([{ $group: { _id: null, total: { $sum: '$tokens' } } }])
+    User.countDocuments(userAccountFilter('active')),
+    User.countDocuments(userAccountFilter('banned')),
+    User.countDocuments(userAccountFilter('deleted')),
+    User.aggregate([
+      { $match: { accountStatus: { $ne: 'deleted' } } },
+      { $group: { _id: null, total: { $sum: '$tokens' } } }
+    ])
   ]);
 
   res.json({
-    users: users.map((user) => {
-      const lastOrder = latestOrderByUser.get(String(user._id));
-      return {
-        id: String(user._id),
-        name: user.name,
-        email: user.email,
-        username: user.username,
-        tokens: user.tokens || 0,
-        devMode: Boolean(user.devMode),
-        subscription: {
-          planId: user.subscription?.planId || null,
-          status: user.subscription?.status || 'none',
-          tokensPerMonth: user.subscription?.tokensPerMonth || 0,
-          currentPeriodStart: user.subscription?.currentPeriodStart || null,
-          currentPeriodEnd: user.subscription?.currentPeriodEnd || null
-        },
-        bodyPhotoStatus: user.bodyPhoto?.status || 'uploaded',
-        joinedAt: user.createdAt,
-        lastOrder: lastOrder ? {
-          id: String(lastOrder._id),
-          planName: lastOrder.planName,
-          tokens: lastOrder.tokens,
-          amount: lastOrder.amount,
-          currency: lastOrder.currency,
-          status: lastOrder.status,
-          createdAt: lastOrder.createdAt
-        } : null
-      };
-    }),
+    users: users.map((user) => adminUserPayload(
+      user,
+      latestOrderByUser.get(String(user._id)),
+      activitySummaryFor(user._id, sessionByUser, eventByUser)
+    )),
     totals: {
       users: totalUsers,
       loaded: users.length,
-      tokens: tokenTotal[0]?.total || 0
+      tokens: tokenTotal[0]?.total || 0,
+      active: activeUsers,
+      banned: bannedUsers,
+      deleted: deletedUsers
     }
   });
 });
 
-router.get('/admin/operations', requireAdmin, adminReadLimiter, async (_req, res) => {
-  const [orders, orderTotals, auditLogs] = await Promise.all([
+router.get('/admin/users/:id/insights', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+  if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
+  const activityPage = Math.min(Math.max(Number(req.query.activityPage) || 1, 1), 200);
+  const activityLimit = Math.min(Math.max(Number(req.query.activityLimit) || 24, 1), 50);
+  const activityOffset = (activityPage - 1) * activityLimit;
+  const userId = new mongoose.Types.ObjectId(req.params.id);
+  const user = await User.findById(userId).lean();
+  if (!user) return res.status(404).json({ message: 'User not found' });
+
+  const [sessions, sessionTotal, sessionTotals, events, eventTotals, preference, topProducts] = await Promise.all([
+    UserSession.find({ user: userId }).sort({ loginAt: -1 }).limit(30).lean(),
+    UserSession.countDocuments({ user: userId }),
+    UserSession.aggregate([
+      { $match: { user: userId } },
+      { $group: { _id: null, activeDurationMs: { $sum: '$activeDurationMs' }, pageViews: { $sum: '$pageViewCount' }, eventCount: { $sum: '$eventCount' } } }
+    ]),
+    UserEvent.find({ user: userId })
+      .sort({ createdAt: -1 })
+      .skip(activityOffset)
+      .limit(activityLimit)
+      .populate('product', 'name brand category image')
+      .lean(),
+    UserEvent.aggregate([
+      { $match: { user: userId } },
+      { $group: { _id: null, activityCount: { $sum: 1 }, latestEventAt: { $max: '$createdAt' } } }
+    ]),
+    UserPreference.findOne({ user: userId }).lean(),
+    UserEvent.aggregate([
+      { $match: { user: userId, product: { $exists: true, $ne: null }, type: { $in: ['product_view', 'product_click', 'wishlist', 'try_on', 'shop_click'] } } },
+      { $group: { _id: '$product', interactions: { $sum: 1 }, weight: { $sum: '$weight' }, lastAt: { $max: '$createdAt' } } },
+      { $sort: { weight: -1, interactions: -1, lastAt: -1 } },
+      { $limit: 10 },
+      { $lookup: { from: 'products', localField: '_id', foreignField: '_id', as: 'product' } },
+      { $unwind: '$product' },
+      { $project: { interactions: 1, weight: 1, lastAt: 1, name: '$product.name', brand: '$product.brand', category: '$product.category', image: '$product.image' } }
+    ])
+  ]);
+
+  const latestLoginSession = sessions[0] || null;
+  const latestSession = [...sessions].sort((left, right) => new Date(right.lastSeenAt || 0) - new Date(left.lastSeenAt || 0))[0] || null;
+  const latestEventAt = eventTotals[0]?.latestEventAt || null;
+  const eventTotal = Number(eventTotals[0]?.activityCount || 0);
+  const summary = activitySummaryFor(userId, new Map([[String(userId), {
+    latestSession,
+    lastLoginAt: latestLoginSession?.loginAt || null,
+    totalActiveMs: sessionTotals[0]?.activeDurationMs || 0,
+    sessionCount: sessionTotal
+  }]]), new Map([[String(userId), { latestEventAt, activityCount: eventTotal }]]));
+  const averagePreferredPrice = Number(preference?.priceCount || 0) > 0
+    ? Math.round(Number(preference.priceTotal || 0) / Number(preference.priceCount || 1))
+    : 0;
+
+  res.json({
+    user: adminUserPayload(user, null, summary),
+    summary: {
+      lastLoginAt: latestLoginSession?.loginAt || null,
+      lastActiveAt: adminUserPayload(user, null, summary).lastActiveAt,
+      sessionStatus: latestSession ? sessionDisplayState(latestSession) : (latestEventAt ? 'legacy_activity' : 'not_tracked'),
+      totalActiveMs: Number(sessionTotals[0]?.activeDurationMs || 0),
+      sessionCount: sessionTotal,
+      activityCount: eventTotal,
+      pageViews: Number(sessionTotals[0]?.pageViews || 0)
+    },
+    sessions: sessions.map((session) => sessionToAdmin(session)),
+    activity: events.map((event) => ({
+      id: String(event._id),
+      type: event.type,
+      query: event.query || '',
+      path: event.path || '',
+      source: event.source || '',
+      metadata: event.metadata || {},
+      weight: Number(event.weight || 0),
+      sessionId: event.session ? String(event.session) : null,
+      product: event.product ? {
+        id: String(event.product._id),
+        name: event.product.name,
+        brand: event.product.brand,
+        category: event.product.category,
+        imageUrl: publicUrlForStoredFile(event.product.image)
+      } : null,
+      createdAt: event.createdAt
+    })),
+    activityPagination: {
+      page: activityPage,
+      pages: Math.max(1, Math.ceil(eventTotal / activityLimit)),
+      total: eventTotal
+    },
+    preferences: {
+      explicitGender: user.genderPreference || 'other',
+      averagePreferredPrice,
+      categories: preferenceEntries(preference, 'categories'),
+      brands: preferenceEntries(preference, 'brands'),
+      tags: preferenceEntries(preference, 'tags'),
+      genders: preferenceEntries(preference, 'genders'),
+      updatedAt: preference?.updatedAt || null
+    },
+    topProducts: topProducts.map((item) => ({
+      id: String(item._id),
+      name: item.name,
+      brand: item.brand,
+      category: item.category,
+      imageUrl: publicUrlForStoredFile(item.image),
+      interactions: item.interactions,
+      weight: Math.round(Number(item.weight || 0) * 10) / 10,
+      lastAt: item.lastAt
+    }))
+  });
+});
+
+router.get('/admin/users/:id/media', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+  if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
+  const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 100);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 24, 1), 48);
+  const user = await User.findById(req.params.id).lean();
+  if (!user) return res.status(404).json({ message: 'User not found' });
+  const media = await loadAdminMedia({ type: 'all', userId: req.params.id, page, limit });
+  res.json({ user: adminUserPayload(user), ...media });
+});
+
+router.get('/admin/storage', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+  const type = String(req.query.type || 'all').trim().toLowerCase();
+  if (!['all', 'profile', 'tryon', 'closet', 'product'].includes(type)) {
+    return res.status(400).json({ message: 'Invalid storage media type' });
+  }
+  const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 100);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 24, 1), 48);
+  res.json(await loadAdminMedia({ type, page, limit }));
+});
+
+router.get('/admin/operations', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (_req, res) => {
+  const [orders, orderTotals] = await Promise.all([
     TokenOrder.find({}).sort({ createdAt: -1 }).limit(12).populate('user', 'name email username').lean(),
-    TokenOrder.aggregate([{ $group: { _id: '$status', count: { $sum: 1 }, tokens: { $sum: '$tokens' }, amount: { $sum: '$amount' } } }]),
-    AdminAuditLog.find({}).sort({ createdAt: -1 }).limit(20).lean()
+    TokenOrder.aggregate([{ $group: { _id: '$status', count: { $sum: 1 }, tokens: { $sum: '$tokens' }, amount: { $sum: '$amount' } } }])
   ]);
 
   res.json({
@@ -887,10 +1426,18 @@ router.get('/admin/operations', requireAdmin, adminReadLimiter, async (_req, res
     orderTotals: orderTotals.reduce((acc, item) => {
       acc[item._id || 'unknown'] = { count: item.count || 0, tokens: item.tokens || 0, amount: item.amount || 0 };
       return acc;
-    }, {}),
+    }, {})
+  });
+});
+
+router.get('/admin/audit-log', requireAdmin, requireSystemAdmin, adminReadLimiter, async (_req, res) => {
+  const auditLogs = await AdminAuditLog.find({}).sort({ createdAt: -1 }).limit(100).lean();
+  res.json({
     auditLogs: auditLogs.map((log) => ({
       id: String(log._id),
+      actorAdminId: log.actorAdmin ? String(log.actorAdmin) : null,
       actorEmail: log.actorEmail,
+      actorRole: log.actorRole || '',
       action: log.action,
       entityType: log.entityType,
       entityId: log.entityId,
@@ -901,18 +1448,20 @@ router.get('/admin/operations', requireAdmin, adminReadLimiter, async (_req, res
   });
 });
 
-router.patch('/admin/users/:id/tokens', requireAdmin, adminWriteLimiter, async (req, res) => {
+router.patch('/admin/users/:id/tokens', requireAdmin, requireUserOperationsAdmin, adminWriteLimiter, async (req, res) => {
   const mode = String(req.body?.mode || 'set').toLowerCase();
-  const amount = Number(req.body?.amount);
-  if (!['set', 'add'].includes(mode)) return res.status(400).json({ message: 'Token mode must be set or add' });
-  if (!Number.isFinite(amount) || !Number.isInteger(amount)) return res.status(400).json({ message: 'Token amount must be a whole number' });
   if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
 
   const user = await User.findById(req.params.id);
   if (!user) return res.status(404).json({ message: 'User not found' });
-  const nextTokens = mode === 'add' ? Number(user.tokens || 0) + amount : amount;
+  if (accountStatusFor(user) === 'deleted') return res.status(409).json({ message: 'Cannot change tokens for a deleted account' });
+  const amount = Number(req.body?.amount);
   const previousTokens = Number(user.tokens || 0);
-  user.tokens = Math.max(0, nextTokens);
+  try {
+    user.tokens = tokenBalanceAfter({ current: previousTokens, mode, amount });
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
   await user.save();
   await recordAdminAudit(req, {
     action: mode === 'add' ? 'tokens_added' : 'tokens_set',
@@ -922,18 +1471,95 @@ router.patch('/admin/users/:id/tokens', requireAdmin, adminWriteLimiter, async (
     detail: { amount, previousTokens, nextTokens: user.tokens }
   });
 
+  res.json({ user: adminUserPayload(user) });
+});
+
+router.patch('/admin/users/:id/status', requireAdmin, requireUserOperationsAdmin, adminWriteLimiter, async (req, res) => {
+  if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
+  const status = String(req.body?.status || '').trim().toLowerCase();
+  const reason = String(req.body?.reason || '').trim().slice(0, 300);
+  if (!['active', 'banned'].includes(status)) return res.status(400).json({ message: 'Account status must be active or banned' });
+  if (status === 'banned' && !reason) return res.status(400).json({ message: 'A ban reason is required' });
+
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).json({ message: 'User not found' });
+  if (accountStatusFor(user) === 'deleted') return res.status(409).json({ message: 'A deleted account cannot be restored' });
+
+  const previousStatus = accountStatusFor(user);
+  user.accountStatus = status;
+  if (status === 'banned') {
+    user.bannedAt = new Date();
+    user.banReason = reason;
+    user.bannedBy = req.admin?.email || 'admin';
+  } else {
+    user.bannedAt = undefined;
+    user.banReason = undefined;
+    user.bannedBy = undefined;
+  }
+  await user.save();
+  if (status === 'banned') await revokeUserSessions(user._id);
+  await recordAdminAudit(req, {
+    action: status === 'banned' ? 'user_banned' : 'user_unbanned',
+    entityType: 'user',
+    entityId: user._id.toString(),
+    label: user.email,
+    detail: { previousStatus, status, reason: status === 'banned' ? reason : undefined }
+  });
+  res.json({ user: adminUserPayload(user) });
+});
+
+router.delete('/admin/users/:id', requireAdmin, requireUserOperationsAdmin, adminWriteLimiter, async (req, res) => {
+  if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
+  if (String(req.body?.confirmation || '') !== 'ANONYMIZE') {
+    return res.status(400).json({ message: 'Type ANONYMIZE to confirm account removal' });
+  }
+
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).json({ message: 'User not found' });
+  const userId = user._id.toString();
+  const bodyPhoto = user.bodyPhoto?.toObject ? user.bodyPhoto.toObject() : user.bodyPhoto;
+
+  if (accountStatusFor(user) !== 'deleted') {
+    const identity = anonymizedIdentity(userId);
+    user.name = identity.name;
+    user.email = identity.email;
+    user.username = identity.username;
+    user.phone = undefined;
+    user.passwordHash = await bcrypt.hash(randomBytes(48).toString('hex'), 12);
+    user.genderPreference = 'other';
+    user.tokens = 0;
+    user.devMode = false;
+    user.wishlistProducts = [];
+    user.subscription = { status: 'none', tokensPerMonth: 0 };
+    user.bodyPhoto = undefined;
+    user.onboardingSeenAt = undefined;
+    user.accountStatus = 'deleted';
+    user.deletedAt = new Date();
+    user.bannedAt = undefined;
+    user.banReason = undefined;
+    user.bannedBy = undefined;
+    await user.save();
+  }
+
+  const removedData = await removeUserOwnedData(user._id);
+  await AdminAuditLog.updateMany(
+    { entityType: 'user', entityId: userId },
+    { $set: { label: `Deleted user ${userId.slice(-6)}` } }
+  );
+  const storageWarnings = await deleteUserMedia(userId, bodyPhoto);
+  await recordAdminAudit(req, {
+    action: 'user_anonymized',
+    entityType: 'user',
+    entityId: userId,
+    label: `Deleted user ${userId.slice(-6)}`,
+    detail: { removedData, paymentRecordsPreserved: true, storageWarnings: storageWarnings.length }
+  });
   res.json({
-    user: {
-      id: user._id.toString(),
-      name: user.name,
-      email: user.email,
-      username: user.username,
-      tokens: user.tokens,
-      subscription: user.subscription,
-      devMode: Boolean(user.devMode),
-      joinedAt: user.createdAt,
-      bodyPhotoStatus: user.bodyPhoto?.status || 'uploaded'
-    }
+    user: adminUserPayload(user),
+    removedData,
+    paymentRecordsPreserved: true,
+    storageCleanupComplete: storageWarnings.length === 0,
+    storageWarnings
   });
 });
 
@@ -1049,7 +1675,7 @@ async function wishlistPayload(user) {
   const productIds = validWishlistProductIds(user.wishlistProducts || []);
   if (!productIds.length) return { productIds: [], products: [] };
 
-  const products = await Product.find({ _id: { $in: productIds }, isActive: true }).lean();
+  const products = await Product.find({ _id: { $in: productIds }, isActive: true, $and: [availableStatusClause()] }).lean();
   const productsById = new Map(products.map((product) => [product._id.toString(), product]));
   const activeProductIds = productIds.filter((id) => productsById.has(id));
 
@@ -1073,7 +1699,7 @@ router.post('/wishlist/sync', requireUser, async (req, res) => {
   const existingProductIds = validWishlistProductIds(req.user.wishlistProducts || []);
   const requestedProductIds = [...new Set([...localProductIds, ...existingProductIds])];
   const activeProducts = requestedProductIds.length
-    ? await Product.find({ _id: { $in: requestedProductIds }, isActive: true }).select('_id').lean()
+    ? await Product.find({ _id: { $in: requestedProductIds }, isActive: true, $and: [availableStatusClause()] }).select('_id').lean()
     : [];
   const activeIds = new Set(activeProducts.map((product) => product._id.toString()));
 
@@ -1085,7 +1711,7 @@ router.post('/wishlist/sync', requireUser, async (req, res) => {
 router.put('/wishlist/:productId', requireUser, async (req, res) => {
   const productId = String(req.params.productId || '').trim();
   if (!mongoose.Types.ObjectId.isValid(productId)) return res.status(400).json({ message: 'Invalid product' });
-  const product = await Product.findOne({ _id: productId, isActive: true }).lean();
+  const product = await Product.findOne({ _id: productId, isActive: true, $and: [availableStatusClause()] }).lean();
   if (!product) return res.status(404).json({ message: 'Product not found' });
 
   await User.updateOne({ _id: req.user._id }, { $addToSet: { wishlistProducts: product._id } });

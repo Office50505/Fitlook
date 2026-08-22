@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
+import { productAvailabilityStatus } from '../utils/productAvailability.js';
 
 const LEGACY_UNRESTRICTED_MODEL = ['v' + 'to', 'unrestricted'].join('-');
 
 function inferGarmentPlacement(product = {}) {
-  if (product.garmentPlacement === 'bottom' || product.garmentPlacement === 'top') return product.garmentPlacement;
+  if (['top', 'bottom', 'accessory'].includes(product.garmentPlacement)) return product.garmentPlacement;
   const text = [
     product.name,
     product.category,
@@ -34,7 +35,7 @@ const productSchema = new mongoose.Schema(
     gender: { type: String, trim: true, default: 'unisex' },
     garmentPlacement: {
       type: String,
-      enum: ['top', 'bottom'],
+      enum: ['top', 'bottom', 'accessory'],
       default: 'top',
       index: true
     },
@@ -70,7 +71,16 @@ const productSchema = new mongoose.Schema(
     lastSyncedAt: { type: Date },
     isFeatured: { type: Boolean, default: false },
     isNewArrival: { type: Boolean, default: true },
-    isActive: { type: Boolean, default: true }
+    isActive: { type: Boolean, default: true },
+    availabilityStatus: {
+      type: String,
+      enum: ['draft', 'available', 'out_of_stock', 'unavailable', 'archived'],
+      default: 'available',
+      index: true
+    },
+    availabilityCheckedAt: Date,
+    availabilitySource: { type: String, trim: true, default: 'manual' },
+    inventoryNotes: { type: String, trim: true }
   },
   { timestamps: true }
 );
@@ -89,6 +99,7 @@ productSchema.index({ isActive: 1, category: 1, createdAt: -1 });
 productSchema.index({ isActive: 1, brand: 1, createdAt: -1 });
 productSchema.index({ isActive: 1, gender: 1, createdAt: -1 });
 productSchema.index({ isActive: 1, tags: 1, createdAt: -1 });
+productSchema.index({ availabilityStatus: 1, updatedAt: -1 });
 productSchema.index(
   { sourceProvider: 1, sourceProductId: 1 },
   {
@@ -99,6 +110,12 @@ productSchema.index(
     }
   }
 );
+
+productSchema.pre('validate', function synchronizeAvailability() {
+  const status = productAvailabilityStatus(this);
+  this.availabilityStatus = status;
+  this.isActive = status === 'available';
+});
 
 function productToClient(product) {
   return {
@@ -123,7 +140,19 @@ function productToClient(product) {
     imageUrl: product.image?.url || (product.image?.path ? `/${product.image.path}` : product.image?.remoteUrl || null),
     isFeatured: product.isFeatured,
     isNewArrival: product.isNewArrival,
+    availabilityStatus: productAvailabilityStatus(product),
+    availabilityCheckedAt: product.availabilityCheckedAt || null,
+    availabilitySource: product.availabilitySource || null,
     createdAt: product.createdAt
+  };
+}
+
+function productToAdminClient(product) {
+  return {
+    ...productToClient(product),
+    inventoryNotes: product.inventoryNotes || '',
+    isActive: product.isActive !== false,
+    updatedAt: product.updatedAt || null
   };
 }
 
@@ -132,4 +161,4 @@ productSchema.methods.toClient = function toClient() {
 };
 
 export default mongoose.model('Product', productSchema);
-export { productToClient };
+export { productToAdminClient, productToClient };

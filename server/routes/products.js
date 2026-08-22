@@ -2,7 +2,10 @@ import express from 'express';
 import fs from 'node:fs/promises';
 import multer from 'multer';
 import path from 'node:path';
-import Product, { productToClient } from '../models/Product.js';
+import Product, { productToAdminClient, productToClient } from '../models/Product.js';
+import TryOn from '../models/TryOn.js';
+import User from '../models/User.js';
+import UserEvent from '../models/UserEvent.js';
 import { requireUser } from './auth.js';
 import { clearRecommendationCaches } from './recommendations.js';
 import { inferTryOnModel, normalizeTryOnModel } from '../utils/tryOnModel.js';
@@ -12,11 +15,20 @@ import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility, genderedSearchQuery, genderPreferenceForQuery } from '../utils/genderPreference.js';
 import { enqueueJob, safeJobId } from '../utils/jobQueue.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
-import { requireAdmin } from '../utils/adminAccess.js';
-import { saveBuffer, useBunny } from '../utils/storage.js';
+import { requireAdmin, requireAdminSection } from '../utils/adminAccess.js';
+import { ADMIN_SECTIONS } from '../utils/adminPermissions.js';
+import { deleteStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
 import { isAllowedRasterImageUpload, normalizeRasterImageBuffer, safeFetchText } from '../utils/security.js';
+import {
+  PRODUCT_AVAILABILITY_STATUSES,
+  adminAvailabilityClause,
+  availabilityUpdate,
+  availableStatusClause,
+  normalizeAvailabilityStatus
+} from '../utils/productAvailability.js';
 
 const router = express.Router();
+const requireUserOperationsAdmin = requireAdminSection(ADMIN_SECTIONS.USER_OPERATIONS);
 const readCacheTtlMs = Number(process.env.PRODUCT_READ_CACHE_TTL_MS || 5 * 60 * 1000);
 const productListCache = createHybridCache('products:list', { ttlMs: readCacheTtlMs, maxItems: 150 });
 const productDetailCache = createHybridCache('products:detail', { ttlMs: readCacheTtlMs, maxItems: 300 });
@@ -84,6 +96,7 @@ function toBoolean(value) {
 
 function normalizeGarmentPlacement(value, product = {}) {
   const explicit = String(value || '').trim().toLowerCase();
+  if (explicit === 'accessory' || explicit === 'accessories') return 'accessory';
   if (explicit === 'bottom' || explicit === 'bottomwear' || explicit === 'lower') return 'bottom';
   if (explicit === 'top' || explicit === 'topwear' || explicit === 'upper') return 'top';
   const text = [
@@ -850,7 +863,7 @@ function cleanDescription(value = '', bullets = []) {
   return `${clipped.slice(0, Math.max(clipped.lastIndexOf('.'), clipped.lastIndexOf(' '))).trim()}...`;
 }
 
-async function buildProductDraft(affiliateLink) {
+async function buildProductDraft(affiliateLink, { itemType = 'auto' } = {}) {
   const url = cleanUrl(affiliateLink);
   if (!url) throw new Error('Affiliate link is required');
   const { response, text: html, finalUrl } = await safeFetchText(url, {
@@ -896,6 +909,9 @@ async function buildProductDraft(affiliateLink) {
   const rating = aggregateRating.rating || visibleRating(html);
   const ratingCount = aggregateRating.ratingCount || visibleRatingCount(html);
   const canonicalUrl = absoluteUrl(getLink(html, 'canonical'), finalUrl) || finalUrl;
+  const garmentPlacement = String(itemType || '').trim().toLowerCase() === 'accessory'
+    ? 'accessory'
+    : normalizeGarmentPlacement('', { name: title, category, description, tags: bullets });
 
   return {
     affiliateLink: url,
@@ -904,6 +920,7 @@ async function buildProductDraft(affiliateLink) {
     brand,
     category,
     gender,
+    garmentPlacement,
     price,
     compareAtPrice,
     currency,
@@ -1036,6 +1053,14 @@ function applyProductUpdate(product, body = {}) {
   if (body.tryOnModel !== undefined) product.tryOnModel = normalizeTryOnModel(body.tryOnModel);
   if (body.isFeatured !== undefined) product.isFeatured = toBoolean(body.isFeatured);
   if (body.isNewArrival !== undefined) product.isNewArrival = toBoolean(body.isNewArrival);
+  if (body.availabilityStatus !== undefined) {
+    Object.assign(product, availabilityUpdate(body.availabilityStatus, {
+      source: 'manual',
+      notes: body.inventoryNotes
+    }));
+  } else if (body.inventoryNotes !== undefined) {
+    product.inventoryNotes = String(body.inventoryNotes || '').trim();
+  }
   if (body.remoteImageUrl !== undefined && String(body.remoteImageUrl || '').trim()) {
     product.image = { remoteUrl: cleanUrl(body.remoteImageUrl) };
   }
@@ -1049,7 +1074,7 @@ router.get('/', productReadLimiter, async (req, res) => {
     const minPrice = Number(req.query.minPrice);
     const maxPrice = Number(req.query.maxPrice);
     const botAmazonRecord = temporaryExternalAmazonFilter();
-    const filter = { isActive: true, $nor: [botAmazonRecord] };
+    const filter = { isActive: true, $and: [availableStatusClause()], $nor: [botAmazonRecord] };
 
     if (q) filter.$text = { $search: q };
     if (tag) filter.tags = new RegExp(`^${escapeRegExp(String(tag).trim())}$`, 'i');
@@ -1075,8 +1100,8 @@ router.get('/', productReadLimiter, async (req, res) => {
     const [products, total, brands, categories, categoryCounts] = await Promise.all([
       query,
       Product.countDocuments(filter),
-      Product.distinct('brand', { isActive: true, $nor: [botAmazonRecord] }),
-      Product.distinct('category', { isActive: true, $nor: [botAmazonRecord] }),
+      Product.distinct('brand', { isActive: true, $and: [availableStatusClause()], $nor: [botAmazonRecord] }),
+      Product.distinct('category', { isActive: true, $and: [availableStatusClause()], $nor: [botAmazonRecord] }),
       Product.aggregate([
         { $match: filter },
         { $group: { _id: '$category', count: { $sum: 1 } } },
@@ -1095,6 +1120,66 @@ router.get('/', productReadLimiter, async (req, res) => {
     };
   });
   res.json(payload);
+});
+
+router.get('/admin/catalog', requireAdmin, requireUserOperationsAdmin, productReadLimiter, async (req, res) => {
+  const { q, tag, category, brand, gender, featured, newArrival, sort, availability } = req.query;
+  const limit = Math.min(Math.max(Number(req.query.limit) || 96, 1), 150);
+  const filter = { $nor: [temporaryExternalAmazonFilter()] };
+  const availabilityClause = adminAvailabilityClause(availability);
+  if (availability && !availabilityClause) {
+    return res.status(400).json({ message: `Availability must be one of: ${PRODUCT_AVAILABILITY_STATUSES.join(', ')}` });
+  }
+  if (availabilityClause) filter.$and = [availabilityClause];
+  if (q) filter.$text = { $search: String(q).trim() };
+  if (tag) filter.tags = new RegExp(`^${escapeRegExp(String(tag).trim())}$`, 'i');
+  if (category) filter.category = new RegExp(`^${escapeRegExp(String(category).trim())}$`, 'i');
+  if (brand) filter.brand = new RegExp(`^${escapeRegExp(String(brand).trim())}$`, 'i');
+  if (gender) filter.gender = new RegExp(`^${escapeRegExp(String(gender).trim())}$`, 'i');
+  if (featured === 'true') filter.isFeatured = true;
+  if (newArrival === 'true') filter.isNewArrival = true;
+
+  const projection = q ? { score: { $meta: 'textScore' } } : {};
+  const query = Product.find(filter, projection).limit(limit).lean();
+  if (q && !sort) query.sort({ score: { $meta: 'textScore' }, createdAt: -1 });
+  else query.sort(sortFor(sort));
+
+  const [products, total, brands, categories, categoryCounts, availabilityCounts] = await Promise.all([
+    query,
+    Product.countDocuments(filter),
+    Product.distinct('brand', { $nor: [temporaryExternalAmazonFilter()] }),
+    Product.distinct('category', { $nor: [temporaryExternalAmazonFilter()] }),
+    Product.aggregate([
+      { $match: filter },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } }
+    ]),
+    Product.aggregate([
+      { $match: { $nor: [temporaryExternalAmazonFilter()] } },
+      {
+        $group: {
+          _id: {
+            $ifNull: [
+              '$availabilityStatus',
+              { $cond: [{ $eq: ['$isActive', false] }, 'archived', 'available'] }
+            ]
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ])
+  ]);
+
+  res.json({
+    products: products.map(productToAdminClient),
+    total,
+    facets: {
+      brands: brands.filter(Boolean).sort(),
+      categories: categories.filter(Boolean).sort(),
+      categoryCounts: categoryCounts.map((item) => ({ category: item._id || 'uncategorized', count: item.count }))
+    },
+    availabilityCounts: Object.fromEntries(availabilityCounts.map((item) => [item._id, item.count]))
+  });
 });
 
 router.post('/amazon-search', requireUser, amazonSearchLimiter, async (req, res) => {
@@ -1172,7 +1257,7 @@ async function runProductRecategorizationJob() {
   return { updated, checked: products.length, changes };
 }
 
-router.post('/recategorize', requireAdmin, adminProductWriteLimiter, async (req, res) => {
+router.post('/recategorize', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
   if (req.body?.async || req.query.async === '1') {
     const job = await enqueueJob('maintenance', 'product-recategorize', {}, {
       jobId: safeJobId('product-recategorize', Date.now())
@@ -1200,7 +1285,11 @@ router.post('/recategorize', requireAdmin, adminProductWriteLimiter, async (req,
 router.get('/:id', productReadLimiter, async (req, res) => {
   try {
     const payload = await productDetailCache.remember(req.params.id, async () => {
-      const product = await Product.findOne({ _id: req.params.id, isActive: true }).lean();
+      const product = await Product.findOne({
+        _id: req.params.id,
+        isActive: true,
+        $and: [availableStatusClause()]
+      }).lean();
       if (!product) {
         const error = new Error('Product not found');
         error.statusCode = 404;
@@ -1214,16 +1303,16 @@ router.get('/:id', productReadLimiter, async (req, res) => {
   }
 });
 
-router.post('/preview-link', requireAdmin, adminProductWriteLimiter, async (req, res) => {
+router.post('/preview-link', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
   try {
-    const draft = await buildProductDraft(req.body.affiliateLink);
+    const draft = await buildProductDraft(req.body.affiliateLink, { itemType: req.body.itemType });
     res.json({ draft });
   } catch (error) {
     res.status(400).json({ message: readableError(error, 'Could not preview affiliate link') });
   }
 });
 
-router.post('/', requireAdmin, adminProductWriteLimiter, upload.single('image'), async (req, res) => {
+router.post('/', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, upload.single('image'), async (req, res) => {
   const { name, brand, category, gender, price } = req.body;
   if (!name || !brand || !category || !price) {
     return res.status(400).json({ message: 'Name, brand, category, and price are required' });
@@ -1268,6 +1357,10 @@ router.post('/', requireAdmin, adminProductWriteLimiter, upload.single('image'),
     tryOnModel: normalizeTryOnModel(req.body.tryOnModel),
     isFeatured: toBoolean(req.body.isFeatured),
     isNewArrival: toBoolean(req.body.isNewArrival),
+    ...availabilityUpdate(normalizeAvailabilityStatus(req.body.availabilityStatus, 'available'), {
+      source: 'manual',
+      notes: req.body.inventoryNotes
+    }),
     image
   });
 
@@ -1279,10 +1372,39 @@ router.post('/', requireAdmin, adminProductWriteLimiter, upload.single('image'),
     label: product.name,
     detail: { brand: product.brand, category: product.category, price: product.price }
   });
-  res.status(201).json({ product: product.toClient() });
+  res.status(201).json({ product: productToAdminClient(product) });
 });
 
-router.patch('/:id', requireAdmin, adminProductWriteLimiter, async (req, res) => {
+router.patch('/admin/inventory', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.map(String))] : [];
+  if (!ids.length || ids.length > 150 || ids.some((id) => !/^[a-f\d]{24}$/i.test(id))) {
+    return res.status(400).json({ message: 'Provide between 1 and 150 valid product ids' });
+  }
+  let update;
+  try {
+    update = availabilityUpdate(req.body?.availabilityStatus, {
+      source: 'manual',
+      notes: req.body?.inventoryNotes
+    });
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
+  const result = await Product.updateMany({ _id: { $in: ids } }, { $set: update }, { runValidators: true });
+  await clearReadCachesAfterProductWrite();
+  await recordAdminAudit(req, {
+    action: 'product_availability_bulk_changed',
+    entityType: 'product',
+    label: `${ids.length} catalog products`,
+    detail: { availabilityStatus: update.availabilityStatus, matched: result.matchedCount || 0, updated: result.modifiedCount || 0 }
+  });
+  res.json({
+    matched: result.matchedCount || 0,
+    updated: result.modifiedCount || 0,
+    availabilityStatus: update.availabilityStatus
+  });
+});
+
+router.patch('/:id', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
@@ -1296,13 +1418,13 @@ router.patch('/:id', requireAdmin, adminProductWriteLimiter, async (req, res) =>
       label: product.name,
       detail: { brand: product.brand, category: product.category, price: product.price }
     });
-    res.json({ product: product.toClient() });
+    res.json({ product: productToAdminClient(product) });
   } catch (error) {
     res.status(400).json({ message: readableError(error, 'Could not update product') });
   }
 });
 
-router.patch('/:id/garment-placement', requireAdmin, adminProductWriteLimiter, async (req, res) => {
+router.patch('/:id/garment-placement', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { garmentPlacement: normalizeGarmentPlacement(req.body.garmentPlacement) },
@@ -1320,7 +1442,7 @@ router.patch('/:id/garment-placement', requireAdmin, adminProductWriteLimiter, a
   res.json({ product: product.toClient() });
 });
 
-router.patch('/:id/tryon-model', requireAdmin, adminProductWriteLimiter, async (req, res) => {
+router.patch('/:id/tryon-model', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { tryOnModel: normalizeTryOnModel(req.body.tryOnModel) },
@@ -1338,8 +1460,12 @@ router.patch('/:id/tryon-model', requireAdmin, adminProductWriteLimiter, async (
   res.json({ product: product.toClient() });
 });
 
-router.delete('/', requireAdmin, adminProductWriteLimiter, async (req, res) => {
-  const result = await Product.updateMany({ isActive: true }, { isActive: false });
+router.delete('/', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+  const result = await Product.updateMany(
+    { isActive: true },
+    { $set: availabilityUpdate('archived', { source: 'manual' }) },
+    { runValidators: true }
+  );
   await clearReadCachesAfterProductWrite();
   await recordAdminAudit(req, {
     action: 'all_products_removed',
@@ -1350,8 +1476,59 @@ router.delete('/', requireAdmin, adminProductWriteLimiter, async (req, res) => {
   res.json({ removed: result.modifiedCount || 0 });
 });
 
-router.delete('/:id', requireAdmin, adminProductWriteLimiter, async (req, res) => {
-  const product = await Product.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
+router.delete('/:id/permanent', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+  if (req.body?.confirmation !== 'DELETE') {
+    return res.status(400).json({ message: 'Type DELETE to permanently remove this product' });
+  }
+  if (!/^[a-f\d]{24}$/i.test(req.params.id)) {
+    return res.status(400).json({ message: 'Invalid product id' });
+  }
+
+  const product = await Product.findById(req.params.id).lean();
+  if (!product) return res.status(404).json({ message: 'Product not found' });
+
+  const tryOns = await TryOn.find({ product: product._id }).select('image transparentImage video').lean();
+  const storedFiles = [
+    product.image,
+    ...tryOns.flatMap((tryOn) => [tryOn.image, tryOn.transparentImage, tryOn.video])
+  ].filter(Boolean);
+
+  const [tryOnResult, wishlistResult, eventResult] = await Promise.all([
+    TryOn.deleteMany({ product: product._id }),
+    User.updateMany({ wishlistProducts: product._id }, { $pull: { wishlistProducts: product._id } }),
+    UserEvent.updateMany({ product: product._id }, { $unset: { product: 1 } })
+  ]);
+  await Product.deleteOne({ _id: product._id });
+
+  const storageResults = await Promise.allSettled(storedFiles.map((file) => deleteStoredFile(file)));
+  const storageFailures = storageResults.filter((result) => result.status === 'rejected').length;
+  await clearReadCachesAfterProductWrite();
+  await recordAdminAudit(req, {
+    action: 'product_deleted',
+    entityType: 'product',
+    entityId: product._id.toString(),
+    label: product.name,
+    detail: {
+      tryOnsDeleted: tryOnResult.deletedCount || 0,
+      wishlistsUpdated: wishlistResult.modifiedCount || 0,
+      eventsDetached: eventResult.modifiedCount || 0,
+      storageFailures
+    }
+  });
+
+  res.json({
+    deleted: true,
+    tryOnsDeleted: tryOnResult.deletedCount || 0,
+    storageCleanupComplete: storageFailures === 0
+  });
+});
+
+router.delete('/:id', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+  const product = await Product.findByIdAndUpdate(
+    req.params.id,
+    { $set: availabilityUpdate('archived', { source: 'manual' }) },
+    { new: true, runValidators: true }
+  );
   if (!product) return res.status(404).json({ message: 'Product not found' });
   await clearReadCachesAfterProductWrite();
   await recordAdminAudit(req, {
@@ -1361,8 +1538,8 @@ router.delete('/:id', requireAdmin, adminProductWriteLimiter, async (req, res) =
     label: product.name,
     detail: { brand: product.brand, category: product.category }
   });
-  res.json({ product: product.toClient() });
+  res.json({ product: productToAdminClient(product) });
 });
 
 export default router;
-export { buildProductDraft, clearReadCachesAfterProductWrite, runProductRecategorizationJob, temporaryExternalAmazonFilter };
+export { buildProductDraft, clearReadCachesAfterProductWrite, normalizeGarmentPlacement, runProductRecategorizationJob, temporaryExternalAmazonFilter };

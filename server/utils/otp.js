@@ -4,7 +4,7 @@ const OTP_DIGITS = 6;
 const DEFAULT_MAX_ATTEMPTS = 5;
 
 function otpSecret() {
-  return process.env.JWT_SECRET || process.env.ADMIN_KEY || 'fitlook-dev-secret';
+  return process.env.JWT_SECRET || 'fitlook-dev-secret';
 }
 
 function createOtpCode() {

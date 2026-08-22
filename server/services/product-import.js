@@ -119,7 +119,7 @@ function normalizeCategoryForGender(category, gender, taxonomy) {
 
 function inferPlacement(product = {}) {
   const explicit = normalizeKey(product.garmentPlacement);
-  if (explicit === 'bottom' || explicit === 'top') return explicit;
+  if (explicit === 'bottom' || explicit === 'top' || explicit === 'accessory') return explicit;
   const text = productText(product);
   if (BOTTOM_PATTERN.test(text)) return 'bottom';
   return 'top';
@@ -132,7 +132,7 @@ function isFullBody(product = {}) {
 function sanitizeError(error) {
   return compact(error?.message || error || 'Unknown error')
     .replace(/mongodb(\+srv)?:\/\/[^@]+@/gi, 'mongodb$1://[redacted]@')
-    .replace(/(ADMIN_KEY|MONGODB_URI|AMAZON_API_SECRET_KEY)=\S+/gi, '$1=[redacted]');
+    .replace(/(MASTER_ADMIN_PASSWORD|MONGODB_URI|AMAZON_API_SECRET_KEY)=\S+/gi, '$1=[redacted]');
 }
 
 function validateAndBuildProduct(draft, entry, context = {}) {
@@ -199,7 +199,10 @@ function validateAndBuildProduct(draft, entry, context = {}) {
     lastSyncedAt: new Date(),
     isFeatured: false,
     isNewArrival: true,
-    isActive: true
+    isActive: true,
+    availabilityStatus: 'available',
+    availabilityCheckedAt: new Date(),
+    availabilitySource: 'import'
   };
 }
 
@@ -347,7 +350,14 @@ async function importProducts(options = {}) {
     const keepIds = report.productIdsWritten.filter(Boolean);
     const deactivateResult = await model.updateMany(
       { isActive: true, _id: { $nin: keepIds }, importBatchId: { $ne: batchId } },
-      { $set: { isActive: false } }
+      {
+        $set: {
+          isActive: false,
+          availabilityStatus: 'archived',
+          availabilityCheckedAt: new Date(),
+          availabilitySource: 'import-replacement'
+        }
+      }
     );
     report.oldProductsDeactivated = [{ count: deactivateResult.modifiedCount || 0, batchId }];
   }

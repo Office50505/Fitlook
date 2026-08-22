@@ -4,7 +4,8 @@ import { check, group, sleep } from 'k6';
 
 const repoEnv = parseDotEnv(safeOpen('../../.env'));
 const baseUrl = env('BASE_URL', repoEnv.PORT ? `http://localhost:${repoEnv.PORT}` : 'http://localhost:5050').replace(/\/$/, '');
-const adminKey = env('ADMIN_KEY', repoEnv.ADMIN_KEY || '');
+const adminEmail = env('ADMIN_EMAIL', repoEnv.ADMIN_EMAIL || '');
+const adminPassword = env('ADMIN_PASSWORD', repoEnv.ADMIN_PASSWORD || '');
 const stageDuration = env('STAGE_DURATION', '30s');
 const smokeWindow = env('SMOKE_WINDOW', '2m');
 const includeExternal = envBool('INCLUDE_EXTERNAL', false);
@@ -24,6 +25,7 @@ const endpointLabels = [
   'POST /api/auth/signup/verify-otp',
   'POST /api/auth/signup',
   'POST /api/auth/login',
+  'POST /api/auth/admin-login',
   'GET /api/auth/me',
   'POST /api/auth/body-photo',
   'GET /api/products',
@@ -71,7 +73,13 @@ export const options = {
 export function setup() {
   const runId = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   const phone = `+919${String(Date.now()).slice(-9)}`;
-  const created = { runId, phone, productId: '', userToken: '', userId: '' };
+  const created = { runId, phone, productId: '', userToken: '', userId: '', adminToken: '' };
+
+  group('setup: create admin session', () => {
+    if (!adminEmail || !adminPassword) return;
+    const res = post('/api/auth/admin-login', { email: adminEmail, password: adminPassword }, 'POST /api/auth/admin-login', [200]);
+    created.adminToken = parseJson(res).token || '';
+  });
 
   group('setup: create reusable user', () => {
     const otpRequest = post('/api/auth/signup/request-otp', { phone }, 'POST /api/auth/signup/request-otp', [200]);
@@ -104,7 +112,7 @@ export function setup() {
   });
 
   group('setup: create disposable product', () => {
-    if (!adminKey) return;
+    if (!created.adminToken) return;
     const payload = {
       name: `Load Test Product ${runId}`,
       brand: 'FitLook Load',
@@ -124,7 +132,7 @@ export function setup() {
     const res = http.post(
       `${baseUrl}/api/products`,
       JSON.stringify(payload),
-      jsonParams('POST /api/products', [201], { headers: { 'x-admin-key': adminKey } })
+      jsonParams('POST /api/products', [201], { headers: { Authorization: `Bearer ${created.adminToken}` } })
     );
     check(res, { 'setup product created': (r) => r.status === 201 }, endpointTags('POST /api/products'));
     const data = parseJson(res);
@@ -166,7 +174,7 @@ export function smokeAllEndpoints(data) {
       metadata: { category: 'shirts', gender: 'unisex' }
     }, 'POST /api/recommendations/events', [201]);
     authPost('/api/recommendations/events', token, { type: 'bad_event' }, 'POST /api/recommendations/events invalid', [400]);
-    if (adminKey) get('/api/recommendations/admin/stats', 'GET /api/recommendations/admin/stats', [200], { headers: { 'x-admin-key': adminKey } });
+    if (data.adminToken) get('/api/recommendations/admin/stats', 'GET /api/recommendations/admin/stats', [200], { headers: { Authorization: `Bearer ${data.adminToken}` } });
   });
 
   group('try-on endpoints', () => {
@@ -194,14 +202,14 @@ export function smokeAllEndpoints(data) {
   });
 
   group('admin product endpoints', () => {
-    if (!adminKey) return;
-    post('/api/products/preview-link', { affiliateLink: '' }, 'POST /api/products/preview-link validation', [400], { headers: { 'x-admin-key': adminKey } });
-    post('/api/products/recategorize', {}, 'POST /api/products/recategorize', [200], { headers: { 'x-admin-key': adminKey }, timeout: '60s' });
+    if (!data.adminToken) return;
+    post('/api/products/preview-link', { affiliateLink: '' }, 'POST /api/products/preview-link validation', [400], { headers: { Authorization: `Bearer ${data.adminToken}` } });
+    post('/api/products/recategorize', {}, 'POST /api/products/recategorize', [200], { headers: { Authorization: `Bearer ${data.adminToken}` }, timeout: '60s' });
     if (disposableProductId) {
-      patch(`/api/products/${disposableProductId}/tryon-model`, { tryOnModel: 'gpt-image-2' }, 'PATCH /api/products/:id/tryon-model', [200], { headers: { 'x-admin-key': adminKey } });
+      patch(`/api/products/${disposableProductId}/tryon-model`, { tryOnModel: 'gpt-image-2' }, 'PATCH /api/products/:id/tryon-model', [200], { headers: { Authorization: `Bearer ${data.adminToken}` } });
     }
     if (includeDestructiveAll) {
-      del('/api/products', 'DELETE /api/products all active', [200], { headers: { 'x-admin-key': adminKey }, timeout: '60s' });
+      del('/api/products', 'DELETE /api/products all active', [200], { headers: { Authorization: `Bearer ${data.adminToken}` }, timeout: '60s' });
     }
   });
 }
@@ -314,8 +322,8 @@ function writeJourney(data) {
 }
 
 export function teardown(data) {
-  if (!adminKey || !data || !data.productId) return;
-  del(`/api/products/${data.productId}`, 'DELETE /api/products/:id cleanup', [200, 404], { headers: { 'x-admin-key': adminKey } });
+  if (!data || !data.adminToken || !data.productId) return;
+  del(`/api/products/${data.productId}`, 'DELETE /api/products/:id cleanup', [200, 404], { headers: { Authorization: `Bearer ${data.adminToken}` } });
 }
 
 export function handleSummary(summary) {
@@ -390,10 +398,6 @@ function jsonParams(endpoint, statuses, extra = {}) {
 function authParams(token, endpoint, statuses, extra = {}) {
   const headers = Object.assign({ Authorization: `Bearer ${token}` }, extra.headers || {});
   return Object.assign(requestParams(endpoint, statuses, extra), { headers });
-}
-
-function adminParams(endpoint, extra = {}) {
-  return Object.assign(requestParams(endpoint, [200, 201], extra), { headers: { 'x-admin-key': adminKey } });
 }
 
 function expectedStatuses(statuses) {

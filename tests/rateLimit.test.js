@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createRateLimiter } from '../server/utils/rateLimit.js';
+import { createRateLimiter, developmentRateLimitBypass } from '../server/utils/rateLimit.js';
 
 function createReq(ip = '127.0.0.1') {
   return {
@@ -68,4 +68,15 @@ test('rate limiter allows requests until max and returns 429 after the limit', a
     if (previousRedisUrl === undefined) delete process.env.REDIS_URL;
     else process.env.REDIS_URL = previousRedisUrl;
   }
+});
+
+test('development rate-limit bypass cannot disable production protection', () => {
+  assert.equal(developmentRateLimitBypass('DISABLE_ADMIN_LOGIN_RATE_LIMIT', {
+    NODE_ENV: 'development',
+    DISABLE_ADMIN_LOGIN_RATE_LIMIT: 'true'
+  }), true);
+  assert.equal(developmentRateLimitBypass('DISABLE_ADMIN_LOGIN_RATE_LIMIT', {
+    NODE_ENV: 'production',
+    DISABLE_ADMIN_LOGIN_RATE_LIMIT: 'true'
+  }), false);
 });

@@ -173,19 +173,46 @@ async function readStoredFile(file, label = 'image') {
 
 async function deleteStoredFile(file) {
   if (!file) return;
+  const storedFile = typeof file === 'object' ? file : null;
+  const storedUrl = String(storedFile?.url || '');
+  const cdnBase = bunnyCdnBaseUrl();
+  const bunnyCdnUrl = Boolean(cdnBase && storedUrl.startsWith(`${cdnBase}/`));
+  const localUploadUrl = /^\/?uploads\//i.test(storedUrl);
+  if (storedFile && !storedFile.path && storedFile.remoteUrl) return;
+  if (storedFile && !storedFile.path && !bunnyCdnUrl && !localUploadUrl && !['bunny', 'local'].includes(storedFile.storage)) return;
+
   const key = typeof file === 'string' ? cleanKey(file) : cleanKey(file.path || file.url || '');
   if (!key) return;
-  if (typeof file === 'object' && file.remoteUrl && !file.path) return;
+  const bunnyBacked = storedFile && (
+    storedFile.storage === 'bunny' ||
+    bunnyCdnUrl ||
+    (!storedFile.storage && useBunny() && Boolean(storedFile.path))
+  );
 
-  if ((typeof file === 'object' && file.storage === 'bunny') || (useBunny() && typeof file !== 'string')) {
-    const response = await bunnyRequest(key, { method: 'DELETE' }).catch(() => null);
-    if (response && !response.ok && response.status !== 404) {
+  if (bunnyBacked) {
+    const response = await bunnyRequest(key, { method: 'DELETE' });
+    if (!response.ok && response.status !== 404) {
       throw new Error(`Bunny storage delete failed (${response.status})`);
     }
     return;
   }
 
   await fs.unlink(localPathForKey(key)).catch(() => {});
+}
+
+async function deleteStoredPrefix(prefix) {
+  const clean = cleanKey(prefix).replace(/\/+$/, '');
+  if (!/^users\/[a-f\d]{24}(?:\/|$)/i.test(clean)) throw new Error('Invalid user storage prefix');
+
+  if (useBunny()) {
+    const response = await bunnyRequest(`${clean}/`, { method: 'DELETE' });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Bunny storage directory delete failed (${response.status})`);
+    }
+    return;
+  }
+
+  await fs.rm(localPathForKey(clean), { recursive: true, force: true });
 }
 
 async function storedFileSignature(file) {
@@ -200,6 +227,7 @@ async function storedFileSignature(file) {
 export {
   cleanKey,
   deleteStoredFile,
+  deleteStoredPrefix,
   keyFromStoredPath,
   localPathForKey,
   pathForKey,

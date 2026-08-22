@@ -1,6 +1,6 @@
 # Lookmefy Architecture Map
 
-Last updated: 20 August 2026
+Last updated: 21 August 2026
 
 This document maps the current Lookmefy codebase from the outside in: what starts the app, what each page calls, what each backend route triggers, which models are touched, and which external providers are involved.
 
@@ -101,15 +101,23 @@ This is the API surface as currently mounted by `server/index.js`.
 |---|---|---|---|---|
 | `POST` | `/api/auth/signup/request-otp` | Public + rate limit | Signup phone step | `createTempSessionStore`, HMAC OTP digest. |
 | `POST` | `/api/auth/signup/verify-otp` | Public + rate limit | Signup OTP confirm | Temp session update. |
-| `POST` | `/api/auth/signup` | Public + verified OTP | Signup form submit | Upload normalization, `User.create`, optional profile full-body generation. |
+| `POST` | `/api/auth/signup` | Public + verified OTP | Signup form submit | Upload normalization, `User.create`, `UserSession.create`, optional profile full-body generation. |
 | `GET` | `/api/auth/username-suggestions` | Public + rate limit | Signup username field | `User.exists`. |
-| `POST` | `/api/auth/login` | Public + rate limit | Password login | `User.findOne`, `bcrypt.compare`, JWT sign. |
+| `POST` | `/api/auth/login` | Public + rate limit | Password login | `User.findOne`, `bcrypt.compare`, `UserSession.create`, JWT sign with session ID. |
 | `POST` | `/api/auth/login/request-otp` | Public + rate limit | OTP login phone step | `User.findOne`, temp session. |
-| `POST` | `/api/auth/login/verify-otp` | Public + rate limit | OTP login confirm | Temp session, `User.findById`, JWT sign. |
-| `POST` | `/api/auth/admin-login` | Admin key | Admin login | `signAdminSession`. |
-| `GET` | `/api/auth/admin/users` | Admin | Admin users page | `User`, `TokenOrder` aggregations. |
-| `GET` | `/api/auth/admin/operations` | Admin | Admin operations page | `TokenOrder`, `AdminAuditLog`. |
-| `PATCH` | `/api/auth/admin/users/:id/tokens` | Admin | Admin token edit | `User` update, `recordAdminAudit`. |
+| `POST` | `/api/auth/login/verify-otp` | Public + rate limit | OTP login confirm | Temp session, `User.findById`, `UserSession.create`, JWT sign with session ID. |
+| `POST` | `/api/auth/session/heartbeat` | User | Visible storefront heartbeat | Atomically updates last activity, active duration, and last route. |
+| `POST` | `/api/auth/logout` | User | Header/profile logout | Closes the JWT's `UserSession` with an explicit logout time. |
+| `POST` | `/api/auth/admin-request-access` | Public | Admin access request form | Creates a pending `AdminUser` with a bcrypt password hash and no section access. |
+| `POST` | `/api/auth/admin-login` | Admin email + password | Admin login | `AdminUser`, `bcrypt.compare`, `signAdminSession`; pending accounts receive no session. |
+| `GET` | `/api/auth/admin-session` | Admin | Admin session restore | Reloads current `AdminUser` role and section access. |
+| `GET` | `/api/auth/admin/users` | User Operations | Admin users page | `User`, `TokenOrder`, `UserSession`, and `UserEvent` aggregations. |
+| `GET` | `/api/auth/admin/users/:id/insights` | Admin | User detail drawer | Session timeline, activity, preferences, and top products. |
+| `GET` | `/api/auth/admin/users/:id/media` | Admin | User detail media tab | Profile, try-on, closet media, and Bunny byte usage. |
+| `GET` | `/api/auth/admin/storage` | Admin | Storage page | Stored image index and Bunny usage aggregation. |
+| `GET` | `/api/auth/admin/operations` | User Operations | Admin orders and operations pages | `TokenOrder`. |
+| `GET` | `/api/auth/admin/audit-log` | System Management | Audit log page | `AdminAuditLog`. |
+| `PATCH` | `/api/auth/admin/users/:id/tokens` | User Operations | Admin token edit | `User` update, `recordAdminAudit`. |
 | `GET` | `/api/auth/me` | User | App/profile session restore | `requireUser`, `User.toClient`. |
 | `PATCH` | `/api/auth/onboarding` | User | Onboarding complete | `User.onboardingSeenAt`. |
 | `GET` | `/api/auth/wishlist` | User | Wishlist page | `Product.find`, cleans inactive saved IDs. |
@@ -176,8 +184,9 @@ This is the API surface as currently mounted by `server/index.js`.
 
 | Method | Path | Auth | Trigger / Caller | Main Downstream Calls |
 |---|---|---|---|---|
-| `POST` | `/api/recommendations/events` | User | `recordEvent()` | `UserEvent.create`, `UserPreference` update. |
-| `GET` | `/api/recommendations/admin/stats` | Admin | Admin analytics | Event and preference aggregations. |
+| `POST` | `/api/recommendations/events` | User | `recordEvent()` | `UserEvent.create`, `UserPreference` update, `UserSession` activity update. |
+| `POST` | `/api/recommendations/events/batch` | User | Visible recommendation cards | Validated, session-linked recommendation impression insert. |
+| `GET` | `/api/recommendations/admin/stats` | Admin | Admin analytics | Date-scoped event, session, recommendation, product, search, and generation aggregations. |
 | `GET` | `/api/recommendations/for-you` | User | Home/product rails | Preference-ranked product list. |
 | `GET` | `/api/recommendations/similar/:productId` | Public | Product page related rail | Product similarity ranking. |
 | `POST` | `/api/images/subject-isolation` | User | Retry transparent cutout | `isolateSubjectAsset`. |
@@ -185,18 +194,19 @@ This is the API surface as currently mounted by `server/index.js`.
 | `GET` | `/api/health` | Public | Health check | Static ok. |
 | `GET` | `/api/health/live` | Public | Liveness check | Service metadata. |
 | `GET` | `/api/health/ready` | Public | Readiness check | Mongo/Redis/shutdown readiness. |
-| `GET` | `/api/admin/metrics` | Admin | Admin/system metrics | `observabilitySnapshot`. |
+| `GET` | `/api/admin/metrics` | System Management | Admin/system metrics | `observabilitySnapshot`. |
 
 ## 5. Route-To-Utility Dependency Map
 
 | Route File | Models Used | Core Utilities / Services | External Calls |
 |---|---|---|---|
-| `auth.js` | `User`, `Product`, `TokenOrder`, `AdminAuditLog` | `adminAccess`, `adminAudit`, `genderPreference`, `jobQueue`, `rateLimit`, `storage`, `security`, `tempSessions` | FAL profile generation. |
+| `auth.js` | `AdminUser`, `User`, `Product`, `TokenOrder`, `UserSession`, `UserEvent`, `UserPreference`, `AdminAuditLog` | `adminAccess`, `adminPermissions`, `adminAudit`, `userSessions`, `genderPreference`, `jobQueue`, `rateLimit`, `storage`, `security`, `tempSessions` | FAL profile generation. |
+| `admin.js` | `AdminUser`, `SystemIncident` | `adminAccess`, `adminPermissions`, `adminAudit`, `adminManagement`, `rateLimit` | Cost and system provider summaries. |
 | `products.js` | `Product` | `cache`, `rateLimit`, `wearable`, `genderPreference`, `jobQueue`, `adminAudit`, `adminAccess`, `storage`, `security`, `tryOnModel` | Amazon/search/product pages. |
-| `tryons.js` | `TryOn`, `CustomTryOn`, `ExternalTryOn`, `Product`, `User` | `tryOnModel`, `wearable`, `genderPreference`, `backgroundRemoval`, `jobQueue`, `rateLimit`, `storage`, `security`, `tryOnPrompts`, `prunaClient` | Pruna, FAL/PixVerse, FitRoom. |
-| `closet.js` | `ClosetItem`, `ClosetOutfit`, `User` | `backgroundRemoval`, `rateLimit`, `storage`, `security` | FAL vision, FitRoom, OpenAI. |
+| `tryons.js` | `TryOn`, `CustomTryOn`, `ExternalTryOn`, `GenerationMetric`, `Product`, `User` | `tryOnModel`, `generationMetrics`, `wearable`, `genderPreference`, `backgroundRemoval`, `jobQueue`, `rateLimit`, `storage`, `security`, `tryOnPrompts`, `prunaClient` | Pruna, FAL/PixVerse, FitRoom. |
+| `closet.js` | `ClosetItem`, `ClosetOutfit`, `GenerationMetric`, `User` | `backgroundRemoval`, `generationMetrics`, `rateLimit`, `storage`, `security` | FAL vision, FitRoom, OpenAI. |
 | `payments.js` | `TokenOrder`, `TryOn`, `CustomTryOn`, `ClosetOutfit`, `User` | `rateLimit` | PhonePe OAuth, PhonePe checkout/status. |
-| `recommendations.js` | `Product`, `UserEvent`, `UserPreference` | `cache`, `rateLimit`, `adminAccess` | None directly. |
+| `recommendations.js` | `Product`, `UserEvent`, `UserPreference`, `UserSession`, `GenerationMetric` | `adminAnalytics`, `analyticsPeriod`, `cache`, `rateLimit`, `adminAccess`, `userSessions` | None directly. |
 | `images.js` | none directly | `backgroundRemoval`, `rateLimit`, `auth` | Indirect storage/fetch through background removal. |
 | `jobs.js` | none directly | `jobQueue`, `rateLimit`, `auth` | Redis/BullMQ. |
 
@@ -247,7 +257,9 @@ The storefront API wrapper is `api(path, options)` in `src/App.jsx`.
 | Frontend Action | Component / Helper | API Call | Backend Handler |
 |---|---|---|---|
 | Boot logged-in session | `App` | `GET /auth/me` | `auth.js` loads current user via `requireUser`. |
-| Page/product/search event | `recordEvent` | `POST /recommendations/events` | `recommendations.js` stores `UserEvent`, updates `UserPreference`. |
+| Visible-session heartbeat | `App` | `POST /auth/session/heartbeat` | `auth.js` updates active duration and last activity. |
+| Explicit logout | `logoutCustomer` | `POST /auth/logout` | `auth.js` records logout before the browser clears its JWT. |
+| Page/product/search event | `recordEvent` | `POST /recommendations/events` | `recommendations.js` stores a session-linked `UserEvent`, updates `UserPreference`. |
 | Product listing | `useProducts` / pages | `GET /products?...` | `products.js` cached catalog query. |
 | Product detail | `useProduct` / `ProductPage` | `GET /products/:id` | `products.js` cached detail lookup. |
 | Recommendations | `useRecommendedProducts` | `GET /recommendations/for-you` | `recommendations.js` preference-ranked products. |
@@ -284,16 +296,21 @@ The admin wrapper is `api(path, options)` in `admin/src/AdminApp.jsx`.
 
 - Base URL: `VITE_API_BASE_URL`.
 - Uses admin JWT from `sessionStorage.fitlook_admin_session`.
-- Some product write calls also send `x-admin-key`.
+- The JWT identifies an `AdminUser`; every protected request reloads current status, role, and section access.
+- Backend permission middleware remains authoritative even when pages are hidden in the sidebar.
 
 | Admin Action | API Call | Backend Handler |
 |---|---|---|
-| Admin login | `POST /auth/admin-login` | Checks `ADMIN_KEY`, returns admin JWT. |
+| Request admin access | `POST /auth/admin-request-access` | Stores a pending admin identity with a self-selected, hashed password and zero permissions. |
+| Admin login | `POST /auth/admin-login` | Verifies email + hashed password and returns an identified admin JWT only for active, approved accounts. |
 | Dashboard catalog | `GET /products?...` | Public catalog route reused by admin. |
 | Recommendation stats | `GET /recommendations/admin/stats` | Admin-only analytics aggregation. |
 | Health panel | `GET /health` | API health. |
 | User/token admin | `GET /auth/admin/users` | Admin user list plus latest token order. |
-| Operations panel | `GET /auth/admin/operations` | Latest orders, order totals, audit logs. |
+| Operations panel | `GET /auth/admin/operations` | Latest orders and order totals. |
+| Audit log | `GET /auth/admin/audit-log` | System-scoped administrative changes. |
+| Roles | `GET/PATCH /admin/roles` | Master-only access-request approval and role/section management. |
+| Revoke admin sessions | `POST /admin/roles/:id/revoke-sessions` | Master-only invalidation of an administrator's active JWTs without changing their password. |
 | Update user tokens | `PATCH /auth/admin/users/:id/tokens` | Sets/adds tokens, writes audit log. |
 | Preview affiliate link | `POST /products/preview-link` | Parses product details from remote link. |
 | Add product | `POST /products` | Creates product, stores image, clears caches, audit log. |
@@ -317,9 +334,14 @@ erDiagram
   ClosetItem }o--o{ ClosetOutfit : composed_into
   User ||--o{ TokenOrder : pays
   User ||--o{ UserEvent : emits
+  User ||--o{ UserSession : authenticates_with
+  UserSession ||--o{ UserEvent : groups
   Product ||--o{ UserEvent : referenced_by
+  User ||--o{ GenerationMetric : generates
+  Product ||--o{ GenerationMetric : optionally_referenced_by
   User ||--|| UserPreference : has
   Product }o--o{ User : wishlistProducts
+  AdminUser ||--o{ AdminAuditLog : performs
   AdminAuditLog }o--|| Product : records_product_actions
   AdminAuditLog }o--|| User : records_user_actions
 ```
@@ -336,6 +358,9 @@ erDiagram
 | `TokenOrder` | `server/models/TokenOrder.js` | PhonePe order, tokens, status, subscription period fields. |
 | `UserEvent` | `server/models/UserEvent.js` | Behavioral signal: page view, search, product click, try-on, shop click, etc. |
 | `UserPreference` | `server/models/UserPreference.js` | Weighted user preference rollup from events. |
+| `UserSession` | `server/models/UserSession.js` | Hashed login session, login/logout/last-active times, capped active duration, route, and coarse client type. |
+| `GenerationMetric` | `server/models/GenerationMetric.js` | Privacy-safe generation outcome, latency, provider/model, credit restoration, and failure category. |
+| `AdminUser` | `server/models/AdminUser.js` | Individual admin identity, bcrypt password hash, pending/active/disabled status, role, section access, and session credential version. |
 | `AdminAuditLog` | `server/models/AdminAuditLog.js` | Admin mutations and token changes. |
 
 ## 10. AI Image Try-On Flow
@@ -559,7 +584,10 @@ Product import script:
 flowchart TD
   UIEvent[Frontend user action] --> Track[recordEvent]
   Track --> API[/recommendations/events]
+  Visible[Recommendation visible] --> Batch[/recommendations/events/batch]
+  Batch --> UserEvent
   API --> UserEvent[(UserEvent)]
+  API --> Session[(UserSession)]
   API --> Preference[(UserPreference)]
   Preference --> ForYou[/recommendations/for-you]
   Product[(Product)] --> ForYou
@@ -571,8 +599,11 @@ Tracked event types include:
 - `page_view`
 - `search`
 - `wishlist`
+- `wishlist_remove`
 - `product_view`
 - `product_click`
+- `recommendation_impression`
+- `recommendation_click`
 - `try_on`
 - `shop_click`
 - `style_bot_query`
@@ -583,7 +614,7 @@ Tracked event types include:
 
 - `GET /recommendations/for-you`
 - `GET /recommendations/similar/:productId`
-- `GET /recommendations/admin/stats`
+- `GET /recommendations/admin/stats?range=7|30|90|custom&from=YYYY-MM-DD&to=YYYY-MM-DD`
 
 ## 16. Payments and Tokens
 
@@ -741,7 +772,8 @@ Important env controls:
 
 | Area | Implementation |
 |---|---|
-| Auth | User JWT in `Authorization` header; admin JWT/admin key for admin routes. |
+| Auth | User JWT in `Authorization`; identified admin JWT backed by an approved `AdminUser`. New admins request access with their own password and receive no JWT until approved. |
+| Admin RBAC | `master` always receives all three sections plus role management. `developer` receives selected User Operations, System Management, and Cost Management tags. |
 | Token storage | Storefront stores auth token in `sessionStorage`. Admin stores admin session in `sessionStorage`. |
 | Passwords | `bcryptjs` hash with cost 12. |
 | OTP sessions | `createTempSessionStore()` backed by Redis or local fallback. OTP digests use HMAC with `JWT_SECRET`. |
@@ -782,7 +814,7 @@ Core server:
 - `MONGODB_URI`
 - `MONGODB_DB`
 - `JWT_SECRET`
-- `ADMIN_KEY`
+- First Master bootstrap: provide one-time `MASTER_ADMIN_EMAIL` and `MASTER_ADMIN_PASSWORD` process variables to `npm run admin:bootstrap-master`; do not store the password in `.env`. To intentionally replace an existing Master's legacy credential, rerun it with `-- --reset-existing` and that Master's exact email.
 
 Credits and generation costs:
 
@@ -962,7 +994,7 @@ These are not necessarily bugs, but they are important to know:
 | Video generation fails | Existing TryOn image, `TRYON_VIDEO_PROVIDER`, `FAL_KEY`, `FAL_TRYON_VIDEO_*`, token balance. |
 | Token not restored after failed generation | `reserveToken()` / `refundToken()` path in `tryons.js` or `closet.js`. |
 | Payment completed but tokens missing | `payments.js`, `TokenOrder`, PhonePe order status, `/payments/orders/:id/status`, backend logs. |
-| Admin cannot login | `ADMIN_KEY`, `/auth/admin-login`, admin session storage. |
+| Admin cannot login | `AdminUser` status/password, Master approval, `/auth/admin-login`, admin session storage. |
 | Uploaded media 401/404 | `serveUploadedMedia()`, protected token query/header, storage provider, Nginx `/uploads` proxy. |
 | Queue status stuck | `QUEUE_ENABLED`, `REDIS_URL`, worker process, `/api/jobs/:queue/:id`, BullMQ logs. |
 | Closet generation fails | `FITROOM_API_KEY`, body photo readiness, selected item image availability, token balance. |
