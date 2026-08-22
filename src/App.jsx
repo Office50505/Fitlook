@@ -8309,6 +8309,7 @@ function AuthPage({ mode, setUser }) {
   const [otpLoading, setOtpLoading] = useState(false);
   const [localOtpLoading, setLocalOtpLoading] = useState(false);
   const [localTestOtp, setLocalTestOtp] = useState('');
+  const [localOtpIssue, setLocalOtpIssue] = useState('');
   const [bodyPhotoFile, setBodyPhotoFile] = useState(null);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
   const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
@@ -8329,6 +8330,7 @@ function AuthPage({ mode, setUser }) {
     setOtpValue('');
     setOtpSession('');
     setLocalTestOtp('');
+    setLocalOtpIssue('');
     if (mode === 'signup') {
       setSignupStep('phone');
     }
@@ -8364,6 +8366,7 @@ function AuthPage({ mode, setUser }) {
     setOtpSession('');
     setOtpValue('');
     setLocalTestOtp('');
+    setLocalOtpIssue('');
     setMessage('');
     if (session) void cancelOtpSession(purpose, session, phone);
   };
@@ -8375,25 +8378,54 @@ function AuthPage({ mode, setUser }) {
     setOtpSession('');
     setOtpValue('');
     setLocalTestOtp('');
+    setLocalOtpIssue('');
     if (session) void cancelOtpSession(purpose, session, phone);
   };
 
   const fetchLocalTestOtp = async (purpose, session = otpSession, phone = phoneValue, { fill = false } = {}) => {
     if (!ENABLE_TEST_OTP_HELPER || !session || !phone || localOtpLoading) return '';
     setLocalOtpLoading(true);
+    setLocalOtpIssue('');
     try {
       const params = new URLSearchParams({ purpose, phone, otpSession: session });
       const data = await api(`/auth/test-otp?${params.toString()}`, { retry: 0 });
       const otp = String(data.otp || '').replace(/\D/g, '').slice(0, 6);
       setLocalTestOtp(otp);
       if (fill) setOtpValue(otp);
+      if (!otp) setLocalOtpIssue('No local test OTP was returned for this request.');
       return otp;
-    } catch {
+    } catch (err) {
       setLocalTestOtp('');
+      const detail = err?.message && !/not found/i.test(err.message)
+        ? ` ${err.message}`
+        : ' Enable mock OTP delivery and ENABLE_TEST_OTP_HELPER on the server.';
+      setLocalOtpIssue(`Local test OTP is unavailable.${detail}`);
       return '';
     } finally {
       setLocalOtpLoading(false);
     }
+  };
+
+  const renderLocalTestOtpHelper = (purpose) => {
+    if (!ENABLE_TEST_OTP_HELPER) return null;
+    const helperText = localTestOtp
+      ? <>Test OTP: <strong>{localTestOtp}</strong></>
+      : localOtpLoading
+        ? 'Getting test OTP...'
+        : localOtpIssue || 'Test OTP appears here when local mock delivery is enabled.';
+    return (
+      <div className="signup-test-otp-panel" role="status" aria-live="polite">
+        <p className={`signup-test-otp ${localOtpIssue && !localTestOtp ? 'signup-test-otp-error' : ''}`}>{helperText}</p>
+        <button
+          className="signup-test-otp-action"
+          type="button"
+          disabled={localOtpLoading || !otpSession}
+          onClick={() => fetchLocalTestOtp(purpose, otpSession, phoneValue, { fill: true })}
+        >
+          {localTestOtp ? 'Fill OTP' : localOtpLoading ? 'Checking...' : 'Show test OTP'}
+        </button>
+      </div>
+    );
   };
 
   const requestSignupOtp = async () => {
@@ -8415,6 +8447,7 @@ function AuthPage({ mode, setUser }) {
       setPhoneValue(nextPhone);
       setOtpValue('');
       setLocalTestOtp('');
+      setLocalOtpIssue('');
       const testOtp = await fetchLocalTestOtp('signup', nextSession, nextPhone);
       setMessage(testOtp ? `OTP sent. Test code: ${testOtp}` : 'OTP sent.');
     } catch (err) {
@@ -8463,6 +8496,7 @@ function AuthPage({ mode, setUser }) {
       setPhoneValue(nextPhone);
       setOtpValue('');
       setLocalTestOtp('');
+      setLocalOtpIssue('');
       const testOtp = await fetchLocalTestOtp('login', nextSession, nextPhone);
       setMessage(testOtp ? `OTP sent. Test code: ${testOtp}` : 'OTP sent.');
     } catch (err) {
@@ -8568,13 +8602,13 @@ function AuthPage({ mode, setUser }) {
             <form className="auth-login-form" onSubmit={(event) => event.preventDefault()} aria-busy={otpLoading}>
               <label className="signup-field">
                 <span>Mobile number</span>
-                <input name="loginPhone" type="tel" inputMode="numeric" pattern="[0-9]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('login', event.target.value)} />
+                <input name="loginPhone" type="tel" inputMode="numeric" pattern="[0-9+\\s-]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('login', event.target.value)} />
               </label>
               <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestLoginOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
               {otpSession && (
                 <div className="auth-signup-reference-fields">
                   <OtpCodeFields idPrefix="login-otp" value={otpValue} onChange={setOtpValue} disabled={otpLoading} />
-                  {ENABLE_TEST_OTP_HELPER && localTestOtp && <p className="signup-test-otp">Test OTP: <strong>{localTestOtp}</strong></p>}
+                  {renderLocalTestOtpHelper('login')}
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifyLoginOtp}>{otpLoading ? 'Verifying...' : 'Verify & login'}</button>
                 </div>
               )}
@@ -8603,14 +8637,14 @@ function AuthPage({ mode, setUser }) {
               <div className="auth-signup-reference-fields">
                 <label className="signup-field">
                   <span>Mobile number</span>
-                  <input name="phoneDisplay" type="tel" inputMode="numeric" pattern="[0-9]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('signup', event.target.value)} />
+                  <input name="phoneDisplay" type="tel" inputMode="numeric" pattern="[0-9+\\s-]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('signup', event.target.value)} />
                 </label>
               </div>
               <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestSignupOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
               {otpSession && (
                 <div className="auth-signup-reference-fields">
                   <OtpCodeFields idPrefix="signup-otp" value={otpValue} onChange={setOtpValue} disabled={otpLoading} />
-                  {ENABLE_TEST_OTP_HELPER && localTestOtp && <p className="signup-test-otp">Test OTP: <strong>{localTestOtp}</strong></p>}
+                  {renderLocalTestOtpHelper('signup')}
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifySignupOtp}>{otpLoading ? 'Verifying...' : 'Verify & continue'}</button>
                 </div>
               )}

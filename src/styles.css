@@ -34866,12 +34866,55 @@ label,
 
 .auth-login-reference-page .signup-test-otp,
 .auth-signup-reference-form.signup-step-phone .signup-test-otp {
-  margin: -6px 0 -4px !important;
+  margin: 0 !important;
   color: #96504d !important;
   font-family: var(--font-interface) !important;
   font-size: 12px !important;
   font-weight: 700 !important;
   line-height: 1.2 !important;
+}
+
+.auth-login-reference-page .signup-test-otp-panel,
+.auth-signup-reference-form.signup-step-phone .signup-test-otp-panel {
+  display: flex !important;
+  min-height: 34px !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  margin: -4px 0 -2px !important;
+  padding: 8px 10px !important;
+  border: 1px solid #eadbd6 !important;
+  border-radius: 7px !important;
+  background: #fff7f4 !important;
+}
+
+.auth-login-reference-page .signup-test-otp-error,
+.auth-signup-reference-form.signup-step-phone .signup-test-otp-error {
+  color: #7e3430 !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+}
+
+.auth-login-reference-page .signup-test-otp-action,
+.auth-signup-reference-form.signup-step-phone .signup-test-otp-action {
+  flex: 0 0 auto !important;
+  min-height: 24px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  padding: 0 10px !important;
+  background: #292421 !important;
+  color: #fff !important;
+  cursor: pointer !important;
+  font-family: var(--font-interface) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  line-height: 24px !important;
+}
+
+.auth-login-reference-page .signup-test-otp-action:disabled,
+.auth-signup-reference-form.signup-step-phone .signup-test-otp-action:disabled {
+  cursor: not-allowed !important;
+  opacity: .65 !important;
 }
 
 /* Global premium logo lockup: [LM] | Lookmefy. */
