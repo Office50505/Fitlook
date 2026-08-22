@@ -63,3 +63,30 @@ test('validateServerEnv warns when mock OTP delivery is incomplete outside produ
   assert.equal(report.warnings.length, 1);
   assert.match(report.warnings.join(' '), /OTP_MOCK_STORE_PATH/);
 });
+
+test('validateServerEnv rejects fixed OTP in production', () => {
+  assert.throws(
+    () => validateServerEnv({
+      NODE_ENV: 'production',
+      MONGODB_URI: 'mongodb://localhost:27017/fitlook',
+      JWT_SECRET: 'secret',
+      OTP_DELIVERY_PROVIDER: 'webhook',
+      OTP_DELIVERY_WEBHOOK_URL: 'https://otp-provider.example/send',
+      OTP_FIXED_CODE: '123456'
+    }),
+    /OTP_FIXED_CODE is not allowed in production/
+  );
+});
+
+test('validateServerEnv allows fixed OTP for staging mock delivery', () => {
+  const report = validateServerEnv({
+    NODE_ENV: 'staging',
+    MONGODB_URI: 'mongodb://localhost:27017/fitlook',
+    JWT_SECRET: 'secret',
+    OTP_DELIVERY_PROVIDER: 'mock',
+    OTP_MOCK_STORE_PATH: '/tmp/otp.jsonl',
+    OTP_FIXED_CODE: '123456'
+  });
+
+  assert.equal(report.warnings.length, 0);
+});

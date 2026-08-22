@@ -6,6 +6,7 @@ import {
   cancelOtpChallenge,
   createOtpChallenge,
   currentSessionMatches,
+  fixedOtpCode,
   normalizeOtp,
   verifyOtpChallenge
 } from '../server/utils/otp.js';
@@ -22,6 +23,9 @@ async function withLocalTempSessions(fn) {
   const originalRequireRedis = process.env.TEMP_SESSION_REQUIRE_REDIS;
   const originalRedisUrl = process.env.REDIS_URL;
   const originalJwtSecret = process.env.JWT_SECRET;
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalOtpProvider = process.env.OTP_DELIVERY_PROVIDER;
+  const originalFixedOtp = process.env.OTP_FIXED_CODE;
   process.env.TEMP_SESSION_REQUIRE_REDIS = 'false';
   delete process.env.REDIS_URL;
   process.env.JWT_SECRET = 'otp-test-secret';
@@ -35,6 +39,12 @@ async function withLocalTempSessions(fn) {
     else process.env.REDIS_URL = originalRedisUrl;
     if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
     else process.env.JWT_SECRET = originalJwtSecret;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+    if (originalOtpProvider === undefined) delete process.env.OTP_DELIVERY_PROVIDER;
+    else process.env.OTP_DELIVERY_PROVIDER = originalOtpProvider;
+    if (originalFixedOtp === undefined) delete process.env.OTP_FIXED_CODE;
+    else process.env.OTP_FIXED_CODE = originalFixedOtp;
   }
 }
 
@@ -80,6 +90,20 @@ test('correct OTP verifies once and rejects reuse', async () => withLocalTempSes
   assert.equal(first.ok, true);
   assert.equal(second.ok, false);
   assert.match(second.message, /already been used/i);
+}));
+
+test('fixed OTP is allowed only for non-production mock delivery challenges', async () => withLocalTempSessions(async () => {
+  process.env.NODE_ENV = 'staging';
+  process.env.OTP_DELIVERY_PROVIDER = 'mock';
+  process.env.OTP_FIXED_CODE = '123456';
+
+  const challenge = await createChallenge('fixed-code', { purpose: 'login' });
+  assert.equal(challenge.otp, '123456');
+  assert.equal(fixedOtpCode(), '123456');
+  assert.equal((await verify({ ...challenge, otp: '123456' })).ok, true);
+
+  process.env.NODE_ENV = 'production';
+  assert.equal(fixedOtpCode(), '');
 }));
 
 test('blank, alphabetic, short, long, and wrong OTPs are rejected', async () => withLocalTempSessions(async () => {

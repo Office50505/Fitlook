@@ -65,6 +65,16 @@ export function validateServerEnv(env = process.env) {
     if (production) errors.push(message);
     else warnings.push(message);
   }
+  if (String(env.OTP_FIXED_CODE || '').trim()) {
+    const validFixedCode = /^\d{6}$/.test(String(env.OTP_FIXED_CODE || '').trim());
+    if (!validFixedCode) {
+      errors.push('OTP_FIXED_CODE must be exactly 6 digits.');
+    } else if (production) {
+      errors.push('OTP_FIXED_CODE is not allowed in production.');
+    } else if (otpProvider && otpProvider !== 'mock') {
+      warnings.push('OTP_FIXED_CODE only applies when OTP_DELIVERY_PROVIDER=mock.');
+    }
+  }
   if (otpProvider === 'mock' && !String(env.OTP_MOCK_STORE_PATH || '').trim()) {
     warnings.push('Mock OTP delivery is configured but OTP_MOCK_STORE_PATH is missing.');
   }

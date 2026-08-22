@@ -8,12 +8,24 @@ function otpSecret() {
 }
 
 function createOtpCode() {
+  const fixedOtp = fixedOtpCode();
+  if (fixedOtp) return fixedOtp;
   return String(randomInt(0, 10 ** OTP_DIGITS)).padStart(OTP_DIGITS, '0');
 }
 
 function normalizeOtp(value = '') {
   const candidate = String(value || '').trim();
   return /^\d{6}$/.test(candidate) ? candidate : '';
+}
+
+function fixedOtpCode(env = process.env) {
+  const code = normalizeOtp(env.OTP_FIXED_CODE);
+  if (!code) return '';
+  const nodeEnv = String(env.NODE_ENV || '').trim().toLowerCase();
+  const provider = String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase();
+  if (nodeEnv === 'production') return '';
+  if (provider && provider !== 'mock') return '';
+  return code;
 }
 
 function otpDigest(purpose, otpSession, otp) {
@@ -138,6 +150,7 @@ export {
   createOtpChallenge,
   createOtpCode,
   currentSessionMatches,
+  fixedOtpCode,
   normalizeOtp,
   otpDigest,
   phoneScopeId,
