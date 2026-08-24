@@ -10,6 +10,20 @@ test('OTP delivery fails closed in production when no provider is configured', a
   );
 });
 
+test('OTP delivery skips external provider for explicitly enabled production fixed OTP', async () => {
+  const result = await deliverOtp(
+    { phone: '+919876543210', otp: '123456', purpose: 'login' },
+    {
+      NODE_ENV: 'production',
+      OTP_DELIVERY_PROVIDER: 'disabled',
+      OTP_FIXED_CODE: '123456',
+      ALLOW_FIXED_OTP_IN_PRODUCTION: 'true'
+    }
+  );
+
+  assert.deepEqual(result, { fixedOtp: true });
+});
+
 test('OTP delivery defaults to local mock outside production when provider is unset', async () => {
   const storePath = `/private/tmp/fitlook-otp-default-${Date.now()}-${Math.random()}.jsonl`;
   await deliverOtp(

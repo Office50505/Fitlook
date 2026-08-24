@@ -26,6 +26,7 @@ async function withLocalTempSessions(fn) {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalOtpProvider = process.env.OTP_DELIVERY_PROVIDER;
   const originalFixedOtp = process.env.OTP_FIXED_CODE;
+  const originalAllowProductionFixedOtp = process.env.ALLOW_FIXED_OTP_IN_PRODUCTION;
   process.env.TEMP_SESSION_REQUIRE_REDIS = 'false';
   delete process.env.REDIS_URL;
   process.env.JWT_SECRET = 'otp-test-secret';
@@ -45,6 +46,8 @@ async function withLocalTempSessions(fn) {
     else process.env.OTP_DELIVERY_PROVIDER = originalOtpProvider;
     if (originalFixedOtp === undefined) delete process.env.OTP_FIXED_CODE;
     else process.env.OTP_FIXED_CODE = originalFixedOtp;
+    if (originalAllowProductionFixedOtp === undefined) delete process.env.ALLOW_FIXED_OTP_IN_PRODUCTION;
+    else process.env.ALLOW_FIXED_OTP_IN_PRODUCTION = originalAllowProductionFixedOtp;
   }
 }
 
@@ -92,7 +95,7 @@ test('correct OTP verifies once and rejects reuse', async () => withLocalTempSes
   assert.match(second.message, /already been used/i);
 }));
 
-test('fixed OTP is allowed only for non-production mock delivery challenges', async () => withLocalTempSessions(async () => {
+test('fixed OTP is allowed for staging mock delivery and explicit production testing', async () => withLocalTempSessions(async () => {
   process.env.NODE_ENV = 'staging';
   process.env.OTP_DELIVERY_PROVIDER = 'mock';
   process.env.OTP_FIXED_CODE = '123456';
@@ -104,6 +107,10 @@ test('fixed OTP is allowed only for non-production mock delivery challenges', as
 
   process.env.NODE_ENV = 'production';
   assert.equal(fixedOtpCode(), '');
+
+  process.env.OTP_DELIVERY_PROVIDER = 'disabled';
+  process.env.ALLOW_FIXED_OTP_IN_PRODUCTION = 'true';
+  assert.equal(fixedOtpCode(), '123456');
 }));
 
 test('blank, alphabetic, short, long, and wrong OTPs are rejected', async () => withLocalTempSessions(async () => {

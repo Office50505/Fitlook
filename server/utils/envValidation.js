@@ -18,10 +18,15 @@ const FEATURE_ENV_GROUPS = [
 ];
 
 const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'off', 'disabled']);
+const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'on']);
 
 export function phonePeEnabled(env = process.env) {
   const value = String(env.PHONEPE_ENABLED || '').trim().toLowerCase();
   return value ? !FALSE_ENV_VALUES.has(value) : true;
+}
+
+function fixedOtpAllowedInProduction(env = process.env) {
+  return TRUE_ENV_VALUES.has(String(env.ALLOW_FIXED_OTP_IN_PRODUCTION || '').trim().toLowerCase());
 }
 
 export function validateServerEnv(env = process.env) {
@@ -41,6 +46,7 @@ export function validateServerEnv(env = process.env) {
   };
 
   const otpProvider = String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase();
+  const allowProductionFixedOtp = fixedOtpAllowedInProduction(env);
   const paymentsEnabled = phonePeEnabled(env);
   if (production && !['webhook', 'disabled'].includes(otpProvider)) {
     errors.push('Production requires OTP_DELIVERY_PROVIDER=webhook or disabled.');
@@ -73,10 +79,10 @@ export function validateServerEnv(env = process.env) {
     const validFixedCode = /^\d{6}$/.test(String(env.OTP_FIXED_CODE || '').trim());
     if (!validFixedCode) {
       errors.push('OTP_FIXED_CODE must be exactly 6 digits.');
-    } else if (production) {
+    } else if (production && !allowProductionFixedOtp) {
       errors.push('OTP_FIXED_CODE is not allowed in production.');
-    } else if (otpProvider && otpProvider !== 'mock') {
-      warnings.push('OTP_FIXED_CODE only applies when OTP_DELIVERY_PROVIDER=mock.');
+    } else if (otpProvider && otpProvider !== 'mock' && otpProvider !== 'disabled') {
+      warnings.push('OTP_FIXED_CODE only applies when OTP_DELIVERY_PROVIDER=mock or disabled.');
     }
   }
   if (otpProvider === 'mock' && !String(env.OTP_MOCK_STORE_PATH || '').trim()) {
@@ -101,15 +107,19 @@ export function configurationReadiness(env = process.env) {
   const paymentsEnabled = phonePeEnabled(env);
   const phonePeKeys = ['PHONEPE_CLIENT_ID', 'PHONEPE_CLIENT_SECRET', 'PHONEPE_CLIENT_VERSION', 'PHONEPE_CALLBACK_USERNAME', 'PHONEPE_CALLBACK_PASSWORD'];
   const phonePeConfigured = phonePeKeys.every((key) => Boolean(String(env[key] || '').trim()));
+  const fixedOtpConfigured = isProductionEnv(env)
+    && fixedOtpAllowedInProduction(env)
+    && /^\d{6}$/.test(String(env.OTP_FIXED_CODE || '').trim())
+    && (!otpProvider || otpProvider === 'disabled' || otpProvider === 'mock');
   const otpConfigured = otpProvider === 'webhook'
     ? Boolean(String(env.OTP_DELIVERY_WEBHOOK_URL || '').trim())
     : otpProvider === 'mock'
       ? !isProductionEnv(env) && Boolean(String(env.OTP_MOCK_STORE_PATH || '').trim())
-      : false;
+      : fixedOtpConfigured;
 
   return {
-    otpProvider: otpProvider === 'disabled' ? 'disabled' : otpConfigured ? 'configured' : 'not_configured',
-    otpProviderType: otpProvider || 'disabled',
+    otpProvider: fixedOtpConfigured ? 'configured' : otpProvider === 'disabled' ? 'disabled' : otpConfigured ? 'configured' : 'not_configured',
+    otpProviderType: fixedOtpConfigured ? 'fixed' : otpProvider || 'disabled',
     phonePe: !paymentsEnabled ? 'disabled' : phonePeConfigured ? 'configured' : 'not_configured'
   };
 }

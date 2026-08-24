@@ -1,4 +1,5 @@
 import { MockOtpProvider, WebhookOtpProvider, otpDeliveryFailure } from './otpProviders.js';
+import { fixedOtpCode } from './otp.js';
 import { isProductionEnv } from './urlValidation.js';
 import OtpDeliveryMetric from '../models/OtpDeliveryMetric.js';
 
@@ -25,10 +26,11 @@ function createOtpProvider(env = process.env) {
 
 async function deliverOtp(message, env = process.env) {
   const startedAt = Date.now();
-  const provider = otpDeliveryProvider(env) || 'disabled';
+  const hasFixedOtp = Boolean(fixedOtpCode(env));
+  const provider = hasFixedOtp ? 'fixed' : otpDeliveryProvider(env) || 'disabled';
   const estimatedCostUsd = Math.max(0, Number(env.OTP_COST_PER_MESSAGE_USD) || 0);
   try {
-    const result = await createOtpProvider(env).deliver(message);
+    const result = hasFixedOtp ? { fixedOtp: true } : await createOtpProvider(env).deliver(message);
     await recordOtpDeliveryMetric({
       provider,
       purpose: ['signup', 'login'].includes(message?.purpose) ? message.purpose : 'other',

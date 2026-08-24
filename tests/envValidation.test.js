@@ -116,6 +116,25 @@ test('validateServerEnv rejects fixed OTP in production', () => {
   );
 });
 
+test('validateServerEnv allows explicitly enabled fixed OTP in production', () => {
+  const env = {
+    NODE_ENV: 'production',
+    MONGODB_URI: 'mongodb://localhost:27017/fitlook',
+    JWT_SECRET: 'secret',
+    OTP_DELIVERY_PROVIDER: 'disabled',
+    OTP_FIXED_CODE: '123456',
+    ALLOW_FIXED_OTP_IN_PRODUCTION: 'true',
+    PHONEPE_ENABLED: 'false'
+  };
+
+  assert.deepEqual(validateServerEnv(env), { warnings: [] });
+  assert.deepEqual(configurationReadiness(env), {
+    otpProvider: 'configured',
+    otpProviderType: 'fixed',
+    phonePe: 'disabled'
+  });
+});
+
 test('validateServerEnv allows fixed OTP for staging mock delivery', () => {
   const report = validateServerEnv({
     NODE_ENV: 'staging',

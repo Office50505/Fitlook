@@ -23,8 +23,9 @@ function fixedOtpCode(env = process.env) {
   if (!code) return '';
   const nodeEnv = String(env.NODE_ENV || '').trim().toLowerCase();
   const provider = String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase();
-  if (nodeEnv === 'production') return '';
-  if (provider && provider !== 'mock') return '';
+  const allowProductionFixedOtp = ['1', 'true', 'yes', 'on'].includes(String(env.ALLOW_FIXED_OTP_IN_PRODUCTION || '').trim().toLowerCase());
+  if (nodeEnv === 'production' && !allowProductionFixedOtp) return '';
+  if (provider && provider !== 'mock' && provider !== 'disabled') return '';
   return code;
 }
 
