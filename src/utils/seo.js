@@ -17,7 +17,8 @@ const routeMeta = {
   '/privacy': ['Privacy Policy - Lookmefy', 'How Lookmefy handles profile photos, try-on results, and account data.'],
   '/terms': ['Terms and Conditions - Lookmefy', 'Lookmefy shopping, credits, AI try-on, and platform terms.'],
   '/support': ['Support - Lookmefy', 'Get help with orders, payments, AI try-on, and account questions.'],
-  '/contact': ['Contact Lookmefy', 'Contact Lookmefy support for shopping, payment, or AI try-on help.']
+  '/contact': ['Contact Lookmefy', 'Contact Lookmefy support for shopping, payment, or AI try-on help.'],
+  '/download': ['Download the Lookmefy App', 'Download Lookmefy for AI Try-On, personal styling, wardrobe management and fashion discovery on mobile.']
 };
 
 function upsertMeta(selector, attributes) {

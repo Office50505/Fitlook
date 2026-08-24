@@ -23,12 +23,27 @@ const AI_IMAGE_TIMEOUT_MS = 180000;
 const AI_VIDEO_TIMEOUT_MS = 300000;
 const PRODUCT_CACHE_TTL_MS = 30_000;
 const SESSION_HEARTBEAT_MS = 30_000;
+const SESSION_HEARTBEAT_MIN_GAP_MS = 15_000;
+const SESSION_HEARTBEAT_STORAGE_KEY = 'fitlook_session_heartbeat_at';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const AUTH_TOKEN_KEY = 'fitlook_token';
 const ENABLE_TEST_OTP_HELPER = import.meta.env.DEV && import.meta.env.VITE_ENABLE_TEST_OTP_HELPER !== 'false';
+const APP_STORE_URL = safeExternalStoreUrl(import.meta.env.VITE_APP_STORE_URL);
+const PLAY_STORE_URL = safeExternalStoreUrl(import.meta.env.VITE_PLAY_STORE_URL);
 const productListCache = new Map();
 const productDetailLocalCache = new Map();
 const EMPTY_PRODUCT_FACETS = { brands: [], categories: [], categoryCounts: [] };
+
+function safeExternalStoreUrl(value = '') {
+  const candidate = String(value || '').trim();
+  if (!candidate) return '';
+  try {
+    const url = new URL(candidate);
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
 
 function emptyProductListState(error = '') {
   return { products: [], total: 0, facets: EMPTY_PRODUCT_FACETS, loading: false, error };
@@ -1131,8 +1146,27 @@ function useRecommendationImpression(product) {
   return elementRef;
 }
 
+function readLastSessionHeartbeatAt() {
+  try {
+    return Number(sessionStorage.getItem(SESSION_HEARTBEAT_STORAGE_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeLastSessionHeartbeatAt(value) {
+  try {
+    sessionStorage.setItem(SESSION_HEARTBEAT_STORAGE_KEY, String(value));
+  } catch {
+    // Session activity tracking should never block the app UI.
+  }
+}
+
 function sendSessionHeartbeat({ keepalive = false } = {}) {
   if (!readAuthToken()) return Promise.resolve();
+  const now = Date.now();
+  if (now - readLastSessionHeartbeatAt() < SESSION_HEARTBEAT_MIN_GAP_MS) return Promise.resolve();
+  writeLastSessionHeartbeatAt(now);
   return api('/auth/session/heartbeat', {
     method: 'POST',
     body: JSON.stringify({ path: window.location.pathname }),
@@ -1527,6 +1561,7 @@ function Header({ user, setUser, authChecked = true }) {
     ['Home', '/home'],
     ['Explore', '/categories'],
     ['About', '/about'],
+    ['Download', '/download'],
     ['Wardrobe', '/closet'],
     ['Custom Try On', '/custom-try-on'],
     ['AI Stylist', user ? '/style-bot' : '/signup']
@@ -1758,14 +1793,84 @@ function SearchLandingPage() {
   );
 }
 
+function storeLinkItems(context = 'page') {
+  return [
+    {
+      key: 'app_store',
+      label: 'Download on the App Store',
+      helper: 'Download on the',
+      title: 'App Store',
+      href: APP_STORE_URL,
+      icon: 'apple',
+      platform: 'apple',
+      context
+    },
+    {
+      key: 'google_play',
+      label: 'Get it on Google Play',
+      helper: 'Get it on',
+      title: 'Google Play',
+      href: PLAY_STORE_URL,
+      icon: 'play',
+      platform: 'google_play',
+      context
+    }
+  ];
+}
+
+function StoreAction({ item, className = 'download-store-action' }) {
+  const analyticsEvent = item.platform === 'apple' ? 'app_store_click' : 'google_play_click';
+  const content = (
+    <>
+      <StoreLogo name={item.icon} />
+      <span>
+        <small>{item.helper}</small>
+        <strong>{item.title}</strong>
+      </span>
+    </>
+  );
+  if (!item.href) {
+    return (
+      <button className={`${className} is-disabled`} type="button" disabled aria-label={`${item.label} unavailable until the store URL is configured`}>
+        {content}
+      </button>
+    );
+  }
+  return (
+    <a
+      className={className}
+      href={item.href}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={item.label}
+      onClick={() => trackClientEvent(analyticsEvent, { platform: item.platform, context: item.context })}
+    >
+      {content}
+    </a>
+  );
+}
+
+function StoreActions({ context, className = 'download-store-actions', itemClassName = 'download-store-action' }) {
+  return (
+    <div className={className}>
+      {storeLinkItems(context).map((item) => <StoreAction item={item} className={itemClassName} key={item.key} />)}
+    </div>
+  );
+}
+
+function FooterCol({ title, links }) {
+  return (
+    <div className="footer-col">
+      <h2>{title}</h2>
+      {links.map(([label, href]) => <a href={href} key={label}>{label}</a>)}
+    </div>
+  );
+}
+
 function Footer({ compact = false }) {
   const socialLinks = [
     { label: 'Instagram', href: 'https://instagram.com/', icon: 'instagram' },
     { label: 'X', href: 'https://x.com/', icon: 'x' }
-  ];
-  const appLinks = [
-    { label: 'App Store', helper: 'Download on the', href: '/support', icon: 'apple' },
-    { label: 'Google Play', helper: 'Get it on', href: '/support', icon: 'play' }
   ];
 
   if (compact) {
@@ -1776,7 +1881,7 @@ function Footer({ compact = false }) {
             <div className="wishlist-compact-brand"><a href="/" aria-label="Lookmefy home"><BrandLogo /></a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div className="wishlist-compact-social" aria-label="Social links">{socialLinks.map((item) => <a href={item.href} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label} key={item.label}><SocialLogo name={item.icon} /></a>)}</div></div>
             <div><h2>Shop</h2><a href="/categories">New in</a><a href="/categories?gender=women">Women</a><a href="/categories?gender=men">Men</a><a href="/categories?discounted=true">Sale</a></div>
             <div><h2>Help</h2><a href="/support">Support</a><a href="/returns">Returns</a><a href="/contact">Contact us</a><a href="/shipping">Shipping</a></div>
-            <div><h2>Download our App</h2><p>Get the Lookmefy app for your daily fashion edit.</p><div className="wishlist-app-links">{appLinks.map((item) => <a className="wishlist-app-link" href={item.href} aria-label={item.label} key={item.label}><StoreLogo name={item.icon} /><span><small>{item.helper}</small><strong>{item.label}</strong></span></a>)}</div></div>
+            <div><h2><a className="footer-heading-link" href="/download">Download our App</a></h2><p>Get the Lookmefy app for your daily fashion edit.</p><StoreActions context="footer" className="wishlist-app-links" itemClassName="wishlist-app-link" /></div>
           </div>
           <div className="wishlist-compact-footer-bottom"><span>© 2026 Lookmefy. Curated by intelligence.</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a></div></div>
         </div>
@@ -6568,7 +6673,8 @@ function ProfilePage({ user, setUser }) {
     }
   };
 
-  const initials = (user.name || user.username || 'FL').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+  const displayName = user.name?.trim() || 'Lookmefy Profile';
+  const initials = displayName.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   const creditProgress = Math.min(100, Math.max(0, ((user.tokens || 0) / 2000) * 100));
   const logout = () => logoutCustomer(setUser);
   const finishAccountDeletion = () => {
@@ -6588,7 +6694,7 @@ function ProfilePage({ user, setUser }) {
 
         <section className="profile-reference-panel profile-reference-account" aria-label="Account overview">
           <div className={`profile-reference-avatar ${photoFrameClass}`.trim()}>{photoSrc ? <img src={photoSrc} alt="" /> : <span>{initials}</span>}</div>
-          <div className="profile-reference-account-copy"><div><h2>{user.name}</h2><span>@{user.username}</span></div><p>{user.email}</p><small>{genderPreferenceLabel(user.genderPreference)} preference · Member since {formatDate(user.joinedAt)}</small></div>
+          <div className="profile-reference-account-copy"><div><h2>{displayName}</h2></div><small>{genderPreferenceLabel(user.genderPreference)} preference · Member since {formatDate(user.joinedAt)}</small></div>
           <a href="#tryon-photo">Update photo</a>
         </section>
 
@@ -6667,8 +6773,7 @@ function ProfilePage({ user, setUser }) {
         <section className="profile-reference-panel profile-reference-settings" aria-label="Account settings">
           <div className="profile-reference-section-head"><div><h2>Account Settings</h2><p>Control how your profile is used across Lookmefy.</p></div></div>
           <div className="profile-reference-setting-list">
-            <div><span>Username</span><strong>@{user.username}</strong></div>
-            <div><span>Email address</span><strong>{user.email}</strong></div>
+            <div><span>Name</span><strong>{displayName}</strong></div>
             <div className="profile-reference-mode"><span>Try-on photo mode</span><div role="radiogroup" aria-label="Try-on photo mode"><label><input type="radio" name="profilePhotoModeSettings" value="ai-full-body" checked={profilePhotoMode === 'ai-full-body'} onChange={(event) => setProfilePhotoMode(event.target.value)} /> AI full-body</label><label><input type="radio" name="profilePhotoModeSettings" value="exact" checked={profilePhotoMode === 'exact'} onChange={(event) => setProfilePhotoMode(event.target.value)} /> Exact photo</label></div></div>
             <button className="profile-reference-neutral-action" type="button" onClick={() => window.dispatchEvent(new CustomEvent('fitlook:replay-onboarding'))}><span>Replay platform tour</span><b>›</b></button>
             <a href="/terms"><span>Terms and conditions</span><b>›</b></a>
@@ -7885,6 +7990,405 @@ function AboutPage({ user }) {
             <a className="about-button about-button-primary" href="/categories">Explore Fashion</a>
             <a className="about-button about-button-secondary" href="/custom-try-on">Try It On</a>
           </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function DownloadDeviceMockup({ label, variant = 'explore' }) {
+  return (
+    <div className={`download-device-mockup ${variant}`} aria-label={`${label} app screen placeholder`}>
+      <div className="download-device-shell">
+        <div className="download-device-notch" aria-hidden="true" />
+        <div className="download-device-status"><span>9:41</span><span>Lookmefy</span></div>
+        <div className="download-device-content">
+          <div className="download-device-hero-card">
+            <span>{label}</span>
+            <strong>{variant === 'tryon' ? 'Try it on' : variant === 'stylist' ? 'Your style edit' : 'Mockup ready'}</strong>
+          </div>
+          <div className="download-device-grid" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+          </div>
+        </div>
+        <div className="download-device-tabs" aria-hidden="true"><span /><span /><span /><span /><span /></div>
+      </div>
+    </div>
+  );
+}
+
+function DownloadPhoneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="7" y="2.8" width="10" height="18.4" rx="2" />
+      <path d="M10 5h4M11 18.5h2" />
+    </svg>
+  );
+}
+
+function DownloadHeroMockup() {
+  const [imageUnavailable, setImageUnavailable] = useState(false);
+
+  if (!imageUnavailable) {
+    return (
+      <div className="download-hero-phone-stage">
+        <OptimizedImage
+          className="download-hero-mockup-image"
+          src={asset('download-hero-mobile-screen.png')}
+          fallbackSrc=""
+          alt="Lookmefy mobile app home screen showing categories and new arrivals"
+          eager
+          highResolution={false}
+          onError={() => setImageUnavailable(true)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="download-hero-devices">
+      <DownloadDeviceMockup label="AI Try-On" variant="tryon" />
+      <DownloadDeviceMockup label="My Wardrobe" variant="wardrobe" />
+    </div>
+  );
+}
+
+function DownloadExploreMockup() {
+  const sideItems = [
+    { label: 'Popular', icon: 'star' },
+    { label: 'Kurti, Saree & Lehenga', image: 'category-generated/ethnic-wear.png' },
+    { label: 'Women Western', image: 'category-icons/tops-section.png' },
+    { label: 'Lingerie', image: 'category-icons/innerwear-section.png' },
+    { label: 'Men', image: 'category-generated/shirts.png', active: true },
+    { label: 'Beauty', image: 'category-generated/bags.png' },
+    { label: 'Footwear', image: 'category-icons/shoes-section.png' }
+  ];
+  const featuredItems = [
+    { label: 'Shirts', image: 'category-generated/shirts.png' },
+    { label: 'T-Shirts', image: 'category-generated/t-shirts.png' },
+    { label: 'Shoes', image: 'category-icons/shoes-section.png' }
+  ];
+  const fashionItems = [
+    { label: 'Shirts', image: 'category-generated/shirts.png' },
+    { label: 'Pants', image: 'category-generated/pants.png' },
+    { label: 'Jeans', image: 'category-generated/jeans.png' },
+    { label: 'Jackets', image: 'category-generated/jackets.png' },
+    { label: 'Watches', image: 'category-generated/watches.png' },
+    { label: 'Eyewear', image: 'category-generated/eyewear.png' }
+  ];
+  const bottomTabs = [
+    ['Home', <HomeIcon />],
+    ['Categories', <GridIcon />, true],
+    ['Wardrobe', <ClosetIcon />],
+    ['AI Studio', <SparkleLineIcon />],
+    ['Profile', <UserIcon />]
+  ];
+
+  return (
+    <div className="download-explore-mockup" aria-label="Lookmefy Categories mobile app mockup">
+      <span className="download-explore-hardware download-explore-hardware-left-one" aria-hidden="true" />
+      <span className="download-explore-hardware download-explore-hardware-left-two" aria-hidden="true" />
+      <span className="download-explore-hardware download-explore-hardware-right" aria-hidden="true" />
+      <div className="download-explore-camera" aria-hidden="true" />
+      <div className="download-explore-status" aria-hidden="true">
+        <span>2:27</span>
+        <span className="download-explore-status-icons"><i /><i /><i /></span>
+        <span className="download-explore-signal"><i /><i /><i /></span>
+      </div>
+      <div className="download-explore-header">
+        <div className="download-explore-brand">
+          <span className="download-explore-logo-mark">LM</span>
+          <span />
+          <strong>Lookmefy</strong>
+        </div>
+        <div className="download-explore-actions" aria-hidden="true">
+          <SearchIcon />
+          <HeartIcon />
+          <svg viewBox="0 0 24 24"><path d="M7 4h10v16H7z" /><path d="M10 8h4M10 12h4M10 16h2" /><path d="M5 7h2M5 11h2M5 15h2" /></svg>
+        </div>
+      </div>
+      <div className="download-explore-body">
+        <aside className="download-explore-sidebar" aria-hidden="true">
+          {sideItems.map((item) => (
+            <div className={`download-explore-side-item${item.active ? ' is-active' : ''}`} key={item.label}>
+              {item.icon === 'star' ? <span className="download-explore-star">★</span> : <OptimizedImage src={asset(item.image)} fallbackSrc="" alt="" highResolution={false} />}
+              <span>{item.label}</span>
+            </div>
+          ))}
+        </aside>
+        <div className="download-explore-content">
+          <p>MEN</p>
+          <h3>Featured For Men</h3>
+          <div className="download-explore-featured-grid">
+            {featuredItems.map((item) => (
+              <div className="download-explore-category" key={item.label}>
+                <span><OptimizedImage src={asset(item.image)} fallbackSrc="" alt="" highResolution={false} /></span>
+                <strong>{item.label}</strong>
+              </div>
+            ))}
+          </div>
+          <hr />
+          <h3>All Men Fashion</h3>
+          <div className="download-explore-fashion-grid">
+            {fashionItems.map((item) => (
+              <div className="download-explore-category" key={item.label}>
+                <span><OptimizedImage src={asset(item.image)} fallbackSrc="" alt="" highResolution={false} /></span>
+                <strong>{item.label}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <nav className="download-explore-bottom-tabs" aria-hidden="true">
+        {bottomTabs.map(([label, icon, active]) => (
+          <span className={active ? 'is-active' : ''} key={label}>
+            {icon}
+            <small>{label}</small>
+          </span>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function DownloadScreenVisual({ screen }) {
+  if (screen.deviceImage) {
+    return (
+      <span className="download-screen-device-stage">
+        <OptimizedImage
+          className={`download-screen-device-image ${screen.variant || ''}`.trim()}
+          src={asset(screen.deviceImage)}
+          fallbackSrc=""
+          alt={screen.alt}
+          highResolution={false}
+        />
+      </span>
+    );
+  }
+
+  if (screen.image) {
+    return (
+      <span className={`download-screen-image-frame ${screen.variant || ''}`.trim()}>
+        <OptimizedImage
+          className="download-screen-image"
+          src={asset(screen.image)}
+          fallbackSrc=""
+          alt={screen.alt}
+          highResolution={false}
+        />
+      </span>
+    );
+  }
+
+  return <DownloadDeviceMockup label={screen.label} variant={screen.variant} />;
+}
+
+function DownloadAppPage() {
+  const screenRailRef = useRef(null);
+  const featureItems = [
+    ['AI Try-On', 'Try on outfits with AI and see your perfect look instantly.', <SparkleLineIcon />],
+    ['Personal Wardrobe', 'Organize your clothes and create your own digital wardrobe.', <ClosetIcon />],
+    ['Saved Looks', 'Save your favorite styles and shop them whenever you like.', <HeartIcon />],
+    ['Generation History', 'View and manage all your AI try-on creations in one place.', <AtelierIcon name="clock" />],
+    ['AI Stylist', 'Get personalized style recommendations just for you.', <UserIcon />]
+  ];
+  const appScreens = [
+    {
+      label: 'Explore',
+      variant: 'explore',
+      deviceImage: 'download-showcase-finalcut-phone-explore.png',
+      alt: 'Lookmefy mobile Categories screen showing Featured For Men and All Men Fashion'
+    },
+    {
+      label: 'AI Try-On',
+      variant: 'tryon',
+      deviceImage: 'download-showcase-finalcut-phone-tryon.png',
+      alt: 'Lookmefy mobile AI Try-On screen showing a generated outfit preview and product details'
+    },
+    {
+      label: 'Wardrobe',
+      variant: 'wardrobe',
+      deviceImage: 'download-showcase-finalcut-phone-wardrobe.png',
+      alt: 'Lookmefy mobile wardrobe screen with Try This outfit action'
+    },
+    {
+      label: 'AI Stylist',
+      variant: 'stylist',
+      deviceImage: 'download-showcase-finalcut-phone-stylist.png',
+      alt: 'Lookmefy mobile AI Studio screen showing AI stylist recommendations and product cards'
+    },
+    {
+      label: 'Profile',
+      variant: 'profile',
+      deviceImage: 'download-showcase-finalcut-phone-profile.png',
+      alt: 'Lookmefy mobile profile screen showing credits and generation history'
+    }
+  ];
+
+  useEffect(() => {
+    const rail = screenRailRef.current;
+    if (!rail) return undefined;
+
+    const mobileQuery = window.matchMedia('(max-width: 760px)');
+    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let slideTimer = null;
+    let resumeTimer = null;
+
+    const getCards = () => Array.from(rail.querySelectorAll('.download-screen-card'));
+
+    const getNearestIndex = () => {
+      const cards = getCards();
+      if (!cards.length) return 0;
+
+      const railCenter = rail.scrollLeft + (rail.clientWidth / 2);
+      return cards.reduce((nearest, card, index) => {
+        const cardCenter = card.offsetLeft + (card.offsetWidth / 2);
+        const nearestCard = cards[nearest];
+        const nearestCenter = nearestCard.offsetLeft + (nearestCard.offsetWidth / 2);
+        return Math.abs(cardCenter - railCenter) < Math.abs(nearestCenter - railCenter) ? index : nearest;
+      }, 0);
+    };
+
+    const scrollToCard = (index, behavior = 'smooth') => {
+      const cards = getCards();
+      const card = cards[index];
+      if (!card) return;
+
+      const centeredLeft = card.offsetLeft - ((rail.clientWidth - card.offsetWidth) / 2);
+      rail.scrollTo({ left: Math.max(0, centeredLeft), behavior });
+    };
+
+    const stopAutoSlide = () => {
+      if (slideTimer) {
+        window.clearInterval(slideTimer);
+        slideTimer = null;
+      }
+    };
+
+    const startAutoSlide = () => {
+      stopAutoSlide();
+      if (!mobileQuery.matches || reducedMotionQuery.matches) return;
+
+      slideTimer = window.setInterval(() => {
+        if (document.hidden) return;
+
+        const cards = getCards();
+        if (cards.length < 2) return;
+
+        const nextIndex = (getNearestIndex() + 1) % cards.length;
+        scrollToCard(nextIndex);
+      }, 3600);
+    };
+
+    const pauseAutoSlide = () => {
+      stopAutoSlide();
+      if (resumeTimer) window.clearTimeout(resumeTimer);
+
+      if (mobileQuery.matches && !reducedMotionQuery.matches) {
+        resumeTimer = window.setTimeout(startAutoSlide, 6000);
+      }
+    };
+
+    const handleQueryChange = () => {
+      if (resumeTimer) {
+        window.clearTimeout(resumeTimer);
+        resumeTimer = null;
+      }
+      startAutoSlide();
+    };
+    const addQueryListener = (query, handler) => {
+      if (query.addEventListener) query.addEventListener('change', handler);
+      else query.addListener(handler);
+    };
+    const removeQueryListener = (query, handler) => {
+      if (query.removeEventListener) query.removeEventListener('change', handler);
+      else query.removeListener(handler);
+    };
+
+    startAutoSlide();
+
+    rail.addEventListener('pointerdown', pauseAutoSlide, { passive: true });
+    rail.addEventListener('wheel', pauseAutoSlide, { passive: true });
+    rail.addEventListener('keydown', pauseAutoSlide);
+    addQueryListener(mobileQuery, handleQueryChange);
+    addQueryListener(reducedMotionQuery, handleQueryChange);
+
+    return () => {
+      stopAutoSlide();
+      if (resumeTimer) window.clearTimeout(resumeTimer);
+      rail.removeEventListener('pointerdown', pauseAutoSlide);
+      rail.removeEventListener('wheel', pauseAutoSlide);
+      rail.removeEventListener('keydown', pauseAutoSlide);
+      removeQueryListener(mobileQuery, handleQueryChange);
+      removeQueryListener(reducedMotionQuery, handleQueryChange);
+    };
+  }, []);
+
+  return (
+    <main className="download-page">
+      <section className="download-hero download-section" aria-labelledby="download-title">
+        <div className="wrap download-hero-grid">
+          <div className="download-hero-copy">
+            <p className="download-kicker">LOOKMEFY APP</p>
+            <h1 id="download-title">Your personal AI stylist, now in your pocket.</h1>
+            <p className="download-lead">Discover styles, try on looks with AI, manage your wardrobe and keep your fashion experience with you wherever you go.</p>
+            <StoreActions context="download_hero" />
+          </div>
+          <div className="download-hero-visual" aria-label="Lookmefy app mockup placement">
+            <div className="download-hero-visual-bg" aria-hidden="true" />
+            <DownloadHeroMockup />
+          </div>
+        </div>
+      </section>
+
+      <section className="download-section download-features" aria-labelledby="download-features-title">
+        <div className="wrap">
+          <div className="download-section-heading">
+            <p className="download-kicker">Everything Lookmefy, wherever you go</p>
+            <h2 id="download-features-title">Powerful features, made for you.</h2>
+          </div>
+          <div className="download-feature-grid">
+            {featureItems.map(([title, copy, icon]) => (
+              <article className="download-feature-item" key={title}>
+                <span className="download-feature-icon" aria-hidden="true">{icon}</span>
+                <h3>{title}</h3>
+                <p>{copy}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="download-section download-screens" aria-labelledby="download-screens-title">
+        <div className="wrap">
+          <div className="download-section-heading">
+            <p className="download-kicker">Designed for your everyday style</p>
+            <h2 id="download-screens-title">Experience Lookmefy</h2>
+          </div>
+          <div className="download-screen-rail" ref={screenRailRef} aria-label="Lookmefy app screens" tabIndex={0}>
+            {appScreens.map((screen) => (
+              <figure className="download-screen-card" key={screen.label}>
+                <DownloadScreenVisual screen={screen} />
+                <figcaption>{screen.label}</figcaption>
+              </figure>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="download-section download-final-cta" aria-labelledby="download-final-title">
+        <div className="wrap download-final-inner">
+          <span className="download-final-icon"><DownloadPhoneIcon /></span>
+          <div>
+            <h2 id="download-final-title">Take Lookmefy with you</h2>
+            <p>Download the app and keep your style, wardrobe and AI Try-On experience in one place.</p>
+          </div>
+          <StoreActions context="download_bottom" />
         </div>
       </section>
     </main>
@@ -9146,6 +9650,7 @@ function App() {
     if (path === '/login') return <AuthPage mode="login" setUser={setUser} />;
     if (path === '/how-it-works') return <HowItWorks user={user} />;
     if (path === '/about') return <AboutPage user={user} />;
+    if (path === '/download') return <DownloadAppPage />;
     if (pageMeta[path]) return <InfoPage meta={pageMeta[path]} user={user} />;
     return <NotFoundPage />;
   }, [authChecked, path, routeKey, user]);
@@ -9179,7 +9684,9 @@ function App() {
       '.feature-band',
       '.about-section',
       '.about-feature',
-      '.about-step'
+      '.about-step',
+      '.download-section',
+      '.download-feature-item'
     ].join(',');
     const sections = Array.from(document.querySelectorAll(revealSelectors));
     if (!sections.length) return undefined;

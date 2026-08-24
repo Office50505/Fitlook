@@ -10,7 +10,12 @@ export default defineConfig({
       output: {
         entryFileNames: 'assets/[name]-[hash]-lookmefy.js',
         chunkFileNames: 'assets/[name]-[hash]-lookmefy.js',
-        assetFileNames: 'assets/[name]-[hash]-lookmefy[extname]'
+        assetFileNames: 'assets/[name]-[hash]-lookmefy[extname]',
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) return 'react-vendor';
+          return 'vendor';
+        }
       }
     }
   },
