@@ -1125,6 +1125,8 @@ router.get('/', productReadLimiter, async (req, res) => {
 router.get('/admin/catalog', requireAdmin, requireUserOperationsAdmin, productReadLimiter, async (req, res) => {
   const { q, tag, category, brand, gender, featured, newArrival, sort, availability } = req.query;
   const limit = Math.min(Math.max(Number(req.query.limit) || 96, 1), 150);
+  const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 10_000);
+  const offset = (page - 1) * limit;
   const filter = { $nor: [temporaryExternalAmazonFilter()] };
   const availabilityClause = adminAvailabilityClause(availability);
   if (availability && !availabilityClause) {
@@ -1140,7 +1142,7 @@ router.get('/admin/catalog', requireAdmin, requireUserOperationsAdmin, productRe
   if (newArrival === 'true') filter.isNewArrival = true;
 
   const projection = q ? { score: { $meta: 'textScore' } } : {};
-  const query = Product.find(filter, projection).limit(limit).lean();
+  const query = Product.find(filter, projection).skip(offset).limit(limit).lean();
   if (q && !sort) query.sort({ score: { $meta: 'textScore' }, createdAt: -1 });
   else query.sort(sortFor(sort));
 
@@ -1173,6 +1175,7 @@ router.get('/admin/catalog', requireAdmin, requireUserOperationsAdmin, productRe
   res.json({
     products: products.map(productToAdminClient),
     total,
+    pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
     facets: {
       brands: brands.filter(Boolean).sort(),
       categories: categories.filter(Boolean).sort(),

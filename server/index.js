@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import mongoose from 'mongoose';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import authRoutes from './routes/auth.js';
 import closetRoutes from './routes/closet.js';
@@ -17,7 +18,7 @@ import { requireAdmin, requireAdminSection } from './utils/adminAccess.js';
 import { ADMIN_SECTIONS } from './utils/adminPermissions.js';
 import { closeRedisClient, getRedisClient } from './utils/cache.js';
 import { closeJobQueues, queueEnabled } from './utils/jobQueue.js';
-import { configureMongoSlowQueryLogging, observabilitySnapshot, requestLogger } from './utils/observability.js';
+import { configureMongoSlowQueryLogging, flushRequestMetrics, observabilitySnapshot, prometheusMetrics, requestLogger, startRequestMetricFlush } from './utils/observability.js';
 import { createRateLimiter, rateLimitKeys } from './utils/rateLimit.js';
 import { appRole, mongoConnectOptions, serviceMetadata } from './utils/runtime.js';
 import { configurationReadiness, validateServerEnv } from './utils/envValidation.js';
@@ -63,6 +64,20 @@ const adminMetricsLimiter = createRateLimiter({
   message: 'Admin metrics are temporarily limited. Please try again shortly.'
 });
 const requireSystemAdmin = requireAdminSection(ADMIN_SECTIONS.SYSTEM_MANAGEMENT);
+
+function safeTokenMatch(left, right) {
+  const leftBuffer = Buffer.from(String(left || ''));
+  const rightBuffer = Buffer.from(String(right || ''));
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function requireMetricsToken(req, res, next) {
+  const expected = String(process.env.METRICS_BEARER_TOKEN || '').trim();
+  if (!expected) return res.status(404).end();
+  const provided = String(req.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!safeTokenMatch(provided, expected)) return res.status(401).set('WWW-Authenticate', 'Bearer').end();
+  return next();
+}
 
 function allowedOrigins() {
   return [
@@ -161,6 +176,14 @@ app.get('/api/admin/metrics', requireAdmin, requireSystemAdmin, adminMetricsLimi
   }
 });
 
+app.get('/api/metrics/prometheus', requireMetricsToken, async (_req, res, next) => {
+  try {
+    res.type('text/plain; version=0.0.4').send(await prometheusMetrics({ mongoose }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((error, req, res, _next) => {
   const isFileSizeError = error?.code === 'LIMIT_FILE_SIZE';
   const isUploadError = typeof error?.code === 'string' && error.code.startsWith('LIMIT_');
@@ -202,6 +225,7 @@ async function shutdown(signal) {
         server.close((error) => (error ? reject(error) : resolve()));
       });
     }
+    await flushRequestMetrics();
     await closeJobQueues();
     await closeRedisClient();
     await mongoose.disconnect();
@@ -221,6 +245,7 @@ async function start() {
 
   configureMongoSlowQueryLogging(mongoose);
   await mongoose.connect(process.env.MONGODB_URI, mongoConnectOptions());
+  startRequestMetricFlush();
 
   server = app.listen(port, () => {
     console.log(JSON.stringify({ level: 'info', event: 'api_started', port: Number(port), ...service }));

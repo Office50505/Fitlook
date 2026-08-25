@@ -14,6 +14,7 @@ import TryOn from '../server/models/TryOn.js';
 import User from '../server/models/User.js';
 import UserEvent from '../server/models/UserEvent.js';
 import UserPreference from '../server/models/UserPreference.js';
+import RequestMetric from '../server/models/RequestMetric.js';
 import UserSession from '../server/models/UserSession.js';
 import SystemIncident from '../server/models/SystemIncident.js';
 
@@ -34,6 +35,7 @@ const models = [
   User,
   UserEvent,
   UserPreference,
+  RequestMetric,
   UserSession,
   SystemIncident
 ];

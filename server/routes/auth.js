@@ -39,7 +39,7 @@ import {
   tokenBalanceAfter
 } from '../utils/accountState.js';
 import { availableStatusClause } from '../utils/productAvailability.js';
-import { adminMediaUsage } from '../services/adminMediaUsage.js';
+import { adminMediaUsage, deleteBunnyOrphans, reconcileBunnyInventory } from '../services/adminMediaUsage.js';
 import {
   cancelOtpChallenge,
   createOtpChallenge,
@@ -1065,6 +1065,7 @@ function appendAdminMedia(items, file, metadata) {
     storage: file?.storage || (file?.path ? (useBunny() ? 'bunny' : 'local') : 'linked'),
     mimetype: file?.mimetype || '',
     size: Number(file?.size || 0),
+    mediaType: metadata.group === 'video' || String(file?.mimetype || '').startsWith('video/') ? 'video' : 'image',
     owner: metadata.owner || null,
     related: metadata.related || null,
     createdAt: metadata.createdAt || null
@@ -1152,6 +1153,27 @@ async function loadAdminMedia({ type = 'all', userId = '', page = 1, limit = 24 
     })));
   }
 
+  if (include('video')) {
+    tasks.push(findStoredMediaRecords(TryOn, ['video'], {
+      userId,
+      limit: sourceLimit,
+      populate: [{ path: 'user', select: 'name email accountStatus' }, { path: 'product', select: 'name brand' }]
+    }).then((records) => records.map((record) => {
+      const items = [];
+      const related = record.product ? { id: String(record.product._id), label: record.product.name || record.product.brand || 'Catalog product' } : null;
+      appendAdminMedia(items, record.video, {
+        id: `tryon:${record._id}:video`,
+        group: 'video',
+        kind: 'Generated video',
+        title: related?.label || 'Try-on video',
+        owner: mediaOwner(record.user),
+        related,
+        createdAt: record.video?.generatedAt || record.updatedAt
+      });
+      return items[0];
+    }).filter(Boolean)));
+  }
+
   if (include('closet')) {
     tasks.push(findStoredMediaRecords(CustomTryOn, ['garment'], { userId, limit: sourceLimit, populate: [{ path: 'user', select: 'name email accountStatus' }] }).then((records) => records.map((record) => {
       const items = [];
@@ -1198,6 +1220,17 @@ router.get('/admin/users', requireAdmin, requireUserOperationsAdmin, adminReadLi
   const q = String(req.query.q || '').trim();
   const status = String(req.query.status || '').trim().toLowerCase();
   const limit = Math.min(Math.max(Number(req.query.limit) || 80, 1), 150);
+  const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 10_000);
+  const offset = (page - 1) * limit;
+  const sortName = String(req.query.sort || 'newest').trim().toLowerCase();
+  const sorts = {
+    newest: { createdAt: -1 },
+    oldest: { createdAt: 1 },
+    name: { name: 1, createdAt: -1 },
+    tokens_desc: { tokens: -1, createdAt: -1 },
+    tokens_asc: { tokens: 1, createdAt: -1 }
+  };
+  if (!sorts[sortName]) return res.status(400).json({ message: 'Invalid user sort' });
   if (status && !['active', 'banned', 'deleted'].includes(status)) return res.status(400).json({ message: 'Invalid account status' });
   const clauses = [];
   const statusFilter = userAccountFilter(status);
@@ -1212,7 +1245,10 @@ router.get('/admin/users', requireAdmin, requireUserOperationsAdmin, adminReadLi
   }
   const filter = clauses.length ? { $and: clauses } : {};
 
-  const users = await User.find(filter).sort({ createdAt: -1 }).limit(limit).lean();
+  const [users, filteredTotal] = await Promise.all([
+    User.find(filter).sort(sorts[sortName]).skip(offset).limit(limit).lean(),
+    User.countDocuments(filter)
+  ]);
   const userIds = users.map((user) => user._id);
   const [orders, sessionRollups, eventRollups] = await Promise.all([
     TokenOrder.find({ user: { $in: userIds } }).sort({ createdAt: -1 }).lean(),
@@ -1266,7 +1302,47 @@ router.get('/admin/users', requireAdmin, requireUserOperationsAdmin, adminReadLi
       active: activeUsers,
       banned: bannedUsers,
       deleted: deletedUsers
-    }
+    },
+    pagination: { page, limit, total: filteredTotal, pages: Math.max(1, Math.ceil(filteredTotal / limit)), sort: sortName }
+  });
+});
+
+function escapedSearch(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function orderToAdmin(order) {
+  return {
+    id: String(order._id),
+    merchantOrderId: order.merchantOrderId,
+    planName: order.planName,
+    tokens: order.tokens,
+    amount: order.amount,
+    currency: order.currency,
+    status: order.status,
+    createdAt: order.createdAt,
+    creditedAt: order.creditedAt,
+    user: order.user ? {
+      id: String(order.user._id),
+      name: order.user.name,
+      email: order.user.email,
+      username: order.user.username
+    } : null
+  };
+}
+
+router.get('/admin/search', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ products: [], users: [] });
+  const expression = new RegExp(escapedSearch(q.slice(0, 120)), 'i');
+  const userFilter = buildAdminUserSearchFilter(q);
+  const [products, users] = await Promise.all([
+    Product.find({ $or: [{ name: expression }, { brand: expression }, { category: expression }, { tags: expression }] }).sort({ createdAt: -1 }).limit(8).lean(),
+    User.find(userFilter || {}).sort({ createdAt: -1 }).limit(8).lean()
+  ]);
+  res.json({
+    products: products.map((product) => ({ id: String(product._id), name: product.name, brand: product.brand, category: product.category, imageUrl: publicUrlForStoredFile(product.image) })),
+    users: users.map((user) => adminUserPayload(user))
   });
 });
 
@@ -1391,12 +1467,30 @@ router.get('/admin/users/:id/media', requireAdmin, requireUserOperationsAdmin, a
 
 router.get('/admin/storage', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
   const type = String(req.query.type || 'all').trim().toLowerCase();
-  if (!['all', 'profile', 'tryon', 'closet', 'product'].includes(type)) {
+  if (!['all', 'profile', 'tryon', 'video', 'closet', 'product'].includes(type)) {
     return res.status(400).json({ message: 'Invalid storage media type' });
   }
   const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 100);
   const limit = Math.min(Math.max(Number(req.query.limit) || 24, 1), 48);
   res.json(await loadAdminMedia({ type, page, limit }));
+});
+
+router.get('/admin/storage/reconciliation', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (_req, res) => {
+  res.json(await reconcileBunnyInventory());
+});
+
+router.delete('/admin/storage/orphans', requireAdmin, requireUserOperationsAdmin, adminWriteLimiter, async (req, res) => {
+  if (String(req.body?.confirmation || '') !== 'DELETE') {
+    return res.status(400).json({ message: 'Type DELETE to confirm orphan deletion' });
+  }
+  const result = await deleteBunnyOrphans(Array.isArray(req.body?.keys) ? req.body.keys : []);
+  await recordAdminAudit(req, {
+    action: 'storage_orphans_deleted',
+    entityType: 'bunny_storage',
+    label: `${result.deleted.length} orphan files`,
+    detail: result
+  });
+  res.json(result);
 });
 
 router.get('/admin/operations', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (_req, res) => {
@@ -1406,23 +1500,7 @@ router.get('/admin/operations', requireAdmin, requireUserOperationsAdmin, adminR
   ]);
 
   res.json({
-    orders: orders.map((order) => ({
-      id: String(order._id),
-      merchantOrderId: order.merchantOrderId,
-      planName: order.planName,
-      tokens: order.tokens,
-      amount: order.amount,
-      currency: order.currency,
-      status: order.status,
-      createdAt: order.createdAt,
-      creditedAt: order.creditedAt,
-      user: order.user ? {
-        id: String(order.user._id),
-        name: order.user.name,
-        email: order.user.email,
-        username: order.user.username
-      } : null
-    })),
+    orders: orders.map(orderToAdmin),
     orderTotals: orderTotals.reduce((acc, item) => {
       acc[item._id || 'unknown'] = { count: item.count || 0, tokens: item.tokens || 0, amount: item.amount || 0 };
       return acc;
@@ -1430,8 +1508,54 @@ router.get('/admin/operations', requireAdmin, requireUserOperationsAdmin, adminR
   });
 });
 
-router.get('/admin/audit-log', requireAdmin, requireSystemAdmin, adminReadLimiter, async (_req, res) => {
-  const auditLogs = await AdminAuditLog.find({}).sort({ createdAt: -1 }).limit(100).lean();
+router.get('/admin/orders', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+  const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 10_000);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
+  const status = String(req.query.status || '').trim().toLowerCase();
+  const q = String(req.query.q || '').trim();
+  const filter = {};
+  if (status) filter.status = status;
+  if (q) {
+    const expression = new RegExp(escapedSearch(q.slice(0, 120)), 'i');
+    const users = await User.find({ $or: [{ name: expression }, { email: expression }, { username: expression }, { phone: expression }] }).select('_id').limit(500).lean();
+    filter.$or = [{ merchantOrderId: expression }, { planName: expression }, { user: { $in: users.map((user) => user._id) } }];
+  }
+  const [orders, total, orderTotals] = await Promise.all([
+    TokenOrder.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).populate('user', 'name email username').lean(),
+    TokenOrder.countDocuments(filter),
+    TokenOrder.aggregate([{ $group: { _id: '$status', count: { $sum: 1 }, tokens: { $sum: '$tokens' }, amount: { $sum: '$amount' } } }])
+  ]);
+  res.json({
+    orders: orders.map(orderToAdmin),
+    orderTotals: orderTotals.reduce((acc, item) => {
+      acc[item._id || 'unknown'] = { count: item.count || 0, tokens: item.tokens || 0, amount: item.amount || 0 };
+      return acc;
+    }, {}),
+    pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) }
+  });
+});
+
+router.get('/admin/audit-log', requireAdmin, requireSystemAdmin, adminReadLimiter, async (req, res) => {
+  const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 10_000);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
+  const action = String(req.query.action || '').trim();
+  const actor = String(req.query.actor || '').trim();
+  const q = String(req.query.q || '').trim();
+  const from = req.query.from ? new Date(req.query.from) : null;
+  const filter = {};
+  if (action) filter.action = action;
+  if (actor) filter.actorEmail = actor;
+  if (q) {
+    const expression = new RegExp(escapedSearch(q.slice(0, 120)), 'i');
+    filter.$or = [{ action: expression }, { actorEmail: expression }, { entityType: expression }, { entityId: expression }, { label: expression }];
+  }
+  if (from && !Number.isNaN(from.getTime())) filter.createdAt = { $gte: from };
+  const [auditLogs, total, actions, actors] = await Promise.all([
+    AdminAuditLog.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+    AdminAuditLog.countDocuments(filter),
+    AdminAuditLog.distinct('action'),
+    AdminAuditLog.distinct('actorEmail')
+  ]);
   res.json({
     auditLogs: auditLogs.map((log) => ({
       id: String(log._id),
@@ -1444,7 +1568,9 @@ router.get('/admin/audit-log', requireAdmin, requireSystemAdmin, adminReadLimite
       label: log.label,
       detail: log.detail,
       createdAt: log.createdAt
-    }))
+    })),
+    facets: { actions: actions.filter(Boolean).sort(), actors: actors.filter(Boolean).sort() },
+    pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) }
   });
 });
 

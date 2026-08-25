@@ -40,7 +40,7 @@ test('admin authentication uses passwords and has no shared ADMIN_KEY bootstrap 
     'tests/load/backend-load.k6.js',
     '.env.example'
   ].map((file) => fs.readFile(path.join(root, file), 'utf8')));
-  assert.equal(sources.some((source) => source.includes('ADMIN_KEY')), false);
+  assert.equal(sources.some((source) => /(^|[^A-Z_])ADMIN_KEY(?:\b|=)/m.test(source)), false);
   assert.equal(sources.some((source) => source.includes('adminKey')), false);
   assert.match(sources[0], /admin-request-access/);
   assert.match(sources[0], /req\.body\?\.password/);

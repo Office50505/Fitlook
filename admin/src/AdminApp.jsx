@@ -28,11 +28,12 @@ const ADMIN_THEME_KEY = 'lookmefy_admin_theme';
 const ADMIN_RECENT_SEARCHES_KEY = 'lookmefy_admin_recent_searches';
 const ADMIN_SESSION_EXPIRED_EVENT = 'lookmefy:admin-session-expired';
 const EMPTY_STORAGE_USAGE = {
-  bytes: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 },
-  bunnyBytes: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 },
-  bunnyCounts: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 },
-  unknownSize: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 }
+  bytes: { all: 0, profile: 0, tryon: 0, video: 0, closet: 0, product: 0 },
+  bunnyBytes: { all: 0, profile: 0, tryon: 0, video: 0, closet: 0, product: 0 },
+  bunnyCounts: { all: 0, profile: 0, tryon: 0, video: 0, closet: 0, product: 0 },
+  unknownSize: { all: 0, profile: 0, tryon: 0, video: 0, closet: 0, product: 0 }
 };
+const EMPTY_STORAGE_COUNTS = { all: 0, profile: 0, tryon: 0, video: 0, closet: 0, product: 0 };
 
 function storedAdminSession() {
   try {
@@ -210,12 +211,13 @@ function useProducts(params, enabled = true) {
     facets: { brands: [], categories: [], categoryCounts: [] },
     availabilityCounts: {},
     loading: true,
-    error: ''
+    error: '',
+    pagination: { page: 1, pages: 1, total: 0, limit: 48 }
   });
 
   useEffect(() => {
     if (!enabled) {
-      setState({ products: [], total: 0, facets: { brands: [], categories: [], categoryCounts: [] }, availabilityCounts: {}, loading: false, error: '' });
+      setState({ products: [], total: 0, facets: { brands: [], categories: [], categoryCounts: [] }, availabilityCounts: {}, loading: false, error: '', pagination: { page: 1, pages: 1, total: 0, limit: 48 } });
       return undefined;
     }
     let alive = true;
@@ -229,7 +231,8 @@ function useProducts(params, enabled = true) {
             facets: data.facets || { brands: [], categories: [], categoryCounts: [] },
             availabilityCounts: data.availabilityCounts || {},
             loading: false,
-            error: ''
+            error: '',
+            pagination: data.pagination || { page: 1, pages: 1, total: data.total || 0, limit: data.products?.length || 48 }
           });
         }
       })
@@ -241,7 +244,8 @@ function useProducts(params, enabled = true) {
             facets: { brands: [], categories: [], categoryCounts: [] },
             availabilityCounts: {},
             loading: false,
-            error: err.message
+            error: err.message,
+            pagination: { page: 1, pages: 1, total: 0, limit: 48 }
           });
         }
       });
@@ -283,16 +287,16 @@ function useRecommendationStats(enabled, refresh, period = { range: '30', from: 
   return state;
 }
 
-function useAdminUsers(enabled, refresh, search = '', status = '', minTokens = '', maxTokens = '') {
-  const [state, setState] = useState({ users: [], totals: { users: 0, loaded: 0, tokens: 0 }, loading: false, error: '' });
+function useAdminUsers(enabled, refresh, search = '', status = '', minTokens = '', maxTokens = '', page = 1, sort = 'newest') {
+  const [state, setState] = useState({ users: [], totals: { users: 0, loaded: 0, tokens: 0 }, pagination: { page: 1, pages: 1, total: 0 }, loading: false, error: '' });
 
   useEffect(() => {
     if (!enabled) {
-      setState({ users: [], totals: { users: 0, loaded: 0, tokens: 0 }, loading: false, error: '' });
+      setState({ users: [], totals: { users: 0, loaded: 0, tokens: 0 }, pagination: { page: 1, pages: 1, total: 0 }, loading: false, error: '' });
       return;
     }
     let alive = true;
-    const query = new URLSearchParams({ limit: '120' });
+    const query = new URLSearchParams({ limit: '40', page: String(page), sort });
     if (search.trim()) query.set('q', search.trim());
     if (status) query.set('status', status);
     if (minTokens !== '') query.set('minTokens', minTokens);
@@ -300,15 +304,15 @@ function useAdminUsers(enabled, refresh, search = '', status = '', minTokens = '
     setState((current) => ({ ...current, loading: true, error: '' }));
     api(`/auth/admin/users?${query.toString()}`)
       .then((data) => {
-        if (alive) setState({ users: data.users || [], totals: data.totals || { users: 0, loaded: 0, tokens: 0 }, loading: false, error: '' });
+        if (alive) setState({ users: data.users || [], totals: data.totals || { users: 0, loaded: 0, tokens: 0 }, pagination: data.pagination || { page: 1, pages: 1, total: 0 }, loading: false, error: '' });
       })
       .catch((err) => {
-        if (alive) setState({ users: [], totals: { users: 0, loaded: 0, tokens: 0 }, loading: false, error: err.message });
+        if (alive) setState({ users: [], totals: { users: 0, loaded: 0, tokens: 0 }, pagination: { page: 1, pages: 1, total: 0 }, loading: false, error: err.message });
       });
     return () => {
       alive = false;
     };
-  }, [enabled, maxTokens, minTokens, refresh, search, status]);
+  }, [enabled, maxTokens, minTokens, page, refresh, search, sort, status]);
 
   return state;
 }
@@ -341,7 +345,7 @@ function useAdminOperations(enabled, refresh) {
 function useAdminStorage(enabled, type, page, refresh) {
   const [state, setState] = useState({
     items: [],
-    counts: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 },
+    counts: EMPTY_STORAGE_COUNTS,
     usage: EMPTY_STORAGE_USAGE,
     total: 0,
     pages: 1,
@@ -352,7 +356,7 @@ function useAdminStorage(enabled, type, page, refresh) {
 
   useEffect(() => {
     if (!enabled) {
-      setState({ items: [], counts: { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 }, usage: EMPTY_STORAGE_USAGE, total: 0, pages: 1, provider: '', loading: false, error: '' });
+      setState({ items: [], counts: EMPTY_STORAGE_COUNTS, usage: EMPTY_STORAGE_USAGE, total: 0, pages: 1, provider: '', loading: false, error: '' });
       return undefined;
     }
     let alive = true;
@@ -361,7 +365,7 @@ function useAdminStorage(enabled, type, page, refresh) {
       .then((data) => {
         if (alive) setState({
           items: data.items || [],
-          counts: data.counts || { all: 0, profile: 0, tryon: 0, closet: 0, product: 0 },
+          counts: data.counts || EMPTY_STORAGE_COUNTS,
           usage: data.usage || EMPTY_STORAGE_USAGE,
           total: data.total || 0,
           pages: data.pages || 1,
@@ -438,6 +442,9 @@ function AdminApp() {
   const [userSearch, setUserSearch] = useState('');
   const [userStatus, setUserStatus] = useState('');
   const [userTokenRange, setUserTokenRange] = useState({ min: '', max: '' });
+  const [userPage, setUserPage] = useState(1);
+  const [userSort, setUserSort] = useState('newest');
+  const [inventoryPage, setInventoryPage] = useState(1);
   const [analyticsPeriod, setAnalyticsPeriod] = useState({ range: '30', from: '', to: '' });
   const [userRefresh, setUserRefresh] = useState(0);
   const [operationsRefresh, setOperationsRefresh] = useState(0);
@@ -461,7 +468,8 @@ function AdminApp() {
   const navigationSections = useMemo(() => visibleAdminSections(currentAdmin), [currentAdmin]);
   const searchablePages = useMemo(() => navigationSections.flatMap((section) => section.pages), [navigationSections]);
   const productParams = useMemo(() => ({
-    limit: 96,
+    limit: 48,
+    page: inventoryPage,
     sort: filters.sort,
     q: filters.q.trim(),
     category: filters.category,
@@ -471,7 +479,7 @@ function AdminApp() {
     featured: filters.status === 'featured' ? 'true' : '',
     newArrival: filters.status === 'newArrival' ? 'true' : '',
     refresh
-  }), [filters, refresh]);
+  }), [filters, inventoryPage, refresh]);
   const state = useProducts(productParams, Boolean(adminSession?.token) && hasUserOperations);
   const recommendationStats = useRecommendationStats(Boolean(adminSession?.token) && hasUserOperations, refresh, analyticsPeriod);
   const usersState = useAdminUsers(
@@ -480,7 +488,9 @@ function AdminApp() {
     userSearch,
     userStatus,
     userTokenRange.min,
-    userTokenRange.max
+    userTokenRange.max,
+    userPage,
+    userSort
   );
   const operationsState = useAdminOperations(Boolean(adminSession?.token) && hasUserOperations, operationsRefresh);
   const pageMeta = adminPage(activePage);
@@ -495,12 +505,6 @@ function AdminApp() {
   const incidentsState = useAdminResource(Boolean(adminSession?.token) && hasSystemManagement && incidentsEnabled, '/admin/system/incidents?limit=150', managementRefresh);
   const generationState = useAdminResource(Boolean(adminSession?.token) && hasSystemManagement && generationsEnabled, '/admin/system/generations?days=30', managementRefresh);
   const mobileState = useAdminResource(Boolean(adminSession?.token) && hasSystemManagement && Boolean(mobilePlatform), mobilePlatform ? `/admin/system/mobile/${mobilePlatform}?days=30` : '', managementRefresh);
-  const auditState = useAdminResource(Boolean(adminSession?.token) && hasSystemManagement && activePage === 'audit-log', '/auth/admin/audit-log', operationsRefresh);
-  const auditLogState = {
-    auditLogs: auditState.data?.auditLogs || [],
-    loading: auditState.loading,
-    error: auditState.error
-  };
   const costOverviewState = useAdminResource(Boolean(adminSession?.token) && hasCostManagement && costOverviewEnabled, '/admin/costs/summary', managementRefresh);
   const providerCostState = useAdminResource(Boolean(adminSession?.token) && hasCostManagement && Boolean(activeCostProvider), activeCostProvider ? `/admin/costs/${activeCostProvider}` : '', managementRefresh);
   const duplicateWarnings = useMemo(() => {
@@ -636,11 +640,13 @@ function AdminApp() {
   };
 
   const openProductFromSearch = (product) => {
+    setInventoryPage(1);
     setFilters((current) => ({ ...current, q: product.name || '', sort: 'newest' }));
     showPage('inventory');
   };
 
   const openUserFromSearch = (user) => {
+    setUserPage(1);
     setUserSearch(user.email || user.username || user.name || '');
     showPage('users');
   };
@@ -826,10 +832,12 @@ function AdminApp() {
   };
 
   const updateFilter = (name, value) => {
+    setInventoryPage(1);
     setFilters((current) => ({ ...current, [name]: value }));
   };
 
   const clearFilters = () => {
+    setInventoryPage(1);
     setFilters({ q: '', category: '', brand: '', gender: '', availability: '', status: '', sort: 'newest' });
   };
 
@@ -1062,7 +1070,15 @@ function AdminApp() {
     }
   };
 
-  if (!adminSession?.token) return <AdminLogin onLogin={completeLogin} />;
+  if (!adminSession?.token) {
+    return (
+      <AdminLogin
+        onLogin={completeLogin}
+        theme={theme}
+        onThemeToggle={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
+      />
+    );
+  }
 
   return (
     <main className="admin-shell">
@@ -1139,6 +1155,7 @@ function AdminApp() {
               onProduct={openProductFromSearch}
               onUser={openUserFromSearch}
               onPage={showPage}
+              remoteEnabled={hasUserOperations}
             />
             <div className="admin-profile">
               <span>{adminDisplayName}</span>
@@ -1332,6 +1349,7 @@ function AdminApp() {
                   />
                 ))}
               </div>
+              <PaginationControls page={state.pagination?.page || inventoryPage} pages={state.pagination?.pages || 1} total={state.pagination?.total || state.total} loading={state.loading} label="products" onPage={setInventoryPage} />
             </section>
           </section>}
 
@@ -1353,12 +1371,16 @@ function AdminApp() {
               status={userStatus}
               minTokens={userTokenRange.min}
               maxTokens={userTokenRange.max}
+              page={userPage}
+              sort={userSort}
               operationsState={operationsState}
               tokenDrafts={tokenDrafts}
-              onSearch={setUserSearch}
-              onStatus={setUserStatus}
-              onMinTokens={(value) => setUserTokenRange((current) => ({ ...current, min: value }))}
-              onMaxTokens={(value) => setUserTokenRange((current) => ({ ...current, max: value }))}
+              onSearch={(value) => { setUserPage(1); setUserSearch(value); }}
+              onStatus={(value) => { setUserPage(1); setUserStatus(value); }}
+              onMinTokens={(value) => { setUserPage(1); setUserTokenRange((current) => ({ ...current, min: value })); }}
+              onMaxTokens={(value) => { setUserPage(1); setUserTokenRange((current) => ({ ...current, max: value })); }}
+              onPage={setUserPage}
+              onSort={(value) => { setUserPage(1); setUserSort(value); }}
               onDraftChange={setTokenDraft}
               onUpdateTokens={updateUserTokens}
               onUpdateStatus={updateUserStatus}
@@ -1370,7 +1392,7 @@ function AdminApp() {
 
           {activePage === 'storage' && <StoragePage refresh={refresh} onOpenUser={setMediaUser} />}
 
-          {activePage === 'orders' && <div className="management-page"><RecentOrdersPanel operationsState={operationsState} limit={12} /></div>}
+          {activePage === 'orders' && <OrdersPage refresh={operationsRefresh} />}
 
           {activePage === 'system-overview' && <SystemOverviewPage state={systemSummaryState} onNavigate={showPage} />}
           {activePage === 'service-health' && <ServiceHealthPage state={systemSummaryState} />}
@@ -1379,7 +1401,7 @@ function AdminApp() {
           {activePage === 'generation-pipeline' && <GenerationPipelinePage state={generationState} />}
           {activePage === 'ios-report' && <MobileReportPage state={mobileState} platform="ios" />}
           {activePage === 'android-report' && <MobileReportPage state={mobileState} platform="android" />}
-          {activePage === 'audit-log' && <div className="management-page"><AuditLogPanel operationsState={auditLogState} onRefresh={() => setOperationsRefresh((value) => value + 1)} /></div>}
+          {activePage === 'audit-log' && <div className="management-page"><AuditLogPanel refresh={operationsRefresh} onRefresh={() => setOperationsRefresh((value) => value + 1)} /></div>}
 
           {activePage === 'roles' && <AdminRolesPage request={api} currentAdmin={currentAdmin} onSessionRefresh={refreshAdminSession} />}
 
@@ -1542,8 +1564,9 @@ function SidebarIcon({ id }) {
   );
 }
 
-function GlobalAdminSearch({ value, onChange, products, users, pages = [], onProduct, onUser, onPage }) {
+function GlobalAdminSearch({ value, onChange, products, users, pages = [], onProduct, onUser, onPage, remoteEnabled = false }) {
   const [focused, setFocused] = useState(false);
+  const [remote, setRemote] = useState({ products: [], users: [], loading: false, query: '' });
   const [recentSearches, setRecentSearches] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(ADMIN_RECENT_SEARCHES_KEY) || '[]');
@@ -1552,10 +1575,31 @@ function GlobalAdminSearch({ value, onChange, products, users, pages = [], onPro
     }
   });
   const query = value.trim().toLowerCase();
-  const productResults = query ? products
+  useEffect(() => {
+    if (!remoteEnabled || query.length < 2) {
+      setRemote({ products: [], users: [], loading: false, query: '' });
+      return undefined;
+    }
+    let alive = true;
+    const timeout = window.setTimeout(() => {
+      setRemote((current) => ({ ...current, loading: true, query }));
+      api(`/auth/admin/search?q=${encodeURIComponent(query)}`)
+        .then((data) => {
+          if (alive) setRemote({ products: data.products || [], users: data.users || [], loading: false, query });
+        })
+        .catch(() => {
+          if (alive) setRemote({ products: [], users: [], loading: false, query });
+        });
+    }, 250);
+    return () => {
+      alive = false;
+      window.clearTimeout(timeout);
+    };
+  }, [query, remoteEnabled]);
+  const localProductResults = query ? products
     .filter((product) => [product.name, product.brand, product.category].some((field) => String(field || '').toLowerCase().includes(query)))
     .slice(0, 4) : [];
-  const userResults = query ? users
+  const localUserResults = query ? users
     .filter((user) => [
       user.id,
       user.name,
@@ -1569,6 +1613,8 @@ function GlobalAdminSearch({ value, onChange, products, users, pages = [], onPro
       user.subscription?.status
     ].some((field) => String(field ?? '').toLowerCase().includes(query)))
     .slice(0, 4) : [];
+  const productResults = remote.query === query && !remote.loading ? remote.products.slice(0, 4) : localProductResults;
+  const userResults = remote.query === query && !remote.loading ? remote.users.slice(0, 4) : localUserResults;
   const pageResults = query ? pages.filter((page) => page.label.toLowerCase().includes(query)).slice(0, 3) : [];
   const hasResults = Boolean(productResults.length || userResults.length || pageResults.length);
   const remember = (label) => {
@@ -1634,7 +1680,8 @@ function GlobalAdminSearch({ value, onChange, products, users, pages = [], onPro
               <span>Open page</span>
             </button>
           ))}
-          {query && !hasResults && <p className="search-empty">No matching products, users, or pages.</p>}
+          {remote.loading && <p className="search-empty">Searching all records...</p>}
+          {query && !remote.loading && !hasResults && <p className="search-empty">No matching products, users, or pages.</p>}
         </div>
       )}
     </div>
@@ -1805,9 +1852,10 @@ function ActionInbox({ reviewItems, lowTokenUsers, paymentIssues, onOpenInventor
 }
 
 const STORAGE_TYPES = [
-  { id: 'all', label: 'All images' },
+  { id: 'all', label: 'All media' },
   { id: 'profile', label: 'Profiles' },
   { id: 'tryon', label: 'Try-ons' },
+  { id: 'video', label: 'Videos' },
   { id: 'closet', label: 'Closet' },
   { id: 'product', label: 'Products' }
 ];
@@ -1851,6 +1899,9 @@ function StoragePage({ refresh, onOpenUser }) {
   const [type, setType] = useState('all');
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
+  const [reconciliation, setReconciliation] = useState({ data: null, loading: false, error: '', message: '' });
+  const [selectedOrphans, setSelectedOrphans] = useState(() => new Set());
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const state = useAdminStorage(true, type, page, refresh);
   const needle = query.trim().toLowerCase();
   const visibleItems = needle ? state.items.filter((item) => [
@@ -1865,19 +1916,53 @@ function StoragePage({ refresh, onOpenUser }) {
     setType(nextType);
     setPage(1);
   };
+  const reconcile = async () => {
+    setReconciliation((current) => ({ ...current, loading: true, error: '', message: '' }));
+    try {
+      const data = await api('/auth/admin/storage/reconciliation');
+      setSelectedOrphans(new Set());
+      setReconciliation({ data, loading: false, error: '', message: '' });
+    } catch (error) {
+      setReconciliation((current) => ({ ...current, loading: false, error: error.message, message: '' }));
+    }
+  };
+  const toggleOrphan = (key) => {
+    setSelectedOrphans((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  const deleteOrphans = async () => {
+    setReconciliation((current) => ({ ...current, loading: true, error: '', message: '' }));
+    try {
+      const result = await api('/auth/admin/storage/orphans', {
+        method: 'DELETE',
+        body: JSON.stringify({ keys: [...selectedOrphans], confirmation: deleteConfirmation })
+      });
+      setDeleteConfirmation('');
+      setSelectedOrphans(new Set());
+      const data = await api('/auth/admin/storage/reconciliation');
+      setReconciliation({ data, loading: false, error: '', message: `${result.deleted.length} orphan file${result.deleted.length === 1 ? '' : 's'} deleted.` });
+    } catch (error) {
+      setReconciliation((current) => ({ ...current, loading: false, error: error.message, message: '' }));
+    }
+  };
 
   return (
     <section className="storage-page">
-      <section className="storage-usage-band" aria-label="Bunny image storage usage">
+      <section className="storage-usage-band" aria-label="Bunny media storage usage">
         <div className="storage-usage-total">
           <span>Bunny photo storage</span>
           <strong>{formatMegabytes(state.usage.bunnyBytes.all)}</strong>
-          <em>{formatNumber(state.usage.bunnyCounts.all)} database-tracked Bunny images</em>
+          <em>{formatNumber(state.usage.bunnyCounts.all)} database-tracked Bunny files</em>
           {state.usage.unknownSize.all > 0 && <small>{formatNumber(state.usage.unknownSize.all)} legacy files have no size metadata.</small>}
         </div>
         <div className="storage-usage-breakdown">
           <div><span>Profiles</span><strong>{formatMegabytes(state.usage.bunnyBytes.profile)}</strong></div>
           <div><span>Try-ons</span><strong>{formatMegabytes(state.usage.bunnyBytes.tryon)}</strong></div>
+          <div><span>Videos</span><strong>{formatMegabytes(state.usage.bunnyBytes.video)}</strong></div>
           <div><span>Closet</span><strong>{formatMegabytes(state.usage.bunnyBytes.closet)}</strong></div>
           <div><span>Products</span><strong>{formatMegabytes(state.usage.bunnyBytes.product)}</strong></div>
         </div>
@@ -1885,8 +1970,47 @@ function StoragePage({ refresh, onOpenUser }) {
       <section className="overview-grid storage-summary" aria-label="Stored image summary">
         <StatBox label="Profile images" value={formatNumber(state.counts.profile || 0)} meta={`${formatMegabytes(state.usage.bunnyBytes.profile)} on Bunny`} />
         <StatBox label="Try-on images" value={formatNumber(state.counts.tryon || 0)} meta={`${formatMegabytes(state.usage.bunnyBytes.tryon)} on Bunny`} />
+        <StatBox label="Generated videos" value={formatNumber(state.counts.video || 0)} meta={`${formatMegabytes(state.usage.bunnyBytes.video)} on Bunny`} />
         <StatBox label="Closet images" value={formatNumber(state.counts.closet || 0)} meta={`${formatMegabytes(state.usage.bunnyBytes.closet)} on Bunny`} />
         <StatBox label="Product images" value={formatNumber(state.counts.product || 0)} meta={`${formatMegabytes(state.usage.bunnyBytes.product)} on Bunny`} />
+      </section>
+
+      <section className="storage-reconciliation">
+        <div className="section-head">
+          <div><h2>Bunny reconciliation</h2><p>Compare the live storage zone against every database media reference.</p></div>
+          <button type="button" disabled={reconciliation.loading} onClick={reconcile}>{reconciliation.loading ? 'Scanning...' : 'Scan Bunny'}</button>
+        </div>
+        {reconciliation.error && <StatusPanel text={reconciliation.error} />}
+        {reconciliation.message && <div className="storage-success">{reconciliation.message}</div>}
+        {reconciliation.data && !reconciliation.data.configured && <StatusPanel text={reconciliation.data.reason || 'Bunny storage is not configured.'} />}
+        {reconciliation.data?.configured && (
+          <>
+            <div className="storage-reconcile-metrics">
+              <div><span>Live files</span><strong>{formatNumber(reconciliation.data.scannedFiles)}</strong><small>{formatBytes(reconciliation.data.scannedBytes)}</small></div>
+              <div><span>Referenced</span><strong>{formatNumber(reconciliation.data.referencedFiles)}</strong><small>Unique storage keys</small></div>
+              <div><span>Orphans</span><strong>{formatNumber(reconciliation.data.orphanFiles)}</strong><small>{formatBytes(reconciliation.data.orphanBytes)}</small></div>
+              <div><span>Missing</span><strong>{formatNumber(reconciliation.data.missingFiles)}</strong><small>Database references</small></div>
+            </div>
+            {reconciliation.data.truncated && <div className="storage-warning">The scan reached its configured display or inventory limit. Increase the reconciliation limits before deleting files.</div>}
+            {reconciliation.data.orphans?.length > 0 && (
+              <div className="orphan-manager">
+                <div className="orphan-list">
+                  {reconciliation.data.orphans.map((file) => (
+                    <label key={file.key}>
+                      <input type="checkbox" checked={selectedOrphans.has(file.key)} onChange={() => toggleOrphan(file.key)} />
+                      <span><strong>{file.key}</strong><small>{formatBytes(file.size)} · {formatCatalogDate(file.createdAt)}</small></span>
+                    </label>
+                  ))}
+                </div>
+                <div className="orphan-delete-controls">
+                  <span>{selectedOrphans.size} selected</span>
+                  <input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} placeholder="Type DELETE" aria-label="Deletion confirmation" />
+                  <button type="button" className="danger" disabled={reconciliation.loading || selectedOrphans.size === 0 || deleteConfirmation !== 'DELETE' || reconciliation.data.truncated} onClick={deleteOrphans}>Delete verified orphans</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </section>
 
       <section className="storage-browser">
@@ -1900,18 +2024,18 @@ function StoragePage({ refresh, onOpenUser }) {
             ))}
           </div>
           <label className="field storage-search">
-            <span>Search loaded images</span>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="User, image, or storage key" />
+            <span>Search loaded media</span>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="User, media, or storage key" />
           </label>
         </div>
 
         <div className="storage-result-head">
-          <div><strong>{formatNumber(state.total)} stored images</strong><span>{formatMegabytes(state.usage.bunnyBytes[type] || 0)} on Bunny</span></div>
+          <div><strong>{formatNumber(state.total)} stored files</strong><span>{formatMegabytes(state.usage.bunnyBytes[type] || 0)} on Bunny</span></div>
           <span>Page {page} of {state.pages}</span>
         </div>
         {state.loading && <MediaGridSkeleton />}
         {state.error && <StatusPanel text={state.error} />}
-        {!state.loading && !state.error && visibleItems.length === 0 && <StatusPanel text={needle ? 'No loaded images match this search.' : 'No stored images found in this group.'} />}
+        {!state.loading && !state.error && visibleItems.length === 0 && <StatusPanel text={needle ? 'No loaded media match this search.' : 'No stored media found in this group.'} />}
         {!state.loading && !state.error && visibleItems.length > 0 && <StoredMediaGrid items={visibleItems} onOpenUser={onOpenUser} />}
         <StoragePagination page={page} pages={state.pages} loading={state.loading} onPage={setPage} />
       </section>
@@ -1932,7 +2056,9 @@ function StoredMediaCard({ item, onOpenUser }) {
   return (
     <article className="stored-media-card">
       <a className={`stored-media-preview ${failed ? 'failed' : ''}`} href={mediaUrl(item.url)} target="_blank" rel="noreferrer" aria-label={`Open ${item.title}`}>
-        {!failed ? <img src={mediaUrl(item.url)} alt={item.title} loading="lazy" onError={() => setFailed(true)} /> : <span>Preview unavailable</span>}
+        {!failed && item.mediaType === 'video' ? <video src={mediaUrl(item.url)} preload="metadata" muted playsInline onError={() => setFailed(true)} /> : null}
+        {!failed && item.mediaType !== 'video' ? <img src={mediaUrl(item.url)} alt={item.title} loading="lazy" onError={() => setFailed(true)} /> : null}
+        {failed && <span>Preview unavailable</span>}
       </a>
       <div className="stored-media-copy">
         <span>{item.kind}</span>
@@ -1963,6 +2089,17 @@ function StoragePagination({ page, pages, loading, onPage }) {
     <nav className="storage-pagination" aria-label="Storage pages">
       <button type="button" disabled={loading || page <= 1} onClick={() => onPage(page - 1)}>Previous</button>
       <span>{page} / {pages}</span>
+      <button type="button" disabled={loading || page >= pages} onClick={() => onPage(page + 1)}>Next</button>
+    </nav>
+  );
+}
+
+function PaginationControls({ page, pages, total, loading, label, onPage }) {
+  if (pages <= 1) return total ? <div className="pagination-summary">{formatNumber(total)} {label}</div> : null;
+  return (
+    <nav className="storage-pagination" aria-label={`${label} pages`}>
+      <button type="button" disabled={loading || page <= 1} onClick={() => onPage(page - 1)}>Previous</button>
+      <span>Page {page} of {pages} · {formatNumber(total)} {label}</span>
       <button type="button" disabled={loading || page >= pages} onClick={() => onPage(page + 1)}>Next</button>
     </nav>
   );
@@ -2128,12 +2265,13 @@ function UserMediaDrawer({ user, onClose }) {
               <section className="user-media-summary" aria-label="User image summary">
                 <div><span>Profiles</span><strong>{formatNumber(media.counts.profile || 0)}</strong></div>
                 <div><span>Try-ons</span><strong>{formatNumber(media.counts.tryon || 0)}</strong></div>
+                <div><span>Videos</span><strong>{formatNumber(media.counts.video || 0)}</strong></div>
                 <div><span>Closet</span><strong>{formatNumber(media.counts.closet || 0)}</strong></div>
                 <div><span>Bunny storage</span><strong>{formatMegabytes(media.usage.bunnyBytes.all)}</strong></div>
               </section>
               {media.loading && <MediaGridSkeleton />}
               {media.error && <StatusPanel text={media.error} />}
-              {!media.loading && media.loaded && !media.error && media.items.length === 0 && <StatusPanel text="No stored images were found for this user." />}
+              {!media.loading && media.loaded && !media.error && media.items.length === 0 && <StatusPanel text="No stored media were found for this user." />}
               {!media.loading && !media.error && media.items.length > 0 && <StoredMediaGrid items={media.items} />}
             </div>
           )}
@@ -2145,17 +2283,8 @@ function UserMediaDrawer({ user, onClose }) {
   );
 }
 
-function UsersTokenPage({ state, search, status, minTokens, maxTokens, operationsState, tokenDrafts, onSearch, onStatus, onMinTokens, onMaxTokens, onDraftChange, onUpdateTokens, onUpdateStatus, onRemoveUser, onOpenUser, onRefresh }) {
-  const [sort, setSort] = useState('newest');
+function UsersTokenPage({ state, search, status, minTokens, maxTokens, page, sort, operationsState, tokenDrafts, onSearch, onStatus, onMinTokens, onMaxTokens, onPage, onSort, onDraftChange, onUpdateTokens, onUpdateStatus, onRemoveUser, onOpenUser, onRefresh }) {
   const lowTokenUsers = state.users.filter((user) => user.accountStatus === 'active' && Number(user.tokens || 0) <= 5).slice(0, 8);
-  const sortedUsers = useMemo(() => [...state.users].sort((left, right) => {
-    if (sort === 'oldest') return new Date(left.joinedAt || 0) - new Date(right.joinedAt || 0);
-    if (sort === 'tokens-high') return Number(right.tokens || 0) - Number(left.tokens || 0);
-    if (sort === 'tokens-low') return Number(left.tokens || 0) - Number(right.tokens || 0);
-    if (sort === 'last-order') return new Date(right.lastOrder?.createdAt || 0) - new Date(left.lastOrder?.createdAt || 0);
-    if (sort === 'last-active') return new Date(right.lastActiveAt || 0) - new Date(left.lastActiveAt || 0);
-    return new Date(right.joinedAt || 0) - new Date(left.joinedAt || 0);
-  }), [sort, state.users]);
 
   return (
     <section className="users-page">
@@ -2203,13 +2332,12 @@ function UsersTokenPage({ state, search, status, minTokens, maxTokens, operation
           </div>
           <label className="field">
             <span>Sort users</span>
-            <select value={sort} onChange={(event) => setSort(event.target.value)}>
+            <select value={sort} onChange={(event) => onSort(event.target.value)}>
               <option value="newest">Newest joined</option>
               <option value="oldest">Oldest joined</option>
-              <option value="tokens-high">Tokens high to low</option>
-              <option value="tokens-low">Tokens low to high</option>
-              <option value="last-order">Latest order</option>
-              <option value="last-active">Recently active</option>
+              <option value="name">Name A to Z</option>
+              <option value="tokens_desc">Tokens high to low</option>
+              <option value="tokens_asc">Tokens low to high</option>
             </select>
           </label>
         </div>
@@ -2226,7 +2354,7 @@ function UsersTokenPage({ state, search, status, minTokens, maxTokens, operation
               <span>Actions</span>
             </div>
             <div className="users-list">
-              {sortedUsers.map((user) => (
+              {state.users.map((user) => (
                 <UserTokenRow
                   key={user.id}
                   user={user}
@@ -2240,6 +2368,7 @@ function UsersTokenPage({ state, search, status, minTokens, maxTokens, operation
                 />
               ))}
             </div>
+            <PaginationControls page={state.pagination?.page || page} pages={state.pagination?.pages || 1} total={state.pagination?.total || 0} loading={state.loading} label="users" onPage={onPage} />
           </>
         )}
       </section>
@@ -2308,6 +2437,48 @@ function RecentOrdersPanel({ operationsState, limit = 6 }) {
         </div>
       )}
     </section>
+  );
+}
+
+function OrdersPage({ refresh }) {
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('');
+  const [state, setState] = useState({ orders: [], orderTotals: {}, pagination: { page: 1, pages: 1, total: 0 }, loading: true, error: '' });
+
+  useEffect(() => {
+    let alive = true;
+    const timeout = window.setTimeout(() => {
+      const params = new URLSearchParams({ page: String(page), limit: '30' });
+      if (query.trim()) params.set('q', query.trim());
+      if (status) params.set('status', status);
+      setState((current) => ({ ...current, loading: true, error: '' }));
+      api(`/auth/admin/orders?${params.toString()}`)
+        .then((data) => {
+          if (alive) setState({ orders: data.orders || [], orderTotals: data.orderTotals || {}, pagination: data.pagination || { page: 1, pages: 1, total: 0 }, loading: false, error: '' });
+        })
+        .catch((error) => {
+          if (alive) setState((current) => ({ ...current, loading: false, error: error.message }));
+        });
+    }, 250);
+    return () => {
+      alive = false;
+      window.clearTimeout(timeout);
+    };
+  }, [page, query, refresh, status]);
+
+  return (
+    <div className="management-page">
+      <section className="admin-card orders-page-panel">
+        <div className="section-head"><div><h2>Token orders</h2><p>Search and review the complete payment history.</p></div></div>
+        <div className="orders-toolbar">
+          <label className="field"><span>Search orders</span><input value={query} onChange={(event) => { setPage(1); setQuery(event.target.value); }} placeholder="User, email, plan, or order ID" /></label>
+          <label className="field"><span>Status</span><select value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}><option value="">All statuses</option><option value="completed">Completed</option><option value="pending">Pending</option><option value="failed">Failed</option></select></label>
+        </div>
+      </section>
+      <RecentOrdersPanel operationsState={state} limit={100} />
+      <PaginationControls page={state.pagination.page || page} pages={state.pagination.pages || 1} total={state.pagination.total || 0} loading={state.loading} label="orders" onPage={setPage} />
+    </div>
   );
 }
 
@@ -2380,27 +2551,38 @@ function formatAuditAction(value = '') {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function AuditLogPanel({ operationsState, onRefresh }) {
+function AuditLogPanel({ refresh, onRefresh }) {
   const [query, setQuery] = useState('');
   const [action, setAction] = useState('');
   const [actor, setActor] = useState('');
   const [range, setRange] = useState('all');
-  const [visibleCount, setVisibleCount] = useState(10);
-  const actions = useMemo(() => [...new Set(operationsState.auditLogs.map((log) => log.action).filter(Boolean))].sort(), [operationsState.auditLogs]);
-  const actors = useMemo(() => [...new Set(operationsState.auditLogs.map((log) => log.actorEmail || 'admin').filter(Boolean))].sort(), [operationsState.auditLogs]);
-  const filteredLogs = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const cutoff = range === 'all' ? 0 : Date.now() - Number(range) * 24 * 60 * 60 * 1000;
-    return operationsState.auditLogs.filter((log) => {
-      if (action && log.action !== action) return false;
-      if (actor && (log.actorEmail || 'admin') !== actor) return false;
-      if (cutoff && new Date(log.createdAt || 0).getTime() < cutoff) return false;
-      if (!needle) return true;
-      return [log.action, log.label, log.entityType, log.actorEmail].some((value) => String(value || '').toLowerCase().includes(needle));
-    });
-  }, [action, actor, operationsState.auditLogs, query, range]);
+  const [page, setPage] = useState(1);
+  const [state, setState] = useState({ auditLogs: [], facets: { actions: [], actors: [] }, pagination: { page: 1, pages: 1, total: 0 }, loading: true, error: '' });
+  const actions = state.facets.actions || [];
+  const actors = state.facets.actors || [];
 
-  useEffect(() => setVisibleCount(10), [action, actor, query, range]);
+  useEffect(() => {
+    let alive = true;
+    const timeout = window.setTimeout(() => {
+      const params = new URLSearchParams({ page: String(page), limit: '50' });
+      if (query.trim()) params.set('q', query.trim());
+      if (action) params.set('action', action);
+      if (actor) params.set('actor', actor);
+      if (range !== 'all') params.set('from', new Date(Date.now() - Number(range) * 24 * 60 * 60 * 1000).toISOString());
+      setState((current) => ({ ...current, loading: true, error: '' }));
+      api(`/auth/admin/audit-log?${params.toString()}`)
+        .then((data) => {
+          if (alive) setState({ auditLogs: data.auditLogs || [], facets: data.facets || { actions: [], actors: [] }, pagination: data.pagination || { page: 1, pages: 1, total: 0 }, loading: false, error: '' });
+        })
+        .catch((error) => {
+          if (alive) setState((current) => ({ ...current, loading: false, error: error.message }));
+        });
+    }, 250);
+    return () => {
+      alive = false;
+      window.clearTimeout(timeout);
+    };
+  }, [action, actor, page, query, range, refresh]);
 
   return (
     <section className="admin-card settings-panel audit-panel">
@@ -2412,18 +2594,17 @@ function AuditLogPanel({ operationsState, onRefresh }) {
         <button type="button" onClick={onRefresh}>Refresh Audit Log</button>
       </div>
       <div className="audit-toolbar">
-        <label className="field"><span>Search log</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Action, record, or admin" /></label>
-        <label className="field"><span>Action</span><select value={action} onChange={(event) => setAction(event.target.value)}><option value="">All actions</option>{actions.map((item) => <option key={item} value={item}>{formatAuditAction(item)}</option>)}</select></label>
-        <label className="field"><span>Admin</span><select value={actor} onChange={(event) => setActor(event.target.value)}><option value="">All admins</option>{actors.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-        <label className="field"><span>Date</span><select value={range} onChange={(event) => setRange(event.target.value)}><option value="all">All dates</option><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></label>
+        <label className="field"><span>Search log</span><input value={query} onChange={(event) => { setPage(1); setQuery(event.target.value); }} placeholder="Action, record, or admin" /></label>
+        <label className="field"><span>Action</span><select value={action} onChange={(event) => { setPage(1); setAction(event.target.value); }}><option value="">All actions</option>{actions.map((item) => <option key={item} value={item}>{formatAuditAction(item)}</option>)}</select></label>
+        <label className="field"><span>Admin</span><select value={actor} onChange={(event) => { setPage(1); setActor(event.target.value); }}><option value="">All admins</option>{actors.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <label className="field"><span>Date</span><select value={range} onChange={(event) => { setPage(1); setRange(event.target.value); }}><option value="all">All dates</option><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></label>
       </div>
-      {operationsState.loading && <StatusPanel text="Loading audit log..." />}
-      {operationsState.error && <StatusPanel text={operationsState.error} />}
-      {!operationsState.loading && !operationsState.error && operationsState.auditLogs.length === 0 && <StatusPanel text="No admin actions recorded yet." />}
-      {!operationsState.loading && !operationsState.error && operationsState.auditLogs.length > 0 && filteredLogs.length === 0 && <StatusPanel text="No audit entries match these filters." />}
-      {!operationsState.loading && !operationsState.error && filteredLogs.length > 0 && (
+      {state.loading && <StatusPanel text="Loading audit log..." />}
+      {state.error && <StatusPanel text={state.error} />}
+      {!state.loading && !state.error && state.auditLogs.length === 0 && <StatusPanel text="No admin actions match these filters." />}
+      {!state.loading && !state.error && state.auditLogs.length > 0 && (
         <div className="audit-list">
-          {filteredLogs.slice(0, visibleCount).map((log) => (
+          {state.auditLogs.map((log) => (
             <article key={log.id}>
               <div>
                 <strong>{formatAuditAction(log.action)}</strong>
@@ -2435,9 +2616,9 @@ function AuditLogPanel({ operationsState, onRefresh }) {
               </div>
             </article>
           ))}
-          {visibleCount < filteredLogs.length && <button className="audit-load-more" type="button" onClick={() => setVisibleCount((value) => value + 10)}>Load 10 more</button>}
         </div>
       )}
+      <PaginationControls page={state.pagination.page || page} pages={state.pagination.pages || 1} total={state.pagination.total || 0} loading={state.loading} label="audit entries" onPage={setPage} />
     </section>
   );
 }
@@ -2458,12 +2639,14 @@ function stopProductRowOpen(event) {
   event.stopPropagation();
 }
 
-function AdminLogin({ onLogin }) {
+function AdminLogin({ onLogin, theme, onThemeToggle }) {
   const [mode, setMode] = useState('signin');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -2509,9 +2692,18 @@ function AdminLogin({ onLogin }) {
           </div>
         </div>
         <form className="login-card" onSubmit={submit}>
+          <button
+            className="theme-toggle login-theme-toggle"
+            type="button"
+            onClick={onThemeToggle}
+            aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}
+            title={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}
+          >
+            <span aria-hidden="true" />
+          </button>
           <div className="login-mode-switch" role="tablist" aria-label="Admin authentication">
-            <button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setMessage(''); }}>Sign in</button>
-            <button type="button" role="tab" aria-selected={mode === 'request'} className={mode === 'request' ? 'active' : ''} onClick={() => { setMode('request'); setMessage(''); }}>Request access</button>
+            <button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setShowPassword(false); setShowConfirmPassword(false); setMessage(''); }}>Sign in</button>
+            <button type="button" role="tab" aria-selected={mode === 'request'} className={mode === 'request' ? 'active' : ''} onClick={() => { setMode('request'); setShowPassword(false); setShowConfirmPassword(false); setMessage(''); }}>Request access</button>
           </div>
           <div>
             <p className="kicker">Secure login</p>
@@ -2525,9 +2717,14 @@ function AdminLogin({ onLogin }) {
           </label>
           <label className="field">
             <span>Password</span>
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={mode === 'request' ? 'Create your password' : 'Enter your password'} autoComplete={mode === 'request' ? 'new-password' : 'current-password'} required />
+            <div className="password-input">
+              <input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={mode === 'request' ? 'Create your password' : 'Enter your password'} autoComplete={mode === 'request' ? 'new-password' : 'current-password'} required />
+              <button type="button" className="password-visibility" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} title={showPassword ? 'Hide password' : 'Show password'}>
+                <span className="password-eye" aria-hidden="true" />
+              </button>
+            </div>
           </label>
-          {mode === 'request' && <label className="field"><span>Confirm password</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat your password" autoComplete="new-password" required /></label>}
+          {mode === 'request' && <label className="field"><span>Confirm password</span><div className="password-input"><input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat your password" autoComplete="new-password" required /><button type="button" className="password-visibility" onClick={() => setShowConfirmPassword((value) => !value)} aria-label={showConfirmPassword ? 'Hide confirmation password' : 'Show confirmation password'} aria-pressed={showConfirmPassword} title={showConfirmPassword ? 'Hide confirmation password' : 'Show confirmation password'}><span className="password-eye" aria-hidden="true" /></button></div></label>}
           <button className="submit" type="submit" disabled={loading}>{loading ? (mode === 'request' ? 'Requesting...' : 'Signing in...') : (mode === 'request' ? 'Request access' : 'Enter Admin')}</button>
           {message && <p className="form-message">{message}</p>}
         </form>

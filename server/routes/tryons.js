@@ -38,6 +38,7 @@ import {
   waitForPrunaPrediction
 } from '../utils/prunaClient.js';
 import { isWatchProduct, promptForKey, promptForProduct, promptKeyForProduct } from '../utils/tryOnPrompts.js';
+import { falModelCostEstimate } from '../services/providerIntegrations.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -1238,6 +1239,7 @@ async function runVideoAttempt({ endpoint, payload, prompt, label, providerName,
     throw new Error(`${providerName || 'Video provider'} returned no video. Response keys: ${Object.keys(result || {}).join(', ')}`);
   }
   const { bytes, mimetype } = await generatedVideoBytesFromUrl(generatedUrl, timer);
+  const pricing = await falModelCostEstimate({ endpointId: endpoint, duration: payload.duration });
   timer?.mark(`${label} downloaded`, { outputKb: Math.round(bytes.length / 1024), mimetype });
   return {
     bytes,
@@ -1247,7 +1249,11 @@ async function runVideoAttempt({ endpoint, payload, prompt, label, providerName,
     model: endpoint,
     quality: `${payload.resolution} ${payload.duration}s`,
     duration: payload.duration,
-    resolution: payload.resolution
+    resolution: payload.resolution,
+    providerCostUsd: pricing.cost,
+    providerPricingSource: pricing.source,
+    providerPredictionId: submission.request_id,
+    providerOutputUrl: generatedUrl
   };
 }
 

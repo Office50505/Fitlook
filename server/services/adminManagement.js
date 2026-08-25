@@ -9,6 +9,15 @@ import { queueEnabled } from '../utils/jobQueue.js';
 import { observabilitySnapshot } from '../utils/observability.js';
 import { recordSystemIncident, resolveSystemIncident } from '../utils/systemIncidents.js';
 import { adminMediaUsage } from './adminMediaUsage.js';
+import {
+  atlasBilling,
+  awsCostExplorer,
+  bunnyProbe,
+  bunnyStatistics,
+  falProbe,
+  falUsage,
+  prunaProbe
+} from './providerIntegrations.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const COST_PROVIDERS = [
@@ -162,12 +171,16 @@ async function reconcileServiceIncident(service) {
 }
 
 async function systemSummary() {
-  const [metrics, generation] = await Promise.all([
+  const [metrics, generation, bunnyHealth, falHealth, prunaHealth, mongoPing] = await Promise.all([
     observabilitySnapshot({ mongoose }),
-    generationReport(1)
+    generationReport(1),
+    bunnyProbe(),
+    falProbe(),
+    prunaProbe(),
+    mongoose.connection.db?.admin().ping().then(() => true).catch(() => false) || false
   ]);
   const readiness = configurationReadiness();
-  const mongoReady = Boolean(metrics.mongo?.ok);
+  const mongoReady = Boolean(metrics.mongo?.ok && mongoPing);
   const redisConfigured = Boolean(process.env.REDIS_URL);
   const services = [
     serviceStatus({ id: 'api', label: 'API server', status: 'healthy', detail: `Process ${metrics.system?.process?.pid || '-'} is responding.` }),
@@ -175,9 +188,9 @@ async function systemSummary() {
     serviceStatus({ id: 'redis', label: 'Redis', status: !redisConfigured ? 'not_configured' : metrics.redis?.ok ? 'healthy' : 'down', detail: !redisConfigured ? 'Redis is not configured.' : metrics.redis?.ok ? `${metrics.redis.connected_clients || 0} clients connected.` : 'Redis did not respond.' }),
     serviceStatus({ id: 'queue', label: 'Job queue', status: queueEnabled() ? 'healthy' : 'disabled', detail: queueEnabled() ? 'Queue workers are enabled.' : 'Queue mode is disabled.' }),
     serviceStatus({ id: 'nginx', label: 'Nginx', status: metrics.nginx?.ok ? 'healthy' : 'unknown', detail: metrics.nginx?.ok ? `${metrics.nginx.active || 0} active connections.` : 'Nginx status endpoint is not connected.' }),
-    serviceStatus({ id: 'storage', label: 'Bunny storage', status: configured(['BUNNY_STORAGE_ZONE', 'BUNNY_STORAGE_API_KEY', 'BUNNY_CDN_BASE_URL']) ? 'configured' : 'not_configured', detail: configured(['BUNNY_STORAGE_ZONE', 'BUNNY_STORAGE_API_KEY', 'BUNNY_CDN_BASE_URL']) ? 'Storage credentials are configured.' : 'Storage configuration is incomplete.', group: 'provider' }),
-    serviceStatus({ id: 'pruna', label: 'Pruna image API', status: configured(['PRUNA_API_KEY']) ? 'configured' : 'not_configured', detail: configured(['PRUNA_API_KEY']) ? `Model ${process.env.PRUNA_TRYON_MODEL || 'p-image-try-on'} is configured.` : 'Pruna is not configured.', group: 'provider' }),
-    serviceStatus({ id: 'pixverse', label: 'FAL / PixVerse video API', status: configured(['FAL_KEY']) ? 'configured' : 'not_configured', detail: configured(['FAL_KEY']) ? `Model ${process.env.FAL_TRYON_VIDEO_MODEL || 'default'} is configured.` : 'FAL is not configured.', group: 'provider' }),
+    serviceStatus({ id: 'storage', label: 'Bunny storage', status: !bunnyHealth.configured ? 'not_configured' : bunnyHealth.healthy ? 'healthy' : 'down', detail: bunnyHealth.detail, group: 'provider' }),
+    serviceStatus({ id: 'pruna', label: 'Pruna image API', status: !prunaHealth.configured ? 'not_configured' : prunaHealth.healthy === true ? 'healthy' : prunaHealth.healthy === false ? 'down' : 'configured', detail: prunaHealth.detail, group: 'provider' }),
+    serviceStatus({ id: 'pixverse', label: 'FAL / PixVerse video API', status: !falHealth.configured ? 'not_configured' : falHealth.healthy ? 'healthy' : 'down', detail: falHealth.detail, group: 'provider' }),
     serviceStatus({ id: 'otp', label: 'OTP delivery', status: readiness.otpProvider === 'configured' ? 'configured' : 'not_configured', detail: `${readiness.otpProviderType} provider is ${readiness.otpProvider.replace('_', ' ')}.`, group: 'provider' }),
     serviceStatus({ id: 'phonepe', label: 'PhonePe', status: readiness.phonePe === 'configured' ? 'configured' : 'not_configured', detail: `Payment configuration is ${readiness.phonePe.replace('_', ' ')}.`, group: 'provider' })
   ];
@@ -322,7 +335,7 @@ function baseProvider(id) {
   };
 }
 
-function aiCostDetail(id, generationData) {
+async function aiCostDetail(id, generationData) {
   const detail = baseProvider(id);
   const bucket = generationData.buckets.get(id) || { requests: 0, succeeded: 0, failed: 0, costUsd: 0, tokens: 0, daily: [], models: [] };
   const configuration = id === 'pruna'
@@ -344,6 +357,27 @@ function aiCostDetail(id, generationData) {
   detail.breakdown = bucket.models;
   detail.daily = bucket.daily;
   detail.requirements = ['Provider billing or wallet API access', 'Verified per-model pricing'];
+  if (id === 'fal-pixverse') {
+    try {
+      const live = await falUsage();
+      if (live.configured) {
+        detail.connection = 'live';
+        detail.spend = rounded(live.spend, 4);
+        detail.source = 'live';
+        detail.sourceLabel = 'Live month-to-date usage from the FAL platform API';
+        detail.breakdown = live.breakdown.length ? live.breakdown : detail.breakdown;
+        detail.requirements = [];
+      } else {
+        detail.requirements = ['FAL_ADMIN_KEY with platform usage scope', 'FAL account billing access for wallet balance'];
+      }
+    } catch (error) {
+      detail.connection = 'error';
+      detail.integrationError = error.message;
+      detail.sourceLabel = `FAL billing connection failed; showing recorded usage${bucket.costUsd > 0 ? ' estimate' : ''}`;
+    }
+  } else if (id === 'pruna') {
+    detail.requirements = ['Pruna account billing endpoint or export', 'Verified provider invoice reconciliation'];
+  }
   return detail;
 }
 
@@ -365,8 +399,27 @@ async function bunnyCostDetail() {
     { label: 'Unknown file sizes', value: Number(media.usage?.unknownSize?.all || 0), format: 'number' },
     { label: 'Bandwidth', value: null, format: 'bytes' }
   ];
-  detail.breakdown = ['profile', 'tryon', 'closet', 'product'].map((group) => ({ label: group, bytes: Number(media.usage?.bunnyBytes?.[group] || 0), files: Number(media.usage?.bunnyCounts?.[group] || 0) }));
+  detail.breakdown = ['profile', 'tryon', 'video', 'closet', 'product'].map((group) => ({ label: group, bytes: Number(media.usage?.bunnyBytes?.[group] || 0), files: Number(media.usage?.bunnyCounts?.[group] || 0) }));
   detail.requirements = ['Bunny account billing API key', 'Pull-zone bandwidth statistics access'];
+  try {
+    const live = await bunnyStatistics();
+    if (live.configured) {
+      detail.connection = 'live';
+      detail.balance = live.balance ?? detail.balance;
+      detail.source = rate === null ? 'live_usage' : 'estimated';
+      detail.sourceLabel = rate === null
+        ? 'Live Bunny bandwidth and request usage; invoiced cost is not exposed by this endpoint'
+        : 'Live Bunny usage with a configured storage-rate estimate';
+      detail.metrics[3].value = live.bandwidthBytes;
+      detail.metrics.push({ label: 'CDN requests', value: live.requests, format: 'number' });
+      detail.metrics.push({ label: 'Cache hit rate', value: live.cacheHitRate, format: 'percent' });
+      detail.requirements = rate === null ? ['BUNNY_STORAGE_COST_PER_GB_USD for a storage estimate', 'Bunny invoice export for actual cost'] : ['Bunny invoice export for actual cost'];
+    }
+  } catch (error) {
+    detail.connection = 'error';
+    detail.integrationError = error.message;
+    detail.sourceLabel = 'Bunny account API connection failed; showing database-tracked storage only';
+  }
   return detail;
 }
 
@@ -390,6 +443,22 @@ async function mongodbCostDetail() {
     { label: 'Collections', value: Number(stats?.collections || 0), format: 'number' }
   ];
   detail.requirements = ['MongoDB Atlas organization billing access', 'Atlas project or organization API credentials'];
+  try {
+    const live = await atlasBilling();
+    if (live.configured) {
+      detail.connection = 'live';
+      detail.spend = rounded(live.spend, 2);
+      detail.currency = live.currency || detail.currency;
+      detail.source = 'live';
+      detail.sourceLabel = 'Live pending invoice total from the MongoDB Atlas Admin API';
+      detail.breakdown = live.invoices;
+      detail.requirements = [];
+    }
+  } catch (error) {
+    detail.connection = 'error';
+    detail.integrationError = error.message;
+    detail.sourceLabel = 'Atlas billing API connection failed; database usage remains live';
+  }
   return detail;
 }
 
@@ -401,10 +470,14 @@ async function otpCostDetail() {
     { $group: { _id: null, total: { $sum: 1 }, succeeded: { $sum: { $cond: [{ $eq: ['$status', 'succeeded'] }, 1, 0] } }, failed: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } }, durationMs: { $sum: '$durationMs' }, costUsd: { $sum: '$estimatedCostUsd' } } }
   ]);
   const configuredProvider = configurationReadiness().otpProvider === 'configured';
+  const unitCost = envNumber('OTP_COST_PER_MESSAGE_USD');
+  const hasCostEstimate = unitCost !== null;
   detail.connection = configuredProvider ? 'usage_connected' : 'not_configured';
-  detail.spend = rounded(totals.costUsd, 4);
-  detail.source = totals.total && totals.costUsd ? 'estimated' : 'unavailable';
-  detail.sourceLabel = totals.total && totals.costUsd ? 'Estimated from delivery count and configured unit rate' : 'Delivery outcomes are tracked; provider wallet is not connected';
+  detail.spend = hasCostEstimate ? rounded(totals.costUsd, 4) : null;
+  detail.source = hasCostEstimate ? 'estimated' : 'unavailable';
+  detail.sourceLabel = hasCostEstimate
+    ? 'Estimated from delivery count and configured unit rate'
+    : 'Delivery outcomes are tracked; provider wallet is not connected';
   detail.metrics = [
     { label: 'Delivery requests', value: Number(totals.total || 0), format: 'number' },
     { label: 'Succeeded', value: Number(totals.succeeded || 0), format: 'number' },
@@ -415,7 +488,7 @@ async function otpCostDetail() {
   return detail;
 }
 
-function awsCostDetail() {
+async function awsCostDetail() {
   const detail = baseProvider('aws');
   const manualCost = envNumber('AWS_MONTHLY_COST_USD');
   const budget = envNumber('AWS_MONTHLY_BUDGET_USD');
@@ -430,6 +503,23 @@ function awsCostDetail() {
     { label: 'Services', value: null, format: 'number' }
   ];
   detail.requirements = ['Read-only AWS Cost Explorer IAM permissions', 'Cost allocation tags for Lookmefy resources'];
+  try {
+    const live = await awsCostExplorer();
+    if (live.configured) {
+      detail.connection = 'live';
+      detail.spend = rounded(live.spend, 4);
+      detail.source = live.estimated ? 'live_estimate' : 'live';
+      detail.sourceLabel = live.estimated ? 'Live month-to-date estimate from AWS Cost Explorer' : 'Live month-to-date cost from AWS Cost Explorer';
+      detail.breakdown = live.breakdown;
+      detail.metrics[0].value = detail.budget ? percent(detail.spend, detail.budget) : null;
+      detail.metrics[2].value = live.breakdown.length;
+      detail.requirements = [];
+    }
+  } catch (error) {
+    detail.connection = 'error';
+    detail.integrationError = error.message;
+    detail.sourceLabel = 'AWS Cost Explorer connection failed';
+  }
   return detail;
 }
 
@@ -478,8 +568,9 @@ async function costOverview() {
     else result.usd += Number(provider.spend || 0);
     if (provider.source === 'estimated') result.estimated += 1;
     if (provider.source === 'manual') result.manual += 1;
+    if (String(provider.source).startsWith('live')) result.live += 1;
     return result;
-  }, { usd: 0, inr: 0, unavailable: 0, estimated: 0, manual: 0 });
+  }, { usd: 0, inr: 0, unavailable: 0, estimated: 0, manual: 0, live: 0 });
   return {
     generatedAt: new Date(),
     period: generationData.period,

@@ -10,6 +10,12 @@
   --soft: #fffaf4;
   --accent: #d8c8b6;
   --danger: #8b2f2f;
+  --surface-raised: #ffffff;
+  --surface-hover: #fffaf2;
+  --surface-inset: #f4efe7;
+  --success-surface: #f0f7f2;
+  --warning-surface: #fff7ea;
+  --danger-surface: #fff1ef;
   --shadow: 0 16px 38px rgba(74, 53, 31, .08);
   --font-heading: "Plus Jakarta Sans", sans-serif;
   --font-body: "Manrope", sans-serif;
@@ -145,11 +151,96 @@ a { color: inherit; }
 }
 
 .login-card {
+  position: relative;
   display: grid;
   align-content: center;
   gap: 18px;
   background: #fffdf8;
   padding: clamp(24px, 5vw, 52px);
+}
+
+.login-theme-toggle {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--soft);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.password-input {
+  position: relative;
+  width: 100%;
+}
+
+.password-input input {
+  width: 100%;
+  padding-right: 46px;
+}
+
+.password-visibility {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.password-visibility:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.password-visibility:focus-visible,
+.login-theme-toggle:focus-visible,
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.password-eye {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-radius: 50% / 62%;
+}
+
+.password-eye::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+  transform: translate(-50%, -50%);
+}
+
+.password-visibility[aria-pressed='true'] .password-eye::before {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  width: 23px;
+  height: 2px;
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--card);
+  content: '';
+  transform: translate(-50%, -50%) rotate(-42deg);
 }
 
 .login-card h2 {
@@ -4769,6 +4860,12 @@ html[data-theme='dark'] {
   --soft: #272e29;
   --accent: #716353;
   --danger: #ef8177;
+  --surface-raised: #222623;
+  --surface-hover: #2a302c;
+  --surface-inset: #181b19;
+  --success-surface: #193126;
+  --warning-surface: #372d20;
+  --danger-surface: #3a2423;
   --shadow: 0 16px 38px rgba(0, 0, 0, .26);
 }
 
@@ -4981,7 +5078,7 @@ html[data-theme='dark'] .overview-command-card {
 
 .storage-usage-breakdown {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1px;
   background: rgba(255, 255, 255, .18);
 }
@@ -5015,6 +5112,125 @@ html[data-theme='dark'] .overview-command-card {
   gap: 18px;
 }
 
+.storage-reconciliation {
+  display: grid;
+  gap: 14px;
+  border-block: 1px solid var(--line);
+  background: var(--card);
+  padding: 18px;
+}
+
+.storage-reconcile-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--line);
+}
+
+.storage-reconcile-metrics > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 14px;
+  border-right: 1px solid var(--line);
+}
+
+.storage-reconcile-metrics > div:last-child {
+  border-right: 0;
+}
+
+.storage-reconcile-metrics span,
+.storage-reconcile-metrics small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.storage-reconcile-metrics strong {
+  font-size: 22px;
+}
+
+.storage-warning,
+.storage-success {
+  border-left: 3px solid #bf7a18;
+  background: #fff6e7;
+  padding: 10px 12px;
+  color: #70430c;
+  font-size: 11px;
+}
+
+.storage-success {
+  border-left-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.orphan-manager {
+  display: grid;
+  gap: 12px;
+}
+
+.orphan-list {
+  display: grid;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+}
+
+.orphan-list label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+}
+
+.orphan-list label:last-child {
+  border-bottom: 0;
+}
+
+.orphan-list span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.orphan-list strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orphan-list small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.orphan-delete-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.orphan-delete-controls span {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.orphan-delete-controls input {
+  width: 140px;
+}
+
+.orphan-delete-controls button.danger {
+  border-color: #a93c36;
+  background: #a93c36;
+  color: #fff;
+}
+
 .storage-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, .35fr);
@@ -5027,7 +5243,7 @@ html[data-theme='dark'] .overview-command-card {
 
 .storage-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 5px;
   padding: 4px;
   border: 1px solid var(--line);
@@ -5124,7 +5340,8 @@ html[data-theme='dark'] .overview-command-card {
   text-decoration: none;
 }
 
-.stored-media-preview img {
+.stored-media-preview img,
+.stored-media-preview video {
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -5318,10 +5535,29 @@ html[data-theme='dark'] .overview-command-card {
 
 .user-media-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1px;
   border-bottom: 1px solid var(--line);
   background: var(--line);
+}
+
+.orders-page-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.orders-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(180px, .3fr);
+  gap: 12px;
+}
+
+.pagination-summary {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
 }
 
 .user-media-summary div {
@@ -5673,6 +5909,16 @@ html[data-theme='dark'] .stored-media-preview {
   background-image: linear-gradient(45deg, rgba(255, 255, 255, .05) 25%, transparent 25%), linear-gradient(-45deg, rgba(255, 255, 255, .05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, .05) 75%), linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, .05) 75%);
 }
 
+html[data-theme='dark'] .storage-warning {
+  background: #382d1d;
+  color: #ffd9a6;
+}
+
+html[data-theme='dark'] .storage-success {
+  background: #1c3127;
+  color: #b9e2ca;
+}
+
 @media (max-width: 1180px) {
   .storage-usage-band {
     grid-template-columns: 1fr;
@@ -5685,6 +5931,18 @@ html[data-theme='dark'] .stored-media-preview {
 
   .storage-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .storage-reconcile-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .storage-reconcile-metrics > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .storage-reconcile-metrics > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
   }
 }
 
@@ -5700,10 +5958,6 @@ html[data-theme='dark'] .stored-media-preview {
 
   .storage-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .storage-tabs button:last-child {
-    grid-column: 1 / -1;
   }
 
   .user-media-drawer {
@@ -5722,6 +5976,10 @@ html[data-theme='dark'] .stored-media-preview {
 
   .user-session-list article {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .orders-toolbar {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -6800,4 +7058,221 @@ html[data-theme='dark'] :is(.management-status, .cost-source, .incident-actions 
   .service-health-table .management-status {
     grid-column: 2;
   }
+}
+
+/* Complete dark-theme coverage for surfaces added after the original dashboard. */
+html[data-theme='dark'] .login-panel {
+  border-color: var(--line);
+  background: var(--card);
+}
+
+html[data-theme='dark'] .login-art {
+  background: #171b18;
+}
+
+html[data-theme='dark'] :is(
+  .login-card,
+  .brand-mark,
+  .login-metrics div,
+  .sidebar-toggle,
+  .sidebar-session button,
+  .side-rail button,
+  .menu-chip,
+  .global-search-results,
+  .admin-page-nav button.active,
+  .admin-profile,
+  .admin-tabs button.active,
+  .admin-topbar .admin-tabs button.active,
+  .analytics-secondary-metrics > div,
+  .analytics-health-grid > div,
+  .analytics-trend-chart svg,
+  .analytics-table,
+  .priority-metric,
+  .signal-spotlight > div,
+  .stats-row,
+  .top-product-card,
+  .recent-signal,
+  .qa-summary,
+  .section-head button,
+  .admin-product button,
+  .draft-fetch-status,
+  .admin-product,
+  .admin-product-actions select,
+  .editor-head,
+  .editor-preview,
+  .roles-summary > button,
+  .roles-dialog
+) {
+  border-color: var(--line);
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+
+html[data-theme='dark'] :is(
+  .login-mode-switch,
+  .sidebar-nav button b,
+  .sidebar-nav button.active,
+  .admin-topline span,
+  .admin-page-nav,
+  .admin-form .card-head > span,
+  .overview-command-actions button,
+  .wide-card-action,
+  .pipeline-breakdown div,
+  .user-pulse-grid div,
+  .signal-summary-strip div,
+  .attention-list button,
+  .recent-product-item,
+  .overview-action-list button,
+  .settings-list div,
+  .users-summary-grid .stat-box:nth-child(2),
+  .users-toolbar,
+  .user-row,
+  .user-token-actions input,
+  .user-token-actions button:first-of-type,
+  .compact-user-list div,
+  .order-row,
+  .audit-list article,
+  .order-summary-strip div,
+  .admin-command-bar,
+  .catalog-filters,
+  .form-section,
+  .field input,
+  .field select,
+  .field textarea,
+  .segmented-field span,
+  .distribution-pie span,
+  .row-segmented,
+  .management-status,
+  .cost-source
+) {
+  border-color: var(--line);
+  background: var(--soft);
+  color: var(--ink);
+}
+
+html[data-theme='dark'] .admin-sidebar {
+  background: rgba(27, 30, 28, .96);
+}
+
+html[data-theme='dark'] :is(
+  .kicker,
+  .login-art > span,
+  .sidebar-brand strong,
+  .sidebar-nav button.active,
+  .admin-brand strong,
+  .editor-head span,
+  .media-drawer-head span,
+  .roles-dialog-head span,
+  .user-presence.online,
+  .session-state.online
+) {
+  color: #8fd2aa;
+}
+
+html[data-theme='dark'] :is(
+  .global-search-results button:hover,
+  .qa-summary-list button:hover,
+  .admin-product:hover,
+  .admin-product:focus-visible,
+  .admin-product.selected,
+  .password-visibility:hover
+) {
+  background: var(--surface-hover);
+}
+
+html[data-theme='dark'] :is(.field input:disabled, .field select:disabled, .field textarea:disabled) {
+  background: var(--surface-inset);
+  color: var(--muted);
+}
+
+html[data-theme='dark'] :is(
+  .settings-actions .danger-action,
+  .user-account-actions .danger-action,
+  .admin-command-bar button.danger-action,
+  .bulk-action-bar .danger-action,
+  .editor-actions .danger-action,
+  .section-head button.danger-action,
+  .draft-fetch-status.error,
+  .admin-product-actions .danger-action,
+  .confirm-symbol.destructive,
+  .role-status.disabled,
+  .management-status.down,
+  .management-status.critical,
+  .management-status.open
+) {
+  border-color: #70403c;
+  background: var(--danger-surface);
+  color: #ffaaa2;
+}
+
+html[data-theme='dark'] :is(
+  .account-status.banned,
+  .availability-status.out_of_stock,
+  .order-row.pending,
+  .qa-flags span,
+  .qa-flags button,
+  .user-account-actions .remove-action,
+  .role-badge.unassigned,
+  .role-access-tags .no-access,
+  .role-status.pending,
+  .management-status.degraded,
+  .management-status.warning,
+  .management-status.acknowledged,
+  .cost-source.estimated,
+  .cost-source.manual,
+  .storage-warning
+) {
+  border-color: #665337;
+  background: var(--warning-surface);
+  color: #e6c58f;
+}
+
+html[data-theme='dark'] :is(
+  .draft-fetch-status.success,
+  .roles-inline-message,
+  .storage-success,
+  .availability-status.available,
+  .management-status.healthy,
+  .management-status.configured,
+  .management-status.usage_connected,
+  .management-status.resolved,
+  .role-status.active,
+  .role-badge.master
+) {
+  border-color: #315b45;
+  background: var(--success-surface);
+  color: #91d9ad;
+}
+
+html[data-theme='dark'] :is(.availability-status.unavailable, .availability-status.archived) {
+  background: #2c302d;
+  color: #c0c8c2;
+}
+
+html[data-theme='dark'] .availability-status.draft {
+  background: #222e38;
+  color: #a9c8e2;
+}
+
+html[data-theme='dark'] .order-row.failed {
+  border-color: #70403c;
+  background: var(--danger-surface);
+}
+
+html[data-theme='dark'] .media-grid-skeleton span {
+  background: linear-gradient(90deg, #222724 0%, #343b36 44%, #222724 82%);
+  background-size: 240% 100%;
+}
+
+html[data-theme='dark'] .editor-actions {
+  background: rgba(20, 24, 21, .96);
+}
+
+html[data-theme='dark'] .password-visibility[aria-pressed='true'] .password-eye::before {
+  box-shadow: 0 0 0 2px var(--soft);
+}
+
+html[data-theme='dark'] ::placeholder {
+  color: #7f8982;
+  opacity: 1;
 }

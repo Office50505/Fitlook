@@ -91,7 +91,7 @@ function SystemOverviewPage({ state, onNavigate }) {
   if (!data) return <DataState state={state} />;
   const services = data.services || [];
   const healthy = services.filter((service) => ['healthy', 'configured'].includes(service.status)).length;
-  const requests = data.metrics?.requests || [];
+  const requests = data.metrics?.requestHistory?.endpoints || data.metrics?.requests || [];
   const requestTotal = requests.reduce((total, item) => total + Number(item.requests || 0), 0);
   const errors = requests.reduce((total, item) => total + Number(item.errors || 0), 0);
   const memory = data.metrics?.system?.memory || {};
@@ -105,7 +105,7 @@ function SystemOverviewPage({ state, onNavigate }) {
       <MetricStrip items={[
         { label: 'Services ready', value: `${healthy} / ${services.length}` },
         { label: 'Open incidents', value: formatNumber(data.activeIncidents?.length || 0) },
-        { label: 'Requests in process window', value: formatNumber(requestTotal) },
+        { label: 'Requests in 24h window', value: formatNumber(requestTotal) },
         { label: 'API error rate', value: requestTotal ? `${((errors / requestTotal) * 100).toFixed(2)}%` : '0%' },
         { label: 'Generation success 24h', value: `${Number(data.generation24h?.successRate || 0).toFixed(1)}%` }
       ]} />
@@ -196,7 +196,8 @@ function FailuresPage({ incidentsState, generationState, onIncidentStatus }) {
 function ApiPerformancePage({ state }) {
   const data = state.data;
   if (!data) return <DataState state={state} />;
-  const endpoints = [...(data.metrics?.requests || [])].sort((left, right) => Number(right.p95Ms || 0) - Number(left.p95Ms || 0));
+  const history = data.metrics?.requestHistory;
+  const endpoints = [...(history?.endpoints || data.metrics?.requests || [])].sort((left, right) => Number(right.p95Ms || 0) - Number(left.p95Ms || 0));
   const totalRequests = endpoints.reduce((total, item) => total + Number(item.requests || 0), 0);
   const totalErrors = endpoints.reduce((total, item) => total + Number(item.errors || 0), 0);
   return (
@@ -206,10 +207,11 @@ function ApiPerformancePage({ state }) {
         { label: 'Server errors', value: formatNumber(totalErrors) },
         { label: 'Error rate', value: totalRequests ? `${((totalErrors / totalRequests) * 100).toFixed(2)}%` : '0%' },
         { label: 'Tracked endpoints', value: formatNumber(endpoints.length) },
+        { label: 'API instances', value: history ? formatNumber(history.instances?.length || 0) : 'Current only' },
         { label: 'Active Nginx connections', value: data.metrics?.nginx?.ok ? formatNumber(data.metrics.nginx.active || 0) : 'Not connected' }
       ]} />
       <section className="admin-card management-panel">
-        <div className="section-head"><div><h2>Endpoint performance</h2><p>In-process request metrics reset whenever this API instance restarts.</p></div><span className="last-checked">Generated {formatDate(data.generatedAt)}</span></div>
+        <div className="section-head"><div><h2>Endpoint performance</h2><p>{history ? `Persistent ${history.hours}-hour metrics aggregated across API instances.` : 'Current-process metrics; persistent history is not enabled.'}</p></div><span className="last-checked">Generated {formatDate(data.generatedAt)}</span></div>
         {endpoints.length === 0 ? <div className="management-empty">No endpoint traffic has been recorded on this process yet.</div> : <div className="management-table-wrap"><table className="management-table"><thead><tr><th>Endpoint</th><th>Requests</th><th>Errors</th><th>Average</th><th>P50</th><th>P95</th><th>P99</th><th>Maximum</th></tr></thead><tbody>{endpoints.map((item) => <tr key={item.endpoint}><td><strong>{item.endpoint}</strong></td><td>{formatNumber(item.requests)}</td><td>{formatNumber(item.errors)}</td><td>{formatDuration(item.avgMs)}</td><td>{formatDuration(item.p50Ms)}</td><td>{formatDuration(item.p95Ms)}</td><td>{formatDuration(item.p99Ms)}</td><td>{formatDuration(item.maxMs)}</td></tr>)}</tbody></table></div>}
       </section>
     </div>
@@ -274,6 +276,7 @@ function CostOverviewPage({ state, onNavigate }) {
       <MetricStrip items={[
         { label: 'Tracked USD', value: formatMoney(totals.usd || 0, 'USD') },
         { label: 'Tracked INR', value: formatMoney(totals.inr || 0, 'INR') },
+        { label: 'Live providers', value: formatNumber(totals.live || 0) },
         { label: 'Estimated providers', value: formatNumber(totals.estimated || 0) },
         { label: 'Manual providers', value: formatNumber(totals.manual || 0) },
         { label: 'Billing unavailable', value: formatNumber(totals.unavailable || 0) }
@@ -305,6 +308,7 @@ function ProviderCostPage({ state }) {
         <div><span>{data.category}</span><h2>{data.label}</h2><p>{data.sourceLabel}</p></div>
         <div><SourceBadge source={data.source} /><StatusBadge status={data.connection} /></div>
       </section>
+      {data.integrationError && <section className="integration-notice"><div><strong>Provider connection failed</strong><p>{data.integrationError}</p></div><StatusBadge status="error" /></section>}
       <MetricStrip currency={data.currency} items={[
         { label: 'Month-to-date cost', value: formatMoney(data.spend, data.currency) },
         { label: 'Balance', value: formatMoney(data.balance, data.currency) },

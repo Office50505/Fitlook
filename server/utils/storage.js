@@ -93,6 +93,60 @@ async function bunnyRequest(key, options = {}) {
   });
 }
 
+async function listBunnyDirectory(prefix = '') {
+  if (!useBunny()) throw new Error('Bunny storage is not enabled');
+  const clean = cleanKey(prefix).replace(/\/+$/, '');
+  const response = await bunnyRequest(clean ? `${clean}/` : '', { method: 'GET', headers: { accept: 'application/json' } });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`Bunny storage listing failed (${response.status})${detail ? `: ${detail.slice(0, 160)}` : ''}`);
+  }
+  const body = await response.json();
+  return (Array.isArray(body) ? body : []).map((item) => {
+    const name = cleanKey(item.ObjectName || item.objectName || '');
+    const key = clean && (name === clean || name.startsWith(`${clean}/`)) ? name : [clean, name].filter(Boolean).join('/');
+    return {
+      key,
+      name,
+      size: Number(item.Length ?? item.length ?? 0),
+      isDirectory: Boolean(item.IsDirectory ?? item.isDirectory),
+      createdAt: item.DateCreated || item.dateCreated || null,
+      updatedAt: item.LastChanged || item.lastChanged || null,
+      contentType: item.ContentType || item.contentType || ''
+    };
+  }).filter((item) => item.name);
+}
+
+async function listBunnyInventory({ prefix = '', maxFiles, maxDepth } = {}) {
+  const fileLimit = Math.min(Math.max(Number(maxFiles || process.env.BUNNY_RECONCILE_MAX_FILES || 20_000), 1), 100_000);
+  const depthLimit = Math.min(Math.max(Number(maxDepth || process.env.BUNNY_RECONCILE_MAX_DEPTH || 8), 1), 20);
+  const queue = [{ prefix: cleanKey(prefix).replace(/\/+$/, ''), depth: 0 }];
+  const visited = new Set();
+  const files = [];
+  let truncated = false;
+
+  while (queue.length && files.length < fileLimit) {
+    const current = queue.shift();
+    if (visited.has(current.prefix)) continue;
+    visited.add(current.prefix);
+    const items = await listBunnyDirectory(current.prefix);
+    for (const item of items) {
+      if (item.isDirectory) {
+        if (current.depth < depthLimit) queue.push({ prefix: item.key, depth: current.depth + 1 });
+        else truncated = true;
+      } else {
+        files.push(item);
+        if (files.length >= fileLimit) {
+          truncated = queue.length > 0 || items.indexOf(item) < items.length - 1;
+          break;
+        }
+      }
+    }
+  }
+
+  return { files, truncated, maxFiles: fileLimit, maxDepth: depthLimit };
+}
+
 async function saveBuffer({ key, buffer, mimetype = 'application/octet-stream', filename }) {
   const clean = cleanKey(key || filename);
   if (!clean) throw new Error('Storage key is required');
@@ -229,6 +283,8 @@ export {
   deleteStoredFile,
   deleteStoredPrefix,
   keyFromStoredPath,
+  listBunnyDirectory,
+  listBunnyInventory,
   localPathForKey,
   pathForKey,
   publicUrlForKey,

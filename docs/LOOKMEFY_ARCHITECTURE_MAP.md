@@ -14,7 +14,7 @@ flowchart LR
   Admin[Admin browser] --> AdminApp[Vite React admin<br/>admin/src/AdminApp.jsx]
 
   Storefront -->|/api/*| API[Express API<br/>server/index.js]
-  AdminApp -->|/api/* + admin token/key| API
+  AdminApp -->|/api/* + identified admin JWT| API
 
   API --> Mongo[(MongoDB<br/>Mongoose models)]
   API --> Redis[(Redis<br/>cache, rate limits, temp sessions, queues)]
@@ -114,9 +114,13 @@ This is the API surface as currently mounted by `server/index.js`.
 | `GET` | `/api/auth/admin/users` | User Operations | Admin users page | `User`, `TokenOrder`, `UserSession`, and `UserEvent` aggregations. |
 | `GET` | `/api/auth/admin/users/:id/insights` | Admin | User detail drawer | Session timeline, activity, preferences, and top products. |
 | `GET` | `/api/auth/admin/users/:id/media` | Admin | User detail media tab | Profile, try-on, closet media, and Bunny byte usage. |
-| `GET` | `/api/auth/admin/storage` | Admin | Storage page | Stored image index and Bunny usage aggregation. |
-| `GET` | `/api/auth/admin/operations` | User Operations | Admin orders and operations pages | `TokenOrder`. |
-| `GET` | `/api/auth/admin/audit-log` | System Management | Audit log page | `AdminAuditLog`. |
+| `GET` | `/api/auth/admin/storage` | User Operations | Storage page | Paginated image/video index and database-tracked Bunny usage. |
+| `GET` | `/api/auth/admin/storage/reconciliation` | User Operations | Bunny reconciliation | Recursively lists Bunny and compares live keys with MongoDB references. |
+| `DELETE` | `/api/auth/admin/storage/orphans` | User Operations | Guarded orphan deletion | Re-verifies old orphans, requires typed confirmation, deletes from Bunny, writes audit log. |
+| `GET` | `/api/auth/admin/orders` | User Operations | Orders page | Paginated/filterable `TokenOrder` history. |
+| `GET` | `/api/auth/admin/search` | User Operations | Global admin search | Searches all matching users/products in MongoDB. |
+| `GET` | `/api/auth/admin/operations` | User Operations | Overview snapshots | Latest `TokenOrder` records and totals. |
+| `GET` | `/api/auth/admin/audit-log` | System Management | Audit log page | Paginated/filterable `AdminAuditLog`. |
 | `PATCH` | `/api/auth/admin/users/:id/tokens` | User Operations | Admin token edit | `User` update, `recordAdminAudit`. |
 | `GET` | `/api/auth/me` | User | App/profile session restore | `requireUser`, `User.toClient`. |
 | `PATCH` | `/api/auth/onboarding` | User | Onboarding complete | `User.onboardingSeenAt`. |
@@ -195,6 +199,7 @@ This is the API surface as currently mounted by `server/index.js`.
 | `GET` | `/api/health/live` | Public | Liveness check | Service metadata. |
 | `GET` | `/api/health/ready` | Public | Readiness check | Mongo/Redis/shutdown readiness. |
 | `GET` | `/api/admin/metrics` | System Management | Admin/system metrics | `observabilitySnapshot`. |
+| `GET` | `/api/metrics/prometheus` | Metrics bearer token | Prometheus collector | Aggregated request/runtime/Nginx metrics in Prometheus text format. |
 
 ## 5. Route-To-Utility Dependency Map
 
@@ -362,6 +367,7 @@ erDiagram
 | `GenerationMetric` | `server/models/GenerationMetric.js` | Privacy-safe generation outcome, latency, provider/model, credit restoration, and failure category. |
 | `AdminUser` | `server/models/AdminUser.js` | Individual admin identity, bcrypt password hash, pending/active/disabled status, role, section access, and session credential version. |
 | `AdminAuditLog` | `server/models/AdminAuditLog.js` | Admin mutations and token changes. |
+| `RequestMetric` | `server/models/RequestMetric.js` | Minute-bucket API request counts, errors, latency histogram, and instance identity with TTL retention. |
 
 ## 10. AI Image Try-On Flow
 
@@ -980,8 +986,10 @@ These are not necessarily bugs, but they are important to know:
 5. `web/` is a separate Next.js project and is not wired into the root package runtime.
 6. Queue behavior depends heavily on env; if `TRYON_QUEUE_MODE=async`, the frontend must poll `/api/jobs/tryon/:jobId`.
 7. If Redis is unavailable, temp sessions/rate limits/cache may fall back locally depending on feature. This is acceptable for dev but can behave differently across multiple workers.
-8. The generated media storage path can be local or Bunny; deployment must keep `/uploads` proxy and protected media auth aligned with chosen storage provider.
+8. Bunny reconciliation is bounded by configured depth/file limits; deletion remains disabled when a scan is truncated and never runs automatically.
 9. Full legal policies are present in the UI, but legal wording still needs human legal review before relying on it for compliance.
+10. Native iOS/Android crash and release reporting remains unavailable until a mobile telemetry provider is connected.
+11. Pruna's public prediction integration does not provide live account billing; its cost page remains estimate-based until a documented billing API is supplied.
 
 ## 26. Fast Debugging Map
 
