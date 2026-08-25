@@ -34,6 +34,7 @@
     "load:aws:read": "BASE_URL=https://fitlook.in k6 run tests/load/backend-public-read.k6.js"
   },
   "dependencies": {
+    "@aws-sdk/credential-provider-node": "^3.972.81",
     "@vitejs/plugin-react": "^5.0.0",
     "aws": "^0.0.3-2",
     "bcryptjs": "^2.4.3",

@@ -52,7 +52,7 @@ Alerts should cover: readiness failure for two consecutive checks, HTTP 5xx rate
 
 ### AWS
 
-Set `AWS_COST_EXPLORER_ENABLED=true`. Attach an EC2 instance role with this minimum read-only permission:
+Set `AWS_COST_EXPLORER_ENABLED=true`. The integration caches responses for six hours by default because Cost Explorer data normally refreshes daily; override that with `AWS_COST_CACHE_MS` only when needed. Attach an EC2 instance role with this minimum read-only permission:
 
 ```json
 {
@@ -66,6 +66,8 @@ Set `AWS_COST_EXPLORER_ENABLED=true`. Attach an EC2 instance role with this mini
 ```
 
 The backend uses IMDSv2 credentials. Static AWS keys are only a local fallback.
+The API follows Cost Explorer pagination and groups month-to-date `UnblendedCost` by AWS service. Cost Explorer API requests are billable, so do not disable or aggressively shorten the cache in production.
+For local development, set `AWS_PROFILE` to a dedicated read-only profile in `~/.aws/credentials`; never copy access keys into the project `.env` file.
 
 ### FAL / PixVerse
 

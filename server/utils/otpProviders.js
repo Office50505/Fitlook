@@ -123,4 +123,79 @@ class WebhookOtpProvider {
   }
 }
 
-export { MockOtpProvider, WebhookOtpProvider, mockOtpStorePath, otpDeliveryFailure, otpProviderPayload, retryAttempts, timeoutMs };
+function msg91Mobile(phone) {
+  const mobile = String(phone || '').replace(/\D/g, '');
+  if (!/^\d{10,15}$/.test(mobile)) throw nonRetryableOtpDeliveryFailure('OTP destination phone is invalid');
+  return mobile;
+}
+
+class Msg91OtpProvider {
+  constructor(env = process.env) {
+    this.env = env;
+  }
+
+  async deliver(message) {
+    const authKey = String(this.env.MSG91_AUTH_KEY || '').trim();
+    const templateId = String(this.env.MSG91_TEMPLATE_ID || '').trim();
+    if (!authKey || !templateId) throw otpDeliveryFailure('MSG91 OTP delivery is not configured');
+
+    const otp = String(message?.otp || '').trim();
+    if (!/^\d{6}$/.test(otp)) throw nonRetryableOtpDeliveryFailure('OTP code is invalid');
+
+    const url = validateConfiguredHttpsUrl(
+      String(this.env.MSG91_BASE_URL || '').trim() || 'https://control.msg91.com/api/v5',
+      { name: 'MSG91_BASE_URL', env: this.env }
+    );
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/otp`;
+    url.search = '';
+    url.hash = '';
+    url.searchParams.set('template_id', templateId);
+    url.searchParams.set('mobile', msg91Mobile(message?.phone));
+    url.searchParams.set('authkey', authKey);
+    url.searchParams.set('otp', otp);
+
+    const attempts = retryAttempts(this.env);
+    let lastError = null;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs(this.env));
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: '{}'
+        });
+        if (!response || typeof response.ok !== 'boolean' || !Number.isFinite(Number(response.status))) {
+          throw nonRetryableOtpDeliveryFailure('MSG91 returned an invalid response');
+        }
+        if (!response.ok) {
+          if (!isRetryableStatus(response.status)) throw nonRetryableOtpDeliveryFailure('MSG91 rejected the OTP request');
+          throw otpDeliveryFailure('MSG91 temporarily rejected the OTP request');
+        }
+
+        let result;
+        try {
+          result = await response.json();
+        } catch {
+          throw nonRetryableOtpDeliveryFailure('MSG91 returned an invalid response');
+        }
+        if (String(result?.type || '').trim().toLowerCase() !== 'success') {
+          throw nonRetryableOtpDeliveryFailure('MSG91 rejected the OTP request');
+        }
+        return { requestId: String(result?.request_id || '').trim() || undefined };
+      } catch (error) {
+        if (error?.nonRetryable) throw error;
+        if (error?.name === 'AbortError') lastError = otpDeliveryFailure('OTP delivery timed out. Please try again.');
+        else lastError = error?.statusCode === 503 ? error : otpDeliveryFailure('OTP delivery failed. Please try again.');
+        if (attempt >= attempts) throw lastError;
+      } finally {
+        clearTimeout(timeout);
+      }
+      await wait(retryDelayMs(this.env));
+    }
+    throw lastError || otpDeliveryFailure('OTP delivery failed. Please try again.');
+  }
+}
+
+export { MockOtpProvider, Msg91OtpProvider, WebhookOtpProvider, mockOtpStorePath, otpDeliveryFailure, otpProviderPayload, retryAttempts, timeoutMs };

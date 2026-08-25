@@ -2,7 +2,19 @@
 
 Production OTP delivery is server-to-server only. The frontend receives an opaque `otpSession`, the normalized phone number, and a generic status message. It must never receive the raw OTP.
 
-## Production Required Variables
+## MSG91
+
+The native MSG91 adapter uses the V5 SendOTP API while Fitlook retains its existing hashed, single-use OTP verification flow.
+
+- `OTP_DELIVERY_PROVIDER=msg91`
+- `MSG91_AUTH_KEY=...`
+- `MSG91_TEMPLATE_ID=...`
+- `MSG91_BASE_URL=https://control.msg91.com/api/v5`
+- `OTP_DELIVERY_TIMEOUT_MS=5000` or another bounded timeout in milliseconds
+
+The MSG91 template must contain the `##OTP##` placeholder. Phone numbers are sent in international format without the leading `+`. The auth key must remain server-side and must never use a `VITE_` variable.
+
+## Generic Webhook
 
 - `OTP_DELIVERY_PROVIDER=webhook`
 - `OTP_DELIVERY_WEBHOOK_URL=https://...`

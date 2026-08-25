@@ -266,7 +266,11 @@ async function ec2Credentials() {
   const roleResponse = await fetchWithTimeout('http://169.254.169.254/latest/meta-data/iam/security-credentials/', { headers }, 1000);
   if (!roleResponse.ok) throw new Error('No EC2 instance role is attached');
   const role = (await roleResponse.text()).trim();
+  if (!role) throw new Error('EC2 instance role name was unavailable');
   const credentials = await fetchJson(`http://169.254.169.254/latest/meta-data/iam/security-credentials/${encodeURIComponent(role)}`, { headers }, 1000);
+  if (!credentials?.AccessKeyId || !credentials?.SecretAccessKey || !credentials?.Token || !credentials?.Expiration) {
+    throw new Error('EC2 instance role credentials were incomplete');
+  }
   return {
     accessKeyId: credentials.AccessKeyId,
     secretAccessKey: credentials.SecretAccessKey,
@@ -277,61 +281,44 @@ async function ec2Credentials() {
 
 async function awsCredentials() {
   if (awsCredentialCache && awsCredentialCache.expiresAt > Date.now() + 5 * 60_000) return awsCredentialCache;
-  if (configured(['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'])) {
+  try {
+    const { defaultProvider } = await import('@aws-sdk/credential-provider-node');
+    const profile = String(process.env.AWS_PROFILE || '').trim();
+    const credentials = await defaultProvider(profile ? { profile } : {})();
     awsCredentialCache = {
-      accessKeyId: String(process.env.AWS_ACCESS_KEY_ID).trim(),
-      secretAccessKey: String(process.env.AWS_SECRET_ACCESS_KEY).trim(),
-      sessionToken: String(process.env.AWS_SESSION_TOKEN || '').trim(),
-      expiresAt: Date.now() + 60 * 60_000
+      accessKeyId: credentials.accessKeyId,
+      secretAccessKey: credentials.secretAccessKey,
+      sessionToken: credentials.sessionToken || '',
+      expiresAt: credentials.expiration?.getTime?.() || Date.now() + 60 * 60_000
     };
     return awsCredentialCache;
+  } catch (error) {
+    if (process.env.AWS_PROFILE) {
+      throw new Error(`AWS profile credentials were unavailable: ${error.message}`);
+    }
   }
   awsCredentialCache = await ec2Credentials();
   return awsCredentialCache;
 }
 
-async function awsCostExplorer() {
-  if (!['1', 'true', 'yes', 'on'].includes(String(process.env.AWS_COST_EXPLORER_ENABLED || '').toLowerCase())) {
-    return { configured: false, reason: 'AWS_COST_EXPLORER_ENABLED is not enabled' };
-  }
-  return cached('aws-cost-explorer', 15 * 60_000, async () => {
-    const credentials = await awsCredentials();
-    const period = monthPeriod();
-    const payload = JSON.stringify({
-      TimePeriod: { Start: isoDate(period.start), End: isoDate(period.end) },
-      Granularity: 'DAILY',
-      Metrics: ['UnblendedCost'],
-      GroupBy: [{ Type: 'DIMENSION', Key: 'SERVICE' }]
-    });
-    const region = 'us-east-1';
-    const host = 'ce.us-east-1.amazonaws.com';
-    const target = 'AWSInsightsIndexService.GetCostAndUsage';
-    const now = new Date();
-    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
-    const dateStamp = amzDate.slice(0, 8);
-    const headers = {
-      'content-type': 'application/x-amz-json-1.1',
-      host,
-      'x-amz-date': amzDate,
-      'x-amz-target': target
-    };
-    if (credentials.sessionToken) headers['x-amz-security-token'] = credentials.sessionToken;
-    const signedHeaderNames = Object.keys(headers).sort();
-    const canonicalHeaders = signedHeaderNames.map((name) => `${name}:${String(headers[name]).trim()}\n`).join('');
-    const signedHeaders = signedHeaderNames.join(';');
-    const canonicalRequest = ['POST', '/', '', canonicalHeaders, signedHeaders, sha256(payload)].join('\n');
-    const scope = `${dateStamp}/${region}/ce/aws4_request`;
-    const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256(canonicalRequest)].join('\n');
-    const dateKey = hmac(`AWS4${credentials.secretAccessKey}`, dateStamp);
-    const regionKey = hmac(dateKey, region);
-    const serviceKey = hmac(regionKey, 'ce');
-    const signingKey = hmac(serviceKey, 'aws4_request');
-    const signature = hmac(signingKey, stringToSign, 'hex');
-    headers.authorization = `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-    const body = await fetchJson(`https://${host}/`, { method: 'POST', headers, body: payload }, Number(process.env.PROVIDER_API_TIMEOUT_MS || 8000));
-    const services = new Map();
-    let spend = 0;
+function awsCostCacheMs(env = process.env) {
+  const fallback = 6 * 60 * 60_000;
+  const requested = Number(env.AWS_COST_CACHE_MS);
+  if (!Number.isFinite(requested) || requested <= 0) return fallback;
+  return Math.min(Math.max(Math.round(requested), 15 * 60_000), 24 * 60 * 60_000);
+}
+
+async function collectAwsCostPages(loadPage, period, maxPages = 100) {
+  const services = new Map();
+  const seenTokens = new Set();
+  let spend = 0;
+  let estimated = false;
+  let nextPageToken = '';
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const body = await loadPage(nextPageToken);
     (body?.ResultsByTime || []).forEach((result) => {
+      estimated ||= Boolean(result.Estimated);
       (result.Groups || []).forEach((group) => {
         const amount = numeric(group.Metrics?.UnblendedCost?.Amount);
         const label = group.Keys?.[0] || 'Other';
@@ -339,13 +326,70 @@ async function awsCostExplorer() {
         services.set(label, (services.get(label) || 0) + amount);
       });
     });
-    return {
-      configured: true,
-      spend,
-      estimated: Boolean((body?.ResultsByTime || []).some((result) => result.Estimated)),
-      breakdown: [...services.entries()].map(([label, cost]) => ({ label, cost })).sort((left, right) => right.cost - left.cost),
-      period
-    };
+
+    const token = String(body?.NextPageToken || '').trim();
+    if (!token) {
+      return {
+        configured: true,
+        spend,
+        estimated,
+        breakdown: [...services.entries()]
+          .map(([label, cost]) => ({ label, cost }))
+          .sort((left, right) => right.cost - left.cost),
+        period
+      };
+    }
+    if (seenTokens.has(token)) throw new Error('AWS Cost Explorer returned a repeated page token');
+    seenTokens.add(token);
+    nextPageToken = token;
+  }
+
+  throw new Error(`AWS Cost Explorer exceeded ${maxPages} response pages`);
+}
+
+async function awsCostExplorer() {
+  if (!['1', 'true', 'yes', 'on'].includes(String(process.env.AWS_COST_EXPLORER_ENABLED || '').toLowerCase())) {
+    return { configured: false, reason: 'AWS_COST_EXPLORER_ENABLED is not enabled' };
+  }
+  return cached('aws-cost-explorer', awsCostCacheMs(), async () => {
+    const credentials = await awsCredentials();
+    const period = monthPeriod();
+    const region = 'us-east-1';
+    const host = 'ce.us-east-1.amazonaws.com';
+    const target = 'AWSInsightsIndexService.GetCostAndUsage';
+
+    return collectAwsCostPages(async (nextPageToken) => {
+      const request = {
+        TimePeriod: { Start: isoDate(period.start), End: isoDate(period.end) },
+        Granularity: 'DAILY',
+        Metrics: ['UnblendedCost'],
+        GroupBy: [{ Type: 'DIMENSION', Key: 'SERVICE' }]
+      };
+      if (nextPageToken) request.NextPageToken = nextPageToken;
+      const payload = JSON.stringify(request);
+      const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
+      const dateStamp = amzDate.slice(0, 8);
+      const headers = {
+        'content-type': 'application/x-amz-json-1.1',
+        host,
+        'x-amz-date': amzDate,
+        'x-amz-target': target
+      };
+      if (credentials.sessionToken) headers['x-amz-security-token'] = credentials.sessionToken;
+      const signedHeaderNames = Object.keys(headers).sort();
+      const canonicalHeaders = signedHeaderNames.map((name) => `${name}:${String(headers[name]).trim()}\n`).join('');
+      const signedHeaders = signedHeaderNames.join(';');
+      const canonicalRequest = ['POST', '/', '', canonicalHeaders, signedHeaders, sha256(payload)].join('\n');
+      const scope = `${dateStamp}/${region}/ce/aws4_request`;
+      const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256(canonicalRequest)].join('\n');
+      const dateKey = hmac(`AWS4${credentials.secretAccessKey}`, dateStamp);
+      const regionKey = hmac(dateKey, region);
+      const serviceKey = hmac(regionKey, 'ce');
+      const signingKey = hmac(serviceKey, 'aws4_request');
+      const signature = hmac(signingKey, stringToSign, 'hex');
+      headers.authorization = `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+      return fetchJson(`https://${host}/`, { method: 'POST', headers, body: payload }, Number(process.env.PROVIDER_API_TIMEOUT_MS || 8000));
+    }, period);
   });
 }
 
@@ -370,9 +414,11 @@ async function prunaProbe() {
 
 export {
   atlasBilling,
+  awsCostCacheMs,
   awsCostExplorer,
   bunnyProbe,
   bunnyStatistics,
+  collectAwsCostPages,
   falProbe,
   falModelCostEstimate,
   falUsage,

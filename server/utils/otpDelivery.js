@@ -1,4 +1,4 @@
-import { MockOtpProvider, WebhookOtpProvider, otpDeliveryFailure } from './otpProviders.js';
+import { MockOtpProvider, Msg91OtpProvider, WebhookOtpProvider, otpDeliveryFailure } from './otpProviders.js';
 import { fixedOtpCode } from './otp.js';
 import { isProductionEnv } from './urlValidation.js';
 import OtpDeliveryMetric from '../models/OtpDeliveryMetric.js';
@@ -20,6 +20,7 @@ function createOtpProvider(env = process.env) {
     throw otpDeliveryFailure('OTP delivery is not configured');
   }
   if (provider === 'mock') return new MockOtpProvider(env);
+  if (provider === 'msg91') return new Msg91OtpProvider(env);
   if (provider === 'webhook') return new WebhookOtpProvider(env);
   throw otpDeliveryFailure(`Unsupported OTP delivery provider: ${provider}`);
 }

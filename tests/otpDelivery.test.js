@@ -67,6 +67,76 @@ test('OTP delivery posts the code to the configured webhook provider', async () 
   }
 });
 
+test('MSG91 delivery sends the Fitlook OTP through the configured V5 template', async () => {
+  const originalFetch = globalThis.fetch;
+  let received = null;
+  globalThis.fetch = async (url, options) => {
+    received = { url: new URL(url), options };
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ type: 'success', request_id: 'msg91-request-1' })
+    };
+  };
+
+  try {
+    const result = await deliverOtp(
+      { phone: '+919876543210', otp: '123456', purpose: 'login' },
+      {
+        OTP_DELIVERY_PROVIDER: 'msg91',
+        MSG91_AUTH_KEY: 'server-only-key',
+        MSG91_TEMPLATE_ID: 'template-1',
+        MSG91_BASE_URL: 'https://control.msg91.com/api/v5'
+      }
+    );
+
+    assert.equal(received.url.origin, 'https://control.msg91.com');
+    assert.equal(received.url.pathname, '/api/v5/otp');
+    assert.equal(received.url.searchParams.get('template_id'), 'template-1');
+    assert.equal(received.url.searchParams.get('mobile'), '919876543210');
+    assert.equal(received.url.searchParams.get('authkey'), 'server-only-key');
+    assert.equal(received.url.searchParams.get('otp'), '123456');
+    assert.equal(received.options.method, 'POST');
+    assert.equal(received.options.body, '{}');
+    assert.deepEqual(result, { requestId: 'msg91-request-1' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('MSG91 delivery rejects HTTP 200 business failures', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ type: 'error', message: 'provider detail must stay private' })
+    };
+  };
+
+  try {
+    await assert.rejects(
+      deliverOtp(
+        { phone: '+919876543210', otp: '123456', purpose: 'signup' },
+        {
+          OTP_DELIVERY_PROVIDER: 'msg91',
+          MSG91_AUTH_KEY: 'server-only-key',
+          MSG91_TEMPLATE_ID: 'template-1',
+          OTP_DELIVERY_RETRY_ATTEMPTS: '3'
+        }
+      ),
+      (error) => error.statusCode === 503
+        && /MSG91 rejected the OTP request/.test(error.message)
+        && !/provider detail/.test(error.message)
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('OTP webhook delivery times out safely', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (_url, options) => new Promise((_resolve, reject) => {

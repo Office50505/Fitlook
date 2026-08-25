@@ -44,15 +44,17 @@ locals {
 
   backend_env = merge(
     {
-      NODE_ENV             = "production"
-      PORT                 = "5050"
-      REDIS_URL            = "redis://127.0.0.1:6379"
-      REDIS_KEY_PREFIX     = "fitlook"
-      CLIENT_ORIGIN        = "http://${aws_eip.frontend.public_ip}"
-      ADMIN_ORIGIN         = "http://${aws_eip.frontend.public_ip}"
-      ALLOWED_ORIGINS      = "http://${aws_eip.frontend.public_ip}"
-      PHONEPE_REDIRECT_URL = "http://${aws_eip.frontend.public_ip}/tokens"
-      PHONEPE_CALLBACK_URL = "http://${aws_eip.frontend.public_ip}/api/payments/phonepe/callback"
+      NODE_ENV                  = "production"
+      PORT                      = "5050"
+      REDIS_URL                 = "redis://127.0.0.1:6379"
+      REDIS_KEY_PREFIX          = "fitlook"
+      CLIENT_ORIGIN             = "http://${aws_eip.frontend.public_ip}"
+      ADMIN_ORIGIN              = "http://${aws_eip.frontend.public_ip}"
+      ALLOWED_ORIGINS           = "http://${aws_eip.frontend.public_ip}"
+      PHONEPE_REDIRECT_URL      = "http://${aws_eip.frontend.public_ip}/tokens"
+      PHONEPE_CALLBACK_URL      = "http://${aws_eip.frontend.public_ip}/api/payments/phonepe/callback"
+      AWS_COST_EXPLORER_ENABLED = tostring(var.enable_aws_cost_explorer)
+      AWS_COST_CACHE_MS         = tostring(var.aws_cost_cache_ms)
     },
     var.backend_env
   )
@@ -60,6 +62,26 @@ locals {
   backend_env_file = join("\n", [
     for key, value in local.backend_env : "${key}=${replace(tostring(value), "\n", "")}"
   ])
+}
+
+data "aws_iam_role" "backend" {
+  count = var.enable_aws_cost_explorer ? 1 : 0
+  name  = var.backend_iam_role_name
+}
+
+resource "aws_iam_role_policy" "backend_cost_explorer" {
+  count = var.enable_aws_cost_explorer ? 1 : 0
+  name  = "FitlookCostExplorerRead"
+  role  = data.aws_iam_role.backend[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "ce:GetCostAndUsage"
+      Resource = "*"
+    }]
+  })
 }
 
 resource "aws_security_group" "backend" {
@@ -161,7 +183,13 @@ resource "aws_instance" "backend" {
   key_name                    = var.key_name
   vpc_security_group_ids      = [aws_security_group.backend.id]
   associate_public_ip_address = true
+  iam_instance_profile        = var.backend_instance_profile_name != "" ? var.backend_instance_profile_name : null
   user_data_replace_on_change = true
+
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+  }
 
   user_data = templatefile("${path.module}/templates/backend-user-data.sh.tftpl", {
     repo_url         = var.repo_url

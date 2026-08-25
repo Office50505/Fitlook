@@ -48,8 +48,8 @@ export function validateServerEnv(env = process.env) {
   const otpProvider = String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase();
   const allowProductionFixedOtp = fixedOtpAllowedInProduction(env);
   const paymentsEnabled = phonePeEnabled(env);
-  if (production && !['webhook', 'disabled'].includes(otpProvider)) {
-    errors.push('Production requires OTP_DELIVERY_PROVIDER=webhook or disabled.');
+  if (production && !['msg91', 'webhook', 'disabled'].includes(otpProvider)) {
+    errors.push('Production requires OTP_DELIVERY_PROVIDER=msg91, webhook, or disabled.');
   }
 
   const warnings = FEATURE_ENV_GROUPS.flatMap((group) => {
@@ -59,8 +59,17 @@ export function validateServerEnv(env = process.env) {
     const missingFeatureKeys = group.keys.filter((key) => !String(env[key] || '').trim());
     return [`${group.name} is partially configured. Missing: ${missingFeatureKeys.join(', ')}`];
   });
-  if (otpProvider && !['disabled', 'mock', 'webhook'].includes(otpProvider)) {
+  if (otpProvider && !['disabled', 'mock', 'msg91', 'webhook'].includes(otpProvider)) {
     warnings.push(`OTP delivery provider "${otpProvider}" is unsupported.`);
+  }
+  if (otpProvider === 'msg91') {
+    const missingMsg91Keys = ['MSG91_AUTH_KEY', 'MSG91_TEMPLATE_ID'].filter((key) => !String(env[key] || '').trim());
+    if (missingMsg91Keys.length) {
+      const message = `MSG91 OTP delivery is partially configured. Missing: ${missingMsg91Keys.join(', ')}`;
+      if (production) errors.push(message);
+      else warnings.push(message);
+    }
+    if (String(env.MSG91_BASE_URL || '').trim()) assertUrl('MSG91_BASE_URL');
   }
   if (otpProvider === 'webhook' && !String(env.OTP_DELIVERY_WEBHOOK_URL || '').trim()) {
     const message = 'OTP delivery webhook is configured but OTP_DELIVERY_WEBHOOK_URL is missing.';
@@ -111,7 +120,11 @@ export function configurationReadiness(env = process.env) {
     && fixedOtpAllowedInProduction(env)
     && /^\d{6}$/.test(String(env.OTP_FIXED_CODE || '').trim())
     && (!otpProvider || otpProvider === 'disabled' || otpProvider === 'mock');
-  const otpConfigured = otpProvider === 'webhook'
+  const msg91Configured = ['MSG91_AUTH_KEY', 'MSG91_TEMPLATE_ID']
+    .every((key) => Boolean(String(env[key] || '').trim()));
+  const otpConfigured = otpProvider === 'msg91'
+    ? msg91Configured
+    : otpProvider === 'webhook'
     ? Boolean(String(env.OTP_DELIVERY_WEBHOOK_URL || '').trim())
     : otpProvider === 'mock'
       ? !isProductionEnv(env) && Boolean(String(env.OTP_MOCK_STORE_PATH || '').trim())

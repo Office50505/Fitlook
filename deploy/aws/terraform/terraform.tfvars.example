@@ -4,6 +4,10 @@ ssh_cidr    = "replace-with-your-public-ip/32"
 repo_url    = "https://github.com/your-org/fitlook.git"
 repo_branch = "main"
 
+enable_aws_cost_explorer      = true
+backend_iam_role_name         = "FitlookBackendEc2Role"
+backend_instance_profile_name = "FitlookBackendInstanceProfile"
+
 backend_env = {
   MONGODB_URI = "mongodb+srv://user:password@example.mongodb.net/fitlook"
   MONGODB_DB  = "fitlook"

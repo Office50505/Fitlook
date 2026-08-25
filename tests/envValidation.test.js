@@ -28,6 +28,37 @@ test('validateServerEnv warns when OTP webhook delivery is incomplete outside pr
   assert.match(report.warnings[0], /OTP delivery webhook/);
 });
 
+test('MSG91 OTP delivery is valid and reported configured with complete server credentials', () => {
+  const env = {
+    NODE_ENV: 'production',
+    MONGODB_URI: 'mongodb://localhost:27017/fitlook',
+    JWT_SECRET: 'secret',
+    PHONEPE_ENABLED: 'false',
+    OTP_DELIVERY_PROVIDER: 'msg91',
+    MSG91_AUTH_KEY: 'server-only-key',
+    MSG91_TEMPLATE_ID: 'template-1',
+    MSG91_BASE_URL: 'https://control.msg91.com/api/v5'
+  };
+
+  assert.deepEqual(validateServerEnv(env), { warnings: [] });
+  assert.deepEqual(configurationReadiness(env), {
+    otpProvider: 'configured',
+    otpProviderType: 'msg91',
+    phonePe: 'disabled'
+  });
+});
+
+test('MSG91 OTP delivery reports missing required credentials', () => {
+  assert.throws(() => validateServerEnv({
+    NODE_ENV: 'production',
+    MONGODB_URI: 'mongodb://localhost:27017/fitlook',
+    JWT_SECRET: 'secret',
+    PHONEPE_ENABLED: 'false',
+    OTP_DELIVERY_PROVIDER: 'msg91',
+    MSG91_AUTH_KEY: 'server-only-key'
+  }), /MSG91_TEMPLATE_ID/);
+});
+
 test('validateServerEnv rejects unsafe OTP delivery but permits fail-closed OTP in production', () => {
   assert.throws(
     () => validateServerEnv({
@@ -37,7 +68,7 @@ test('validateServerEnv rejects unsafe OTP delivery but permits fail-closed OTP 
       OTP_DELIVERY_PROVIDER: 'mock',
       OTP_MOCK_STORE_PATH: '/tmp/otp.jsonl'
     }),
-    /Production requires OTP_DELIVERY_PROVIDER=webhook or disabled/
+    /Production requires OTP_DELIVERY_PROVIDER=msg91, webhook, or disabled/
   );
 
   assert.throws(
