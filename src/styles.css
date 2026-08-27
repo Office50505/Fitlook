@@ -36431,3 +36431,28 @@ label,
     grid-template-columns: minmax(0, .6fr) 112px !important;
   }
 }
+
+/* Tester deploy cache-bust: enforce landscape offers everywhere this component appears. */
+.atelier-offer-card-section .atelier-offer-card {
+  height: clamp(142px, 10.8vw, 178px) !important;
+  min-height: 0 !important;
+  max-height: 178px !important;
+  overflow: hidden !important;
+  grid-template-columns: minmax(0, .58fr) minmax(104px, .42fr) !important;
+}
+
+.atelier-offer-card-section .atelier-offer-card-media {
+  display: block !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.atelier-offer-card-section .atelier-offer-card-media img,
+.atelier-offer-card-section .atelier-offer-card > img {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  object-fit: cover !important;
+  object-position: center top !important;
+}
