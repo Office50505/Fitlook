@@ -36386,3 +36386,48 @@ label,
   font-weight: 400 !important;
   letter-spacing: 0 !important;
 }
+
+/* Homepage offer cards: fixed landscape tiles independent of product image ratio. */
+.atelier-home .atelier-offer-card-section .atelier-offer-card-grid {
+  align-items: stretch !important;
+}
+
+.atelier-home .atelier-offer-card-section .atelier-offer-card {
+  height: clamp(142px, 10.8vw, 178px) !important;
+  min-height: 0 !important;
+  max-height: 178px !important;
+  grid-template-columns: minmax(0, .58fr) minmax(104px, .42fr) !important;
+}
+
+.atelier-home .atelier-offer-card-section .atelier-offer-card-media {
+  display: block !important;
+  align-self: stretch !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.atelier-home .atelier-offer-card-section .atelier-offer-card img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  object-fit: cover !important;
+  object-position: center top !important;
+}
+
+@media (max-width: 900px) {
+  .atelier-home .atelier-offer-card-section .atelier-offer-card {
+    height: 150px !important;
+    max-height: 150px !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .atelier-home .atelier-offer-card-section .atelier-offer-card {
+    height: 136px !important;
+    max-height: 136px !important;
+    grid-template-columns: minmax(0, .6fr) 112px !important;
+  }
+}

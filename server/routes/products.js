@@ -962,7 +962,7 @@ function visibleCurrency(html, finalUrl) {
     normalizeCurrency(getMeta(html, ['product:price:currency', 'og:price:currency', 'pricecurrency'])) ||
     normalizeCurrency(priceText) ||
     currencyFromUrl(finalUrl) ||
-    'USD'
+    'INR'
   );
 }
 
@@ -1179,7 +1179,7 @@ function draftToExternalProduct(draft, fallbackQuery = '') {
   if (!sourceUrl || !imageUrl) throw new Error('Product link or image was not found');
   const price = Number(draft.price);
   const compareAtPrice = Number(draft.compareAtPrice);
-  const currency = normalizeCurrency(draft.currency) || 'USD';
+  const currency = normalizeCurrency(draft.currency) || 'INR';
   const rating = Number(draft.rating);
   const ratingCount = Number(draft.ratingCount);
 
@@ -1300,7 +1300,7 @@ function applyProductUpdate(product, body = {}) {
     product.price = price;
   }
   if (compareAtPrice !== undefined) product.compareAtPrice = compareAtPrice === null ? undefined : compareAtPrice;
-  if (body.currency !== undefined) product.currency = normalizeCurrency(body.currency) || product.currency || 'USD';
+  if (body.currency !== undefined) product.currency = normalizeCurrency(body.currency) || product.currency || 'INR';
   if (rating !== undefined) product.rating = rating === null ? 4.5 : rating;
   if (ratingCount !== undefined) product.ratingCount = ratingCount === null ? 0 : ratingCount;
   if (body.badge !== undefined) product.badge = String(body.badge || '').trim() || undefined;
@@ -1613,7 +1613,7 @@ router.post('/', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimi
     garmentPlacement: normalizeGarmentPlacement(req.body.garmentPlacement, req.body),
     price: Number(price),
     compareAtPrice: req.body.compareAtPrice ? Number(req.body.compareAtPrice) : undefined,
-    currency: normalizeCurrency(req.body.currency) || 'USD',
+    currency: normalizeCurrency(req.body.currency) || 'INR',
     rating: req.body.rating ? Number(req.body.rating) : 4.5,
     ratingCount: req.body.ratingCount ? Number(req.body.ratingCount) : 0,
     badge: req.body.badge,

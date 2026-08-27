@@ -22,9 +22,6 @@ const API_TIMEOUT_MS = 25000;
 const AI_IMAGE_TIMEOUT_MS = 180000;
 const AI_VIDEO_TIMEOUT_MS = 300000;
 const PRODUCT_CACHE_TTL_MS = 30_000;
-const SESSION_HEARTBEAT_MS = 30_000;
-const SESSION_HEARTBEAT_MIN_GAP_MS = 15_000;
-const SESSION_HEARTBEAT_STORAGE_KEY = 'fitlook_session_heartbeat_at';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const AUTH_TOKEN_KEY = 'fitlook_token';
 const ENABLE_TEST_OTP_HELPER = import.meta.env.DEV && import.meta.env.VITE_ENABLE_TEST_OTP_HELPER !== 'false';
@@ -162,15 +159,16 @@ async function prepareClosetItemPhoto(file) {
   }
 }
 
-function formatMoney(value, currency = 'USD') {
+function formatMoney(value, currency = 'INR') {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return 'Price unavailable';
-  const normalizedCurrency = String(currency || 'USD').toUpperCase();
+  const requestedCurrency = String(currency || 'INR').toUpperCase();
+  const normalizedCurrency = requestedCurrency === 'USD' ? 'INR' : requestedCurrency;
   const locale = normalizedCurrency === 'INR' ? 'en-IN' : 'en-US';
   try {
     return new Intl.NumberFormat(locale, { style: 'currency', currency: normalizedCurrency }).format(amount);
   } catch {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   }
 }
 
@@ -630,7 +628,7 @@ const legalDetails = {
   supportEmail: 'support@lookmefy.com',
   jurisdiction: 'Indore, Madhya Pradesh, India',
   refundTimeline: '5-7 business days',
-  lastUpdated: '21 August 2026'
+  lastUpdated: '17 August 2026'
 };
 
 const policyPages = {
@@ -655,11 +653,11 @@ const policyPages = {
     title: 'Privacy Policy',
     intro: `This Privacy Policy explains how ${legalDetails.brand} handles account data, uploaded photos, generated try-ons, wardrobe data, payment events, and usage activity.`,
     sections: [
-      ['Data we collect', ['Account information such as name, username, email address, phone number, OTP verification status, password hash, gender/style preference, and account settings.', 'Photos and media you upload, including profile/body photos, garment uploads, wardrobe images, generated try-on images/videos, background-removed images, and related metadata.', 'Usage and device information such as login and explicit logout times, last activity, active-session duration, visited app routes, product views and clicks, wishlist actions, search/filter events, token usage, generation history, approximate logs, IP-derived security information, and coarse browser/device type.']],
+      ['Data we collect', ['Account information such as name, username, email address, phone number, OTP verification status, password hash, gender/style preference, and account settings.', 'Photos and media you upload, including profile/body photos, garment uploads, wardrobe images, generated try-on images/videos, background-removed images, and related metadata.', 'Usage and device information such as product views, wishlist actions, search/filter events, token usage, generation history, approximate logs, IP-derived security information, and browser/session data.']],
       ['How we use data', ['To create and secure your account, verify login, provide AI try-on/profile generation, store wardrobe items, personalize recommendations, operate credits/tokens, process payments, prevent abuse, debug failures, and provide support.', 'To improve reliability, safety, product ranking, model prompts, and app performance, using appropriate access controls and minimization where practical.']],
       ['AI, payment, storage, and infrastructure providers', ['We may share necessary data with service providers that help run Lookmefy, including AI generation providers, image/video processing providers, hosting infrastructure, storage/CDN providers, analytics/observability tools, payment processors, SMS/OTP providers, and support tools.', 'Payment card/UPI/banking details are handled by the payment provider. Lookmefy stores payment status, order identifiers, token credit records, and limited transaction metadata needed for reconciliation and support.']],
       ['Photos and generated media', ['Uploaded body photos and generated previews are sensitive to you. They are used to provide try-on, profile, wardrobe, and style features. Avoid uploading photos of other people without consent.', 'Generated previews may be stored so you can view history, compare looks, create videos, or restore prior outputs. You can request deletion using the Data Deletion page.']],
-      ['Retention and deletion', ['Detailed app-session and recommendation-event records are normally retained for up to 180 days. Learned preference summaries may remain while the account is active so recommendations continue to work.', 'We keep other account data while your account is active or as needed for service, security, legal, tax, fraud prevention, dispute resolution, and backup purposes.', 'When deletion is requested, we will delete or de-identify eligible account data and media, subject to legal, security, transaction, and backup-retention requirements. Some third-party providers may retain logs under their own policies.']],
+      ['Retention and deletion', ['We keep account data while your account is active or as needed for service, security, legal, tax, fraud prevention, dispute resolution, and backup purposes.', 'When deletion is requested, we will delete or de-identify eligible account data and media, subject to legal, security, transaction, and backup-retention requirements. Some third-party providers may retain logs under their own policies.']],
       ['Your choices and rights', ['You can update account details in profile settings, delete wishlist/wardrobe items where available, log out, and request account/media deletion.', 'You may contact us to access, correct, withdraw consent where applicable, or raise a privacy grievance. We will verify requests before acting on account or photo data.']],
       ['Security', ['We use technical and organizational measures such as authentication, access controls, upload validation, storage controls, rate limiting, and monitoring. No online service can guarantee absolute security.', 'Keep your password and device secure. Tell us promptly if you suspect unauthorized account access.']],
       ['Contact and support', [`Support and privacy requests can be sent to ${legalDetails.supportEmail}. Use your registered email/phone and include enough detail for us to verify and review the request.`]]
@@ -705,7 +703,7 @@ const policyPages = {
     intro: `You can request deletion of eligible ${legalDetails.brand} account data, uploaded photos, generated try-ons, wardrobe media, and related profile information.`,
     sections: [
       ['How to request deletion', [`Email ${legalDetails.supportEmail} from your registered email address with the subject “Data deletion request”, or use the in-app support flow when available. Include your username, phone/email used for signup, and what you want deleted: account, body photo, generated media, wardrobe items, or specific records.`, 'We may ask for verification before deleting account-linked data or photos.']],
-      ['What we delete', ['Eligible account profile data, uploaded body/profile photos, generated try-on images/videos, wardrobe uploads, wishlist data, saved preferences, login sessions, and non-essential usage history associated with your account.', 'We may also delete derived thumbnails, cached images, background-removed versions, and private stored media where technically feasible.']],
+      ['What we delete', ['Eligible account profile data, uploaded body/profile photos, generated try-on images/videos, wardrobe uploads, wishlist data, saved preferences, and non-essential usage history associated with your account.', 'We may also delete derived thumbnails, cached images, background-removed versions, and private stored media where technically feasible.']],
       ['What may be retained', ['We may retain records required for legal, fraud prevention, payment reconciliation, tax/accounting, dispute resolution, security logs, backup integrity, or compliance obligations.', 'Backups and provider logs may take additional time to expire under normal retention cycles.']],
       ['Timeline', ['We aim to acknowledge deletion requests within a reasonable period and complete eligible deletion after verification, subject to legal, security, payment, fraud-prevention, and backup-retention requirements.', 'If deletion is complex or legally restricted, we will explain the status or limitation where appropriate.']],
       ['Effect of deletion', ['Deleting account or body-photo data may disable try-on history, profile previews, wardrobe features, recommendations, token history display, and support visibility for prior generations.']]
@@ -1015,182 +1013,11 @@ async function generateQueuedTryOn(path, options = {}) {
 
 function recordEvent(type, payload = {}) {
   trackClientEvent(type, payload);
-  const { source = '', ...eventPayload } = payload;
   if (!readAuthToken()) return;
   api('/recommendations/events', {
     method: 'POST',
-    body: JSON.stringify({
-      type,
-      ...eventPayload,
-      source,
-      path: window.location.pathname
-    })
+    body: JSON.stringify({ type, ...payload })
   }).catch(() => {});
-}
-
-const RECOMMENDATION_ATTRIBUTION_PREFIX = 'lookmefy_recommendation_attribution:';
-
-function recommendationContextFor(productOrId) {
-  const product = productOrId && typeof productOrId === 'object' ? productOrId : null;
-  const direct = product?.recommendationContext;
-  if (direct?.source) return direct;
-  const id = String(product?.id || product?._id || productOrId || '');
-  if (!id) return null;
-  try {
-    const stored = JSON.parse(sessionStorage.getItem(`${RECOMMENDATION_ATTRIBUTION_PREFIX}${id}`) || 'null');
-    if (!stored?.source || Date.now() - Number(stored.recordedAt || 0) > 60 * 60 * 1000) return null;
-    return stored;
-  } catch {
-    return null;
-  }
-}
-
-function recommendationMetadata(context, extra = {}) {
-  return {
-    ...(context ? {
-      recommendationSource: context.source,
-      algorithmVersion: context.algorithmVersion || '',
-      rank: Number(context.rank || 0),
-      personalized: Boolean(context.personalized)
-    } : {}),
-    ...extra
-  };
-}
-
-function rememberRecommendationAttribution(product) {
-  const context = recommendationContextFor(product);
-  const id = String(product?.id || product?._id || '');
-  if (!context?.source || !id) return context;
-  try {
-    sessionStorage.setItem(`${RECOMMENDATION_ATTRIBUTION_PREFIX}${id}`, JSON.stringify({ ...context, recordedAt: Date.now() }));
-  } catch {
-    // Attribution remains optional when browser storage is unavailable.
-  }
-  return context;
-}
-
-function recordProductClick(product, fallback = {}) {
-  const context = rememberRecommendationAttribution(product);
-  const productId = String(product?.id || product?._id || '');
-  const fallbackContext = typeof fallback === 'string' ? { source: fallback } : fallback;
-  recordEvent(context ? 'recommendation_click' : 'product_click', {
-    productId,
-    query: context ? '' : fallbackContext.query || '',
-    source: context?.source || fallbackContext.source || '',
-    metadata: recommendationMetadata(context, context ? {} : fallbackContext.metadata)
-  });
-}
-
-function recordAttributedProductEvent(type, productOrId, metadata = {}) {
-  const productId = String(productOrId?.id || productOrId?._id || productOrId || '');
-  const context = recommendationContextFor(productOrId);
-  recordEvent(type, {
-    productId,
-    source: context?.source || '',
-    metadata: recommendationMetadata(context, metadata)
-  });
-}
-
-const recommendationImpressionQueue = new Map();
-let recommendationImpressionTimer = null;
-
-function flushRecommendationImpressions() {
-  recommendationImpressionTimer = null;
-  const products = [...recommendationImpressionQueue.values()];
-  recommendationImpressionQueue.clear();
-  if (!readAuthToken()) return;
-  const listId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const events = products.flatMap((product) => {
-    const context = product?.recommendationContext;
-    if (!product?.id || !context?.source) return [];
-    return [{
-      type: 'recommendation_impression',
-      productId: product.id,
-      source: context.source,
-      path: window.location.pathname,
-      metadata: recommendationMetadata(context, { listId })
-    }];
-  });
-  if (!events.length) return;
-  for (let index = 0; index < events.length; index += 24) {
-    api('/recommendations/events/batch', {
-      method: 'POST',
-      body: JSON.stringify({ path: window.location.pathname, events: events.slice(index, index + 24) })
-    }).catch(() => {});
-  }
-}
-
-function queueRecommendationImpression(product) {
-  const context = product?.recommendationContext;
-  if (!product?.id || !context?.source || !readAuthToken()) return;
-  recommendationImpressionQueue.set(`${context.source}:${context.algorithmVersion}:${context.rank}:${product.id}`, product);
-  if (!recommendationImpressionTimer) recommendationImpressionTimer = window.setTimeout(flushRecommendationImpressions, 180);
-}
-
-function useRecommendationImpression(product) {
-  const elementRef = useRef(null);
-  useEffect(() => {
-    if (!product?.recommendationContext?.source || !elementRef.current) return undefined;
-    if (!('IntersectionObserver' in window)) {
-      queueRecommendationImpression(product);
-      return undefined;
-    }
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.35)) return;
-      queueRecommendationImpression(product);
-      observer.disconnect();
-    }, { threshold: [0.35] });
-    observer.observe(elementRef.current);
-    return () => observer.disconnect();
-  }, [product?.id, product?.recommendationContext?.algorithmVersion, product?.recommendationContext?.rank, product?.recommendationContext?.source]);
-  return elementRef;
-}
-
-function readLastSessionHeartbeatAt() {
-  try {
-    return Number(sessionStorage.getItem(SESSION_HEARTBEAT_STORAGE_KEY)) || 0;
-  } catch {
-    return 0;
-  }
-}
-
-function writeLastSessionHeartbeatAt(value) {
-  try {
-    sessionStorage.setItem(SESSION_HEARTBEAT_STORAGE_KEY, String(value));
-  } catch {
-    // Session activity tracking should never block the app UI.
-  }
-}
-
-function sendSessionHeartbeat({ keepalive = false } = {}) {
-  if (!readAuthToken()) return Promise.resolve();
-  const now = Date.now();
-  if (now - readLastSessionHeartbeatAt() < SESSION_HEARTBEAT_MIN_GAP_MS) return Promise.resolve();
-  writeLastSessionHeartbeatAt(now);
-  return api('/auth/session/heartbeat', {
-    method: 'POST',
-    body: JSON.stringify({ path: window.location.pathname }),
-    keepalive,
-    retry: 0,
-    timeout: 8_000
-  }).catch(() => {});
-}
-
-function logoutCustomer(setUser, { closeMenu } = {}) {
-  if (readAuthToken()) {
-    api('/auth/logout', {
-      method: 'POST',
-      body: JSON.stringify({ path: window.location.pathname }),
-      keepalive: true,
-      retry: 0,
-      timeout: 8_000
-    }).catch(() => {});
-  }
-  clearAuthToken();
-  setUser(null);
-  closeMenu?.();
-  window.history.pushState({}, '', '/');
-  window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
 function tryOnProfileBlockMessage(user) {
@@ -1282,10 +1109,7 @@ function useRecommendedProducts(user, limit = 6) {
     setState((current) => ({ ...current, loading: true, error: '' }));
     api(`/recommendations/for-you?limit=${limit}`, { signal: controller.signal })
       .then((data) => {
-        if (alive) {
-          const nextState = { ...normalizeProductListResponse(data), facets: EMPTY_PRODUCT_FACETS };
-          setState(nextState);
-        }
+        if (alive) setState({ ...normalizeProductListResponse(data), facets: EMPTY_PRODUCT_FACETS });
       })
       .catch((err) => {
         if (alive && err.name !== 'AbortError') setState(emptyProductListState(err.message));
@@ -1309,10 +1133,7 @@ function useSimilarProducts(id, limit = 4) {
     setState({ products: [], loading: true, error: '' });
     api(`/recommendations/similar/${encodeURIComponent(id)}?limit=${limit}`, { signal: controller.signal })
       .then((data) => {
-        if (alive) {
-          const products = Array.isArray(data?.products) ? data.products : [];
-          setState({ products, loading: false, error: '' });
-        }
+        if (alive) setState({ products: Array.isArray(data?.products) ? data.products : [], loading: false, error: '' });
       })
       .catch((err) => {
         if (alive && err.name !== 'AbortError') setState({ products: [], loading: false, error: err.message });
@@ -1556,7 +1377,13 @@ function Header({ user, setUser, authChecked = true }) {
   const currentPath = normalizePath();
   const currentParams = new URLSearchParams(window.location.search);
   const searchValueFromUrl = currentSearchValue();
-  const logout = () => logoutCustomer(setUser, { closeMenu: () => setMenuOpen(false) });
+  const logout = () => {
+    clearAuthToken();
+    setUser(null);
+    setMenuOpen(false);
+    window.history.pushState({}, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
   const navLinks = [
     ['Home', '/home'],
     ['Explore', '/categories'],
@@ -1858,53 +1685,22 @@ function StoreActions({ context, className = 'download-store-actions', itemClass
   );
 }
 
-function FooterCol({ title, links }) {
-  return (
-    <div className="footer-col">
-      <h2>{title}</h2>
-      {links.map(([label, href]) => <a href={href} key={label}>{label}</a>)}
-    </div>
-  );
-}
-
-function Footer({ compact = false }) {
+function Footer() {
   const socialLinks = [
     { label: 'Instagram', href: 'https://instagram.com/', icon: 'instagram' },
     { label: 'X', href: 'https://x.com/', icon: 'x' }
   ];
 
-  if (compact) {
-    return (
-      <footer className="wishlist-compact-footer">
-        <div className="wrap wishlist-compact-footer-inner">
-          <div className="wishlist-compact-footer-grid">
-            <div className="wishlist-compact-brand"><a href="/" aria-label="Lookmefy home"><BrandLogo /></a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div className="wishlist-compact-social" aria-label="Social links">{socialLinks.map((item) => <a href={item.href} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label} key={item.label}><SocialLogo name={item.icon} /></a>)}</div></div>
-            <div><h2>Shop</h2><a href="/categories">New in</a><a href="/categories?gender=women">Women</a><a href="/categories?gender=men">Men</a><a href="/categories?discounted=true">Sale</a></div>
-            <div><h2>Help</h2><a href="/support">Support</a><a href="/returns">Returns</a><a href="/contact">Contact us</a><a href="/shipping">Shipping</a></div>
-            <div><h2><a className="footer-heading-link" href="/download">Download our App</a></h2><p>Get the Lookmefy app for your daily fashion edit.</p><StoreActions context="footer" className="wishlist-app-links" itemClassName="wishlist-app-link" /></div>
-          </div>
-          <div className="wishlist-compact-footer-bottom"><span>© 2026 Lookmefy. Curated by intelligence.</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a></div></div>
-        </div>
-      </footer>
-    );
-  }
-
   return (
-    <footer className="footer">
-      <div className="wrap">
-        <div className="footer-grid">
-          <div className="footer-brand-block">
-            <a className="footer-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
-            <p className="footer-about">Defining the intersection of personal styling and digital try-on. Curated for the modern wardrobe.</p>
-            <div className="footer-social" aria-label="Social links">
-              {socialLinks.map((item) => <a href={item.href} key={item.label} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label}><SocialLogo name={item.icon} /></a>)}
-            </div>
-          </div>
-          <FooterCol title="Collections" links={[['New Arrivals', '/categories'], ["Men's Edit", '/categories?gender=men'], ["Women's Edit", '/categories?gender=women'], ['Accessories', '/categories/accessories'], ['Seasonal Sale', '/categories?discounted=true']]} />
-          <FooterCol title="Company" links={[['Journal', '/blog'], ['About', '/about'], ['Virtual Atelier', '/custom-try-on'], ['Contact', '/contact'], ['Shipping', '/shipping']]} />
-          <FooterCol title="Assurance" links={[['Secure Payment', '/support'], ['Support', '/support'], ['Returns & Refunds', '/returns'], ['Cancellation', '/cancellation']]} />
+    <footer className="wishlist-compact-footer">
+      <div className="wrap wishlist-compact-footer-inner">
+        <div className="wishlist-compact-footer-grid">
+          <div className="wishlist-compact-brand"><a href="/" aria-label="Lookmefy home"><BrandLogo /></a><p>Discover personal style through curated fashion and AI-powered try-on.</p><div className="wishlist-compact-social" aria-label="Social links">{socialLinks.map((item) => <a href={item.href} target="_blank" rel="noreferrer" aria-label={item.label} title={item.label} key={item.label}><SocialLogo name={item.icon} /></a>)}</div></div>
+          <div><h2>Shop</h2><a href="/categories">New in</a><a href="/categories?gender=women">Women</a><a href="/categories?gender=men">Men</a><a href="/categories?discounted=true">Sale</a></div>
+          <div><h2>Help</h2><a href="/support">Support</a><a href="/returns">Returns</a><a href="/contact">Contact us</a><a href="/shipping">Shipping</a></div>
+          <div><h2><a className="footer-heading-link" href="/download">Download our App</a></h2><p>Get the Lookmefy app for your daily fashion edit.</p><StoreActions context="footer" className="wishlist-app-links" itemClassName="wishlist-app-link" /></div>
         </div>
-        <div className="footer-bottom"><div>© 2026 Lookmefy. All rights reserved.</div><div className="legal"><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/data-deletion">Data Deletion</a><a href="/ai-disclaimer">AI Disclaimer</a><a href="/accessibility">Accessibility</a></div></div>
+        <div className="wishlist-compact-footer-bottom"><span>© 2026 Lookmefy. Curated by intelligence.</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a></div></div>
       </div>
     </footer>
   );
@@ -2141,7 +1937,6 @@ const atelierHeroSlides = [
 ];
 
 function AtelierProductRailCard({ product }) {
-  const recommendationImpressionRef = useRecommendationImpression(product);
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100) : 0;
   const rating = Number(product.rating || 0);
@@ -2149,8 +1944,8 @@ function AtelierProductRailCard({ product }) {
   const badge = displayProductBadge(product);
 
   return (
-    <article className="atelier-product" ref={recommendationImpressionRef}>
-      <a className="atelier-product-link" href={`/product/${encodeURIComponent(product.id)}`} aria-label={`Open ${product.name}`} onClick={() => recordProductClick(product)}>
+    <article className="atelier-product">
+      <a className="atelier-product-link" href={`/product/${encodeURIComponent(product.id)}`} aria-label={`Open ${product.name}`}>
         <span className="atelier-product-image">
           {(badge || discount > 0) && <span className="atelier-best-seller">{badge || `${discount}% off`}</span>}
           <OptimizedImage src={product.imageUrl} alt={product.name} highResolution={false} />
@@ -2230,6 +2025,22 @@ function uniqueProducts(products = []) {
   });
 }
 
+function productImageKey(productOrImage) {
+  const image = typeof productOrImage === 'string' ? productOrImage : productOrImage?.imageUrl;
+  return String(image || '').trim().split('?')[0].toLowerCase();
+}
+
+function pickCardProduct(productPools = [], usedImageKeys = new Set(), matcher = () => true) {
+  const pools = Array.isArray(productPools[0]) ? productPools : [productPools];
+  const candidates = uniqueProducts(pools.flat().filter(Boolean));
+  const product = candidates.find((candidate) => {
+    const key = productImageKey(candidate);
+    return key && !usedImageKeys.has(key) && matcher(candidate);
+  });
+  if (product) usedImageKeys.add(productImageKey(product));
+  return product || null;
+}
+
 function productMatchesAnyCategory(product, words = []) {
   const text = [product?.category, product?.name, product?.tags?.join?.(' ') || product?.tags]
     .filter(Boolean)
@@ -2294,6 +2105,7 @@ function AtelierCommerceStrip({ id, title, subtitle, products, viewHref = '/cate
 
 function buildOfferCards({ catalogProducts = [], arrivalProducts = [], tryOnPickProducts = [], feedGender = '' }) {
   const pricedProducts = catalogProducts.filter((product) => Number(product.price || 0) > 0);
+  const catalogProductsWithImages = uniqueProducts(catalogProducts).filter((product) => product?.imageUrl);
   const discountedProducts = uniqueProducts(catalogProducts)
     .filter((product) => productDiscountPercent(product) > 0)
     .sort((a, b) => productDiscountPercent(b) - productDiscountPercent(a));
@@ -2302,99 +2114,131 @@ function buildOfferCards({ catalogProducts = [], arrivalProducts = [], tryOnPick
   const genderProducts = feedGender
     ? catalogProducts.filter((product) => String(product.gender || '').toLowerCase() === feedGender)
     : [];
+  const usedImageKeys = new Set();
+  const cards = [];
+  const contextText = (product) => `${product?.category || ''} ${product?.name || ''} ${Array.isArray(product?.tags) ? product.tags.join(' ') : product?.tags || ''}`;
+  const discountedProduct = pickCardProduct(discountedProducts, usedImageKeys);
+  const under499Product = pickCardProduct(under499Products, usedImageKeys);
+  const under999Product = pickCardProduct(under999Products, usedImageKeys);
+  const arrivalProduct = pickCardProduct(arrivalProducts, usedImageKeys);
+  const tryOnProduct = pickCardProduct(tryOnPickProducts, usedImageKeys);
+  const genderProduct = pickCardProduct(genderProducts, usedImageKeys);
+  const occasionProduct = pickCardProduct(
+    [arrivalProducts, catalogProductsWithImages],
+    usedImageKeys,
+    (product) => /dress|saree|gown|jumpsuit|co-ord|set|blazer|jacket|occasion|party|date|work/i.test(contextText(product))
+  ) || pickCardProduct([arrivalProducts, catalogProductsWithImages], usedImageKeys);
+  const menProduct = pickCardProduct(
+    catalogProductsWithImages,
+    usedImageKeys,
+    (product) => String(product.gender || '').toLowerCase() === 'men'
+  ) || pickCardProduct(
+    catalogProductsWithImages,
+    usedImageKeys,
+    (product) => /shirt|t-shirt|jacket|pants|trouser|men/i.test(contextText(product))
+  );
+  const categoryFinderProduct = pickCardProduct(
+    catalogProductsWithImages,
+    usedImageKeys,
+    (product) => /bag|accessor|shoe|watch|eyewear|jewel/i.test(contextText(product))
+  ) || pickCardProduct(catalogProductsWithImages, usedImageKeys);
+  const cozyStaplesProduct = pickCardProduct(
+    catalogProductsWithImages,
+    usedImageKeys,
+    (product) => /sweatshirt|hoodie|jacket|layer|knit|sweater/i.test(contextText(product))
+  ) || pickCardProduct(catalogProductsWithImages, usedImageKeys);
 
-  return [
-    discountedProducts.length > 0 && {
+  if (discountedProduct) cards.push({
       id: 'deal-drop',
       kicker: 'Top Deals',
-      title: `Up to ${productDiscountPercent(discountedProducts[0])}% off`,
+      title: `Up to ${productDiscountPercent(discountedProduct)}% off`,
       copy: `${discountedProducts.length} live markdowns`,
       cta: 'Shop now',
       href: '/categories?discounted=true',
-      image: discountedProducts[0].imageUrl
-    },
-    under499Products.length > 0 && {
+      image: discountedProduct.imageUrl
+    });
+  if (under499Product) cards.push({
       id: 'under-499-offer',
       kicker: 'Budget Edit',
       title: 'Under ₹499',
       copy: `${under499Products.length} catalog picks`,
       cta: 'Explore',
       href: '/categories?maxPrice=499',
-      image: under499Products[0].imageUrl
-    },
-    under999Products.length > 0 && {
+      image: under499Product.imageUrl
+    });
+  if (under999Product) cards.push({
       id: 'under-999-offer',
       kicker: 'Easy Prices',
       title: 'Under ₹999',
       copy: `${under999Products.length} styles available`,
       cta: 'View picks',
       href: '/categories?maxPrice=999',
-      image: under999Products[0].imageUrl
-    },
-    arrivalProducts.length > 0 && {
+      image: under999Product.imageUrl
+    });
+  if (arrivalProduct) cards.push({
       id: 'new-arrivals-offer',
       kicker: 'Fresh Drop',
       title: 'New arrivals',
       copy: `${arrivalProducts.length} recent styles`,
       cta: 'Shop new',
       href: '/categories',
-      image: arrivalProducts[0].imageUrl
-    },
-    tryOnPickProducts.length > 0 && {
+      image: arrivalProduct.imageUrl
+    });
+  if (tryOnProduct) cards.push({
       id: 'ai-tryon-offer',
       kicker: 'AI Try-On',
       title: 'See it on you',
       copy: `${tryOnPickProducts.length} preview-ready picks`,
       cta: 'Try now',
       href: '/custom-try-on',
-      image: tryOnPickProducts[0].imageUrl
-    },
-    genderProducts.length > 0 && {
+      image: tryOnProduct.imageUrl
+    });
+  if (genderProduct) cards.push({
       id: 'gender-feed-offer',
       kicker: feedGender === 'women' ? "Women's edit" : "Men's edit",
       title: feedGender === 'women' ? 'Curated for women' : 'Curated for men',
       copy: `${genderProducts.length} matching styles`,
       cta: 'Open edit',
       href: `/categories?gender=${feedGender}`,
-      image: genderProducts[0].imageUrl
-    },
-    {
+      image: genderProduct.imageUrl
+    });
+  if (occasionProduct) cards.push({
       id: 'occasion-edit-offer',
       kicker: 'Occasion edit',
       title: 'Plan every look',
       copy: 'Work, dates, weekends',
       cta: 'Get ideas',
       href: '/style-bot',
-      image: asset('opening-editorial-hero.png')
-    },
-    {
+      image: occasionProduct.imageUrl
+    });
+  if (menProduct) cards.push({
       id: 'men-curated-offer',
       kicker: "Men's edit",
       title: 'Curated for men',
       copy: 'Clean layers and daily staples',
       cta: 'Open edit',
       href: '/categories?gender=men',
-      image: asset('category-men-hero.png')
-    },
-    {
+      image: menProduct.imageUrl
+    });
+  if (categoryFinderProduct) cards.push({
       id: 'category-finder-offer',
       kicker: 'Explore',
       title: 'Find your edit',
       copy: 'Shop every department fast',
       cta: 'Browse',
       href: '/categories',
-      image: asset('category-generated/bags.png')
-    },
-    {
+      image: categoryFinderProduct.imageUrl
+    });
+  if (cozyStaplesProduct) cards.push({
       id: 'cozy-staples-offer',
       kicker: 'Staples',
       title: 'Cozy layers',
       copy: 'Sweatshirts and soft essentials',
       cta: 'View picks',
       href: '/categories/sweatshirts',
-      image: asset('category-generated/sweatshirts.png')
-    }
-  ].filter(Boolean).slice(0, 8);
+      image: cozyStaplesProduct.imageUrl
+    });
+  return cards.slice(0, 8);
 }
 
 function AtelierOfferCards({ offers = [] }) {
@@ -2410,7 +2254,9 @@ function AtelierOfferCards({ offers = [] }) {
               <em>{offer.copy}</em>
               <b>{offer.cta}</b>
             </span>
-            <OptimizedImage src={offer.image} alt="" />
+            <span className="atelier-offer-card-media" aria-hidden="true">
+              <OptimizedImage src={offer.image} alt="" />
+            </span>
           </a>
         ))}
       </div>
@@ -2418,8 +2264,12 @@ function AtelierOfferCards({ offers = [] }) {
   );
 }
 
-function buildCampaignCards({ catalogProducts = [], tryOnPickProducts = [] }) {
-  const tryOnProduct = tryOnPickProducts[0] || catalogProducts.find((product) => product.tryOnAvailable || product.aiTryOnAvailable) || catalogProducts[0];
+function buildCampaignCards({ catalogProducts = [], tryOnPickProducts = [], reservedImages = [] }) {
+  const usedImageKeys = new Set(reservedImages.map(productImageKey).filter(Boolean));
+  const tryOnProduct = pickCardProduct(
+    [tryOnPickProducts, catalogProducts.filter((product) => product.tryOnAvailable || product.aiTryOnAvailable), catalogProducts],
+    usedImageKeys
+  );
 
   return [
     tryOnProduct && {
@@ -2535,7 +2385,7 @@ function AtelierHome({ user }) {
   const mixedFeedLabel = feedGender ? `${feedGender === 'women' ? "Women's" : "Men's"} picks from every department` : 'Mixed picks from every department';
   const promoProducts = catalogProducts.slice(4, 6);
   const offerCards = useMemo(() => buildOfferCards({ catalogProducts, arrivalProducts, tryOnPickProducts, feedGender }), [arrivalProducts, catalogProducts, feedGender, tryOnPickProducts]);
-  const campaignCards = useMemo(() => buildCampaignCards({ catalogProducts, tryOnPickProducts }), [catalogProducts, tryOnPickProducts]);
+  const campaignCards = useMemo(() => buildCampaignCards({ catalogProducts, tryOnPickProducts, reservedImages: offerCards.map((card) => card.image) }), [catalogProducts, offerCards, tryOnPickProducts]);
   const commerceSections = useMemo(() => {
     const pricedProducts = catalogProducts.filter((product) => Number(product.price || 0) > 0);
     const byRating = uniqueProducts(catalogProducts)
@@ -3420,8 +3270,7 @@ function CategoryDepartmentPage({ category, user }) {
   );
 }
 
-function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, tryOnLoading = false, tryOnVideoLoading = false, tryOnError = '', tryOnVideoError = '', onTryOn, onTryOnVideo, analyticsContext }) {
-  const recommendationImpressionRef = useRecommendationImpression(product);
+function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, tryOnLoading = false, tryOnVideoLoading = false, tryOnError = '', tryOnVideoError = '', onTryOn, onTryOnVideo }) {
   const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const [isWishlisted, setIsWishlisted] = useState(() => readWishlistProductIds().includes(String(product.id)));
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
@@ -3500,8 +3349,8 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
   );
 
   return (
-    <article className={`product-card ${locked ? 'locked-product' : ''}`} ref={recommendationImpressionRef}>
-      {locked ? <div>{content}</div> : <><a className="product-card-link" href={detailHref} onClick={() => recordProductClick(product, analyticsContext)}>{content}</a><button className={`heart ${isWishlisted ? 'saved' : ''}`} type="button" aria-label={isWishlisted ? `Remove ${product.name} from wishlist` : `Save ${product.name} to wishlist`} aria-pressed={isWishlisted} title={isWishlisted ? 'Remove from wishlist' : 'Save to wishlist'} onClick={toggleWishlist}><HeartIcon /></button></>}
+    <article className={`product-card ${locked ? 'locked-product' : ''}`}>
+      {locked ? <div>{content}</div> : <><a className="product-card-link" href={detailHref} onClick={() => recordEvent('product_click', { productId: product.id })}>{content}</a><button className={`heart ${isWishlisted ? 'saved' : ''}`} type="button" aria-label={isWishlisted ? `Remove ${product.name} from wishlist` : `Save ${product.name} to wishlist`} aria-pressed={isWishlisted} title={isWishlisted ? 'Remove from wishlist' : 'Save to wishlist'} onClick={toggleWishlist}><HeartIcon /></button></>}
       {!locked && (
         <div className="product-card-actions">
           {canTryOn && onTryOn ? (
@@ -3516,7 +3365,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
               {tryOnVideoLoading ? 'Video...' : tryOn?.videoUrl ? 'New Video' : 'Video Try-On'}
             </button>
           )}
-          {product.affiliateLink && <a className="shop-action" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordAttributedProductEvent('shop_click', product)}>Shop</a>}
+          {product.affiliateLink && <a className="shop-action" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop</a>}
           {tryOnError && <p>{tryOnError}</p>}
           {tryOnVideoError && <p>{tryOnVideoError}</p>}
         </div>
@@ -5296,7 +5145,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
         body: options.force ? JSON.stringify({ force: true }) : undefined
       });
       setTryOns((current) => ({ ...current, [product.id]: data.tryOn }));
-      recordAttributedProductEvent('try_on', product, { regenerated: Boolean(options.force) });
+      recordEvent('try_on', { productId: product.id, metadata: { regenerated: Boolean(options.force) } });
       if (data.user) {
         setUser((current) => {
           if (!current) return data.user;
@@ -5320,7 +5169,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
         body: options.force ? JSON.stringify({ force: true }) : undefined
       });
       setTryOns((current) => ({ ...current, [product.id]: data.tryOn }));
-      recordAttributedProductEvent('try_on', product, { video: true, regenerated: Boolean(options.force) });
+      recordEvent('try_on', { productId: product.id, metadata: { video: true, regenerated: Boolean(options.force) } });
       if (data.user) {
         setUser((current) => {
           if (!current) return data.user;
@@ -5335,13 +5184,13 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
   };
 
   useEffect(() => {
-    if (!user || state.loading) return;
-    const key = JSON.stringify({ q, tag, category, brand, gender, sort, newArrival, resultCount: state.total });
+    if (!user) return;
+    const key = JSON.stringify({ q, tag, category, brand, gender, sort, newArrival });
     if (searchEventStarted.current === key) return;
     searchEventStarted.current = key;
-    if (q) recordEvent('search', { query: q, metadata: { tag, category, brand, gender, sort, newArrival, resultCount: state.total } });
-    else if (tag || category || brand || gender || newArrival) recordEvent('filter', { metadata: { tag, category, brand, gender, sort, newArrival, resultCount: state.total } });
-  }, [user, q, tag, category, brand, gender, sort, newArrival, state.loading, state.total]);
+    if (q) recordEvent('search', { query: q, metadata: { tag, category, brand, gender, sort, newArrival } });
+    else if (tag || category || brand || gender || newArrival) recordEvent('filter', { metadata: { tag, category, brand, gender, sort, newArrival } });
+  }, [user, q, tag, category, brand, gender, sort, newArrival]);
 
   useEffect(() => {
     if (!shouldAutoGenerate || trialProducts.length === 0) return;
@@ -5401,7 +5250,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
           {!state.loading && !state.error && state.products.length === 0 && <EmptyProducts search={title} />}
           {!state.loading && !state.error && state.products.length > 0 && (
             <div className="product-grid">
-              {visibleProducts.map((product, index) => <ProductCard key={product.id} product={product} user={user} tryOn={tryOns[product.id]} canTryOn={allowTryOnTrial && index < 4} tryOnLoading={Boolean(tryOnLoading[product.id])} tryOnVideoLoading={Boolean(tryOnVideoLoading[product.id])} tryOnError={tryOnErrors[product.id]} tryOnVideoError={tryOnVideoErrors[product.id]} onTryOn={generateTryOn} onTryOnVideo={generateTryOnVideo} analyticsContext={{ source: q ? 'search' : 'filter', query: q, metadata: { rank: index + 1, resultCount: state.total } }} />)}
+              {visibleProducts.map((product, index) => <ProductCard key={product.id} product={product} user={user} tryOn={tryOns[product.id]} canTryOn={allowTryOnTrial && index < 4} tryOnLoading={Boolean(tryOnLoading[product.id])} tryOnVideoLoading={Boolean(tryOnVideoLoading[product.id])} tryOnError={tryOnErrors[product.id]} tryOnVideoError={tryOnVideoErrors[product.id]} onTryOn={generateTryOn} onTryOnVideo={generateTryOnVideo} />)}
               {lockedProducts.length > 0 && (
                 <div className="locked-row">
                   {lockedProducts.map((product) => <ProductCard key={`locked-${product.id}`} product={product} locked />)}
@@ -5525,7 +5374,6 @@ function toggleWishlistProductId(productOrId) {
   if (saved && product) writeWishlistProductSnapshot(product);
   if (!saved) removeWishlistProductSnapshot(id);
   window.dispatchEvent(new CustomEvent('fitlook:wishlist-change', { detail: { id, saved } }));
-  recordAttributedProductEvent(saved ? 'wishlist' : 'wishlist_remove', product || id);
   if (readAuthToken()) {
     api(`/auth/wishlist/${encodeURIComponent(id)}`, { method: saved ? 'PUT' : 'DELETE' })
       .catch(() => announce('Wishlist saved on this device. Account sync will retry when the connection is available.', 'error'));
@@ -6673,10 +6521,14 @@ function ProfilePage({ user, setUser }) {
     }
   };
 
-  const displayName = user.name?.trim() || 'Lookmefy Profile';
-  const initials = displayName.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+  const initials = (user.name || user.username || 'FL').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   const creditProgress = Math.min(100, Math.max(0, ((user.tokens || 0) / 2000) * 100));
-  const logout = () => logoutCustomer(setUser);
+  const logout = () => {
+    clearAuthToken();
+    setUser(null);
+    window.history.pushState({}, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
   const finishAccountDeletion = () => {
     clearAuthToken();
     ['fitlook_wishlist', 'fitlook_wishlist_ids', 'fitlook:wishlist', 'wishlist', 'fitlook_wishlist_products', 'fitlook_wishlist_collections'].forEach((key) => localStorage.removeItem(key));
@@ -6694,7 +6546,7 @@ function ProfilePage({ user, setUser }) {
 
         <section className="profile-reference-panel profile-reference-account" aria-label="Account overview">
           <div className={`profile-reference-avatar ${photoFrameClass}`.trim()}>{photoSrc ? <img src={photoSrc} alt="" /> : <span>{initials}</span>}</div>
-          <div className="profile-reference-account-copy"><div><h2>{displayName}</h2></div><small>{genderPreferenceLabel(user.genderPreference)} preference · Member since {formatDate(user.joinedAt)}</small></div>
+          <div className="profile-reference-account-copy"><div><h2>{user.name}</h2><span>@{user.username}</span></div><p>{user.email}</p><small>{genderPreferenceLabel(user.genderPreference)} preference · Member since {formatDate(user.joinedAt)}</small></div>
           <a href="#tryon-photo">Update photo</a>
         </section>
 
@@ -6773,7 +6625,8 @@ function ProfilePage({ user, setUser }) {
         <section className="profile-reference-panel profile-reference-settings" aria-label="Account settings">
           <div className="profile-reference-section-head"><div><h2>Account Settings</h2><p>Control how your profile is used across Lookmefy.</p></div></div>
           <div className="profile-reference-setting-list">
-            <div><span>Name</span><strong>{displayName}</strong></div>
+            <div><span>Username</span><strong>@{user.username}</strong></div>
+            <div><span>Email address</span><strong>{user.email}</strong></div>
             <div className="profile-reference-mode"><span>Try-on photo mode</span><div role="radiogroup" aria-label="Try-on photo mode"><label><input type="radio" name="profilePhotoModeSettings" value="ai-full-body" checked={profilePhotoMode === 'ai-full-body'} onChange={(event) => setProfilePhotoMode(event.target.value)} /> AI full-body</label><label><input type="radio" name="profilePhotoModeSettings" value="exact" checked={profilePhotoMode === 'exact'} onChange={(event) => setProfilePhotoMode(event.target.value)} /> Exact photo</label></div></div>
             <button className="profile-reference-neutral-action" type="button" onClick={() => window.dispatchEvent(new CustomEvent('fitlook:replay-onboarding'))}><span>Replay platform tour</span><b>›</b></button>
             <a href="/terms"><span>Terms and conditions</span><b>›</b></a>
@@ -7237,7 +7090,7 @@ function ProductPage({ id, user, setUser }) {
   useEffect(() => {
     if (!user || !product?.id || productViewStarted.current === product.id) return;
     productViewStarted.current = product.id;
-    recordAttributedProductEvent('product_view', product.id);
+    recordEvent('product_view', { productId: product.id });
   }, [user, product?.id]);
 
   useEffect(() => {
@@ -7300,7 +7153,7 @@ function ProductPage({ id, user, setUser }) {
   const detailFacts = [
     ['Brand', brand],
     ['Category', category],
-    ['Fit area', product.garmentPlacement === 'accessory' ? 'Accessory' : product.garmentPlacement === 'bottom' ? 'Bottomwear' : 'Topwear'],
+    ['Fit area', product.garmentPlacement === 'bottom' ? 'Bottomwear' : 'Topwear'],
     ['For', product.gender],
     ['Rating', `${Number(product.rating || 0).toFixed(1)}${product.ratingCount ? ` from ${product.ratingCount} reviews` : ''}`],
     ['Price', formatMoney(product.price, product.currency)]
@@ -7352,7 +7205,7 @@ function ProductPage({ id, user, setUser }) {
       setTryOn(data.tryOn);
       setDetailImageView('tryon');
       setTryOnImageFailed(false);
-      recordAttributedProductEvent('try_on', product.id, { tryOnModel: product.tryOnModel || 'default', regenerated: regenerate });
+      recordEvent('try_on', { productId: product.id, metadata: { tryOnModel: product.tryOnModel || 'default', regenerated: regenerate } });
       if (data.user) {
         setUser((current) => {
           if (!current) return data.user;
@@ -7390,7 +7243,7 @@ function ProductPage({ id, user, setUser }) {
         setTryOn(activeTryOn);
         setDetailImageView('tryon');
         setTryOnImageFailed(false);
-        recordAttributedProductEvent('try_on', product.id, { tryOnModel: product.tryOnModel || 'default', generatedForVideo: true });
+        recordEvent('try_on', { productId: product.id, metadata: { tryOnModel: product.tryOnModel || 'default', generatedForVideo: true } });
         if (preview.user) {
           setUser((current) => {
             if (!current) return preview.user;
@@ -7407,7 +7260,7 @@ function ProductPage({ id, user, setUser }) {
       });
       setTryOn(data.tryOn);
       setDetailImageView('video');
-      recordAttributedProductEvent('try_on', product.id, { video: true, regenerated: regenerate });
+      recordEvent('try_on', { productId: product.id, metadata: { video: true, regenerated: regenerate } });
       if (data.user) {
         setUser((current) => {
           if (!current) return data.user;
@@ -7527,7 +7380,7 @@ function ProductPage({ id, user, setUser }) {
                   {tryOnVideoLoading ? 'Making video...' : hasTryOnVideo ? 'Refresh video' : 'Generate video'}
                 </button>
               ) : <a className="product-editorial-video" href="/signup">Generate video</a>}
-              {product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordAttributedProductEvent('shop_click', product.id)}>Shop now</a>}
+              {product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop now</a>}
             </div>
             {(tryOnLoading || tryOnVideoLoading) && <p className="form-message" role="status">{tryOnSlow ? 'This is taking a little longer than usual.' : 'Preparing your try-on...'}</p>}
             {tryOnCreditNotice && <p className="form-message">{tryOnCreditNotice}</p>}
@@ -7547,7 +7400,7 @@ function ProductPage({ id, user, setUser }) {
               </details>
               <details>
                 <summary>Fit and style</summary>
-                <p>{product.garmentPlacement === 'accessory' ? 'Designed to complement your existing outfit.' : product.garmentPlacement === 'bottom' ? 'Designed for bottomwear styling.' : 'Designed to pair seamlessly with your wardrobe.'}{product.gender ? ` Suitable for ${product.gender}.` : ''}</p>
+                <p>{product.garmentPlacement === 'bottom' ? 'Designed for bottomwear styling.' : 'Designed to pair seamlessly with your wardrobe.'}{product.gender ? ` Suitable for ${product.gender}.` : ''}</p>
                 <div className="product-size-assist">
                   <strong>Can’t find your size?</strong>
                   <button type="button" onClick={() => setSizeRequestOpen(true)}>Ask the Seller</button>
@@ -8159,15 +8012,13 @@ function DownloadExploreMockup() {
 function DownloadScreenVisual({ screen }) {
   if (screen.deviceImage) {
     return (
-      <span className="download-screen-device-stage">
-        <OptimizedImage
-          className={`download-screen-device-image ${screen.variant || ''}`.trim()}
-          src={asset(screen.deviceImage)}
-          fallbackSrc=""
-          alt={screen.alt}
-          highResolution={false}
-        />
-      </span>
+      <OptimizedImage
+        className={`download-screen-device-image ${screen.variant || ''}`.trim()}
+        src={asset(screen.deviceImage)}
+        fallbackSrc=""
+        alt={screen.alt}
+        highResolution={false}
+      />
     );
   }
 
@@ -8189,7 +8040,6 @@ function DownloadScreenVisual({ screen }) {
 }
 
 function DownloadAppPage() {
-  const screenRailRef = useRef(null);
   const featureItems = [
     ['AI Try-On', 'Try on outfits with AI and see your perfect look instantly.', <SparkleLineIcon />],
     ['Personal Wardrobe', 'Organize your clothes and create your own digital wardrobe.', <ClosetIcon />],
@@ -8201,133 +8051,34 @@ function DownloadAppPage() {
     {
       label: 'Explore',
       variant: 'explore',
-      deviceImage: 'download-showcase-finalcut-phone-explore.png',
+      deviceImage: 'download-screen-explore-device.png',
       alt: 'Lookmefy mobile Categories screen showing Featured For Men and All Men Fashion'
     },
     {
       label: 'AI Try-On',
       variant: 'tryon',
-      deviceImage: 'download-showcase-finalcut-phone-tryon.png',
+      deviceImage: 'download-screen-tryon-device.png',
       alt: 'Lookmefy mobile AI Try-On screen showing a generated outfit preview and product details'
     },
     {
       label: 'Wardrobe',
       variant: 'wardrobe',
-      deviceImage: 'download-showcase-finalcut-phone-wardrobe.png',
+      deviceImage: 'download-screen-wardrobe-device.png',
       alt: 'Lookmefy mobile wardrobe screen with Try This outfit action'
     },
     {
       label: 'AI Stylist',
       variant: 'stylist',
-      deviceImage: 'download-showcase-finalcut-phone-stylist.png',
+      deviceImage: 'download-screen-stylist-device.png',
       alt: 'Lookmefy mobile AI Studio screen showing AI stylist recommendations and product cards'
     },
     {
       label: 'Profile',
       variant: 'profile',
-      deviceImage: 'download-showcase-finalcut-phone-profile.png',
+      deviceImage: 'download-screen-profile-device.png',
       alt: 'Lookmefy mobile profile screen showing credits and generation history'
     }
   ];
-
-  useEffect(() => {
-    const rail = screenRailRef.current;
-    if (!rail) return undefined;
-
-    const mobileQuery = window.matchMedia('(max-width: 760px)');
-    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    let slideTimer = null;
-    let resumeTimer = null;
-
-    const getCards = () => Array.from(rail.querySelectorAll('.download-screen-card'));
-
-    const getNearestIndex = () => {
-      const cards = getCards();
-      if (!cards.length) return 0;
-
-      const railCenter = rail.scrollLeft + (rail.clientWidth / 2);
-      return cards.reduce((nearest, card, index) => {
-        const cardCenter = card.offsetLeft + (card.offsetWidth / 2);
-        const nearestCard = cards[nearest];
-        const nearestCenter = nearestCard.offsetLeft + (nearestCard.offsetWidth / 2);
-        return Math.abs(cardCenter - railCenter) < Math.abs(nearestCenter - railCenter) ? index : nearest;
-      }, 0);
-    };
-
-    const scrollToCard = (index, behavior = 'smooth') => {
-      const cards = getCards();
-      const card = cards[index];
-      if (!card) return;
-
-      const centeredLeft = card.offsetLeft - ((rail.clientWidth - card.offsetWidth) / 2);
-      rail.scrollTo({ left: Math.max(0, centeredLeft), behavior });
-    };
-
-    const stopAutoSlide = () => {
-      if (slideTimer) {
-        window.clearInterval(slideTimer);
-        slideTimer = null;
-      }
-    };
-
-    const startAutoSlide = () => {
-      stopAutoSlide();
-      if (!mobileQuery.matches || reducedMotionQuery.matches) return;
-
-      slideTimer = window.setInterval(() => {
-        if (document.hidden) return;
-
-        const cards = getCards();
-        if (cards.length < 2) return;
-
-        const nextIndex = (getNearestIndex() + 1) % cards.length;
-        scrollToCard(nextIndex);
-      }, 3600);
-    };
-
-    const pauseAutoSlide = () => {
-      stopAutoSlide();
-      if (resumeTimer) window.clearTimeout(resumeTimer);
-
-      if (mobileQuery.matches && !reducedMotionQuery.matches) {
-        resumeTimer = window.setTimeout(startAutoSlide, 6000);
-      }
-    };
-
-    const handleQueryChange = () => {
-      if (resumeTimer) {
-        window.clearTimeout(resumeTimer);
-        resumeTimer = null;
-      }
-      startAutoSlide();
-    };
-    const addQueryListener = (query, handler) => {
-      if (query.addEventListener) query.addEventListener('change', handler);
-      else query.addListener(handler);
-    };
-    const removeQueryListener = (query, handler) => {
-      if (query.removeEventListener) query.removeEventListener('change', handler);
-      else query.removeListener(handler);
-    };
-
-    startAutoSlide();
-
-    rail.addEventListener('pointerdown', pauseAutoSlide, { passive: true });
-    rail.addEventListener('wheel', pauseAutoSlide, { passive: true });
-    rail.addEventListener('keydown', pauseAutoSlide);
-    addQueryListener(mobileQuery, handleQueryChange);
-    addQueryListener(reducedMotionQuery, handleQueryChange);
-
-    return () => {
-      stopAutoSlide();
-      if (resumeTimer) window.clearTimeout(resumeTimer);
-      rail.removeEventListener('pointerdown', pauseAutoSlide);
-      rail.removeEventListener('wheel', pauseAutoSlide);
-      rail.removeEventListener('keydown', pauseAutoSlide);
-      removeQueryListener(mobileQuery, handleQueryChange);
-      removeQueryListener(reducedMotionQuery, handleQueryChange);
-    };
-  }, []);
 
   return (
     <main className="download-page">
@@ -8370,7 +8121,7 @@ function DownloadAppPage() {
             <p className="download-kicker">Designed for your everyday style</p>
             <h2 id="download-screens-title">Experience Lookmefy</h2>
           </div>
-          <div className="download-screen-rail" ref={screenRailRef} aria-label="Lookmefy app screens" tabIndex={0}>
+          <div className="download-screen-rail">
             {appScreens.map((screen) => (
               <figure className="download-screen-card" key={screen.label}>
                 <DownloadScreenVisual screen={screen} />
@@ -9108,6 +8859,7 @@ function AuthPage({ mode, setUser }) {
       </div>
     );
   };
+
   const requestSignupOtp = async () => {
     if (otpLoading) return;
     if (!isLikelyIndianMobile(phoneValue)) {
@@ -9581,25 +9333,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!user || !readAuthToken()) return undefined;
-    const heartbeat = (keepalive = false) => {
-      if (!keepalive && (document.visibilityState !== 'visible' || !document.hasFocus())) return;
-      sendSessionHeartbeat({ keepalive });
-    };
-    const visibilityChanged = () => heartbeat(document.visibilityState === 'hidden');
-    const pageHidden = () => heartbeat(true);
-    heartbeat();
-    const interval = window.setInterval(() => heartbeat(), SESSION_HEARTBEAT_MS);
-    document.addEventListener('visibilitychange', visibilityChanged);
-    window.addEventListener('pagehide', pageHidden);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', visibilityChanged);
-      window.removeEventListener('pagehide', pageHidden);
-    };
-  }, [user?.id]);
-
-  useEffect(() => {
     updateRouteSeo(path, window.location.search);
     recordEvent('page_view', { path, search: window.location.search });
   }, [path, routeKey]);
@@ -9751,7 +9484,7 @@ function App() {
       {!isOnline && <div className="network-status" role="status" aria-live="polite">You are offline. Changes will resume when you reconnect.</div>}
       {toast && <Toast toast={toast} onDismiss={dismissToast} />}
       {!shouldHideMobileBottomNav && <MobileBottomNav user={user} />}
-      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Footer compact={path === '/wishlist' || path === '/profile' || path === '/generation-history' || isProductPage} />}
+      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Footer />}
       {shouldShowOnboarding && <OnboardingOverview user={user} onComplete={setUser} />}
       {replayTourOpen && user && <OnboardingOverview user={user} persist={false} onClose={() => setReplayTourOpen(false)} />}
     </>
