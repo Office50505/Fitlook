@@ -2243,19 +2243,40 @@ function buildOfferCards({ catalogProducts = [], arrivalProducts = [], tryOnPick
 
 function AtelierOfferCards({ offers = [] }) {
   if (!offers.length) return null;
+  const offerCardStyle = {
+    height: 'clamp(142px, 10.8vw, 178px)',
+    minHeight: 0,
+    maxHeight: '178px',
+    overflow: 'hidden',
+    gridTemplateColumns: 'minmax(0, .58fr) minmax(104px, .42fr)'
+  };
+  const offerMediaStyle = {
+    display: 'block',
+    height: '100%',
+    minHeight: 0,
+    overflow: 'hidden'
+  };
+  const offerImageStyle = {
+    width: '100%',
+    height: '100%',
+    minHeight: 0,
+    objectFit: 'cover',
+    objectPosition: 'center top'
+  };
+
   return (
     <section className="atelier-offer-card-section atelier-wide" aria-label="Lookmefy offers">
       <div className="atelier-offer-card-grid">
         {offers.map((offer) => (
-          <a className="atelier-offer-card" href={offer.href} key={offer.id}>
+          <a className="atelier-offer-card" href={offer.href} key={offer.id} style={offerCardStyle} data-layout="fixed-landscape">
             <span className="atelier-offer-card-copy">
               <small>{offer.kicker}</small>
               <strong>{offer.title}</strong>
               <em>{offer.copy}</em>
               <b>{offer.cta}</b>
             </span>
-            <span className="atelier-offer-card-media" aria-hidden="true">
-              <OptimizedImage src={offer.image} alt="" />
+            <span className="atelier-offer-card-media" aria-hidden="true" style={offerMediaStyle}>
+              <OptimizedImage src={offer.image} alt="" style={offerImageStyle} />
             </span>
           </a>
         ))}
