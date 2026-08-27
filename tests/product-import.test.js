@@ -15,7 +15,12 @@ import {
   REPLACE_CONFIRMATION,
   validateAndBuildProduct
 } from '../server/services/product-import.js';
-import { temporaryExternalAmazonFilter } from '../server/routes/products.js';
+import {
+  cleanBrand,
+  getBestBrand,
+  getProductFacts,
+  temporaryExternalAmazonFilter
+} from '../server/routes/products.js';
 
 const taxonomy = {
   batchSize: 2,
@@ -186,4 +191,24 @@ test('approved imported Amazon products are not filtered as temporary recommenda
   const filter = temporaryExternalAmazonFilter();
   assert.deepEqual(filter.catalogApproved, { $ne: true });
   assert.equal(filter.badge, 'Amazon');
+});
+
+test('product draft brand ignores Amazon size chart table text', () => {
+  const html = `
+    <a id="bylineInfo">Visit the Aahwan Store</a>
+    <table>
+      <tr><td>Brand</td><td>Label Size Bust (in) Waist (in) Hip (in)</td></tr>
+    </table>
+  `;
+  const facts = getProductFacts(html);
+
+  assert.equal(cleanBrand('Label Size Bust (in) Waist (in)'), '');
+  assert.equal(facts.has('brand'), false);
+  assert.equal(getBestBrand({
+    product: {},
+    facts,
+    html,
+    finalUrl: 'https://www.amazon.in/dp/B0DQDF1DZ1',
+    title: "Aahwan Pink Solid Halter Neck Solid Bodycon Midi Dress for Women's & Girl's"
+  }), 'Aahwan');
 });

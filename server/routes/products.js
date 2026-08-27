@@ -237,6 +237,7 @@ function getProductFacts(html) {
       .replace(/\s+/g, ' ')
       .trim();
     if (!key || !cleanValue || cleanValue.length > 180) return;
+    if (looksLikeSizeChartText(label) || looksLikeSizeChartText(cleanValue)) return;
     if (/customer reviews|best sellers rank|date first available|asin|dimensions|weight/i.test(key)) return;
     if (!facts.has(key)) facts.set(key, cleanValue);
   };
@@ -270,6 +271,19 @@ function factValue(facts, keys) {
   return '';
 }
 
+function looksLikeSizeChartText(value = '') {
+  const text = decodeHtml(value)
+    .toLowerCase()
+    .replace(/[\u200e\u200f\u202a-\u202e]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return false;
+  if (/\blabel\s+size\b/.test(text)) return true;
+  const hits = ['bust', 'waist', 'hip', 'hips', 'chest', 'shoulder', 'sleeve', 'length', 'inseam']
+    .filter((term) => new RegExp(`\\b${term}\\b`, 'i').test(text)).length;
+  return hits >= 2 && /\b(size|cm|in|inch|inches)\b/i.test(text);
+}
+
 function cleanBrand(value = '') {
   let brand = decodeHtml(value)
     .replace(/\s+/g, ' ')
@@ -283,6 +297,7 @@ function cleanBrand(value = '') {
     .trim();
   brand = brand.replace(/^[^\w]+|[^\w&'. -]+$/g, '').trim();
   if (!brand || brand.length > 60) return '';
+  if (looksLikeSizeChartText(brand)) return '';
   if (/^(amazon|amazon\.com|www\.amazon\.com)$/i.test(brand)) return '';
   return brand;
 }
@@ -299,20 +314,21 @@ function titleBrandCandidate(title = '') {
   const cleaned = decodeHtml(title).replace(/[|–-].*$/, '').trim();
   const match =
     cleaned.match(/^([A-Z][A-Za-z0-9&'.-]{1,}(?:\s+[A-Z][A-Za-z0-9&'.-]{1,})?)\s+(?:women'?s|men'?s|girls?|boys?|unisex)\b/i) ||
-    cleaned.match(/^([A-Z0-9][A-Za-z0-9&'.-]{2,})\s+(?:shirt|dress|jeans|jacket|kurta|saree|sunglasses|watch|shoes|sneakers)\b/i);
+    cleaned.match(/^([A-Z0-9][A-Za-z0-9&'.-]{2,})\s+(?:shirt|dress|jeans|jacket|kurta|saree|sunglasses|watch|shoes|sneakers)\b/i) ||
+    cleaned.match(/^([A-Z0-9][A-Za-z0-9&'.-]{2,})\s+.+\b(?:shirt|dress|jeans|jacket|kurta|saree|sunglasses|watch|shoes|sneakers)\b/i);
   const candidate = cleanBrand(match?.[1] || '');
-  if (!candidate || /^(women|woman|men|man|girls|boys|unisex|casual|fashion|generic)$/i.test(candidate)) return '';
+  if (!candidate || /^(women|woman|men|man|girls|boys|unisex|casual|fashion|generic|black|white|blue|green|red|pink|beige|brown|grey|gray|solid)$/i.test(candidate)) return '';
   return candidate;
 }
 
 function getBestBrand({ product, facts, html, finalUrl, title }) {
   const candidates = [
     getSchemaBrand(product),
-    cleanBrand(factValue(facts, ['brand'])),
     getBylineBrand(html),
-    titleBrandCandidate(title),
-    cleanBrand(factValue(facts, ['manufacturer'])),
     cleanBrand(getMeta(html, ['product:brand'])),
+    titleBrandCandidate(title),
+    cleanBrand(factValue(facts, ['brand'])),
+    cleanBrand(factValue(facts, ['manufacturer'])),
     cleanBrand(hostBrand(finalUrl))
   ];
   return candidates.find(Boolean) || 'Brand unavailable';
@@ -1545,4 +1561,13 @@ router.delete('/:id', requireAdmin, requireUserOperationsAdmin, adminProductWrit
 });
 
 export default router;
-export { buildProductDraft, clearReadCachesAfterProductWrite, normalizeGarmentPlacement, runProductRecategorizationJob, temporaryExternalAmazonFilter };
+export {
+  buildProductDraft,
+  cleanBrand,
+  clearReadCachesAfterProductWrite,
+  getBestBrand,
+  getProductFacts,
+  normalizeGarmentPlacement,
+  runProductRecategorizationJob,
+  temporaryExternalAmazonFilter
+};
