@@ -18,7 +18,7 @@ import { recordAdminAudit } from '../utils/adminAudit.js';
 import { requireAdmin, requireAdminSection } from '../utils/adminAccess.js';
 import { ADMIN_SECTIONS } from '../utils/adminPermissions.js';
 import { deleteStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
-import { isAllowedRasterImageUpload, normalizeRasterImageBuffer, safeFetchText } from '../utils/security.js';
+import { isAllowedRasterImageUpload, normalizeRasterImageBuffer, safeFetchBuffer, safeFetchText } from '../utils/security.js';
 import {
   PRODUCT_AVAILABILITY_STATUSES,
   adminAvailabilityClause,
@@ -97,6 +97,7 @@ function toBoolean(value) {
 function normalizeGarmentPlacement(value, product = {}) {
   const explicit = String(value || '').trim().toLowerCase();
   if (explicit === 'accessory' || explicit === 'accessories') return 'accessory';
+  if (explicit === 'full-body' || explicit === 'full_body' || explicit === 'full body' || explicit === 'full' || explicit === 'outfit' || explicit === 'one-piece' || explicit === 'one piece') return 'full-body';
   if (explicit === 'bottom' || explicit === 'bottomwear' || explicit === 'lower') return 'bottom';
   if (explicit === 'top' || explicit === 'topwear' || explicit === 'upper') return 'top';
   const text = [
@@ -105,6 +106,7 @@ function normalizeGarmentPlacement(value, product = {}) {
     product.description,
     Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
   ].filter(Boolean).join(' ').toLowerCase();
+  if (/\b(outfits?|sets?|co-?ords?|coordinated|tracksuits?|suits?|jumpsuits?|rompers?|playsuits?|dress(?:es)?|gowns?|sarees?|saris?|lehenga(?:s)?|kurta\s?sets?)\b/.test(text)) return 'full-body';
   if (/\b(pants?|trousers?|jeans?|denim|shorts?|skirts?|leggings?|joggers?|palazzos?|bottoms?|lower)\b/.test(text)) return 'bottom';
   return 'top';
 }
@@ -485,7 +487,7 @@ const categoryRules = [
   ['eyewear', /\b(sun\s*glasses|sunglasses|eye\s*glasses|eyeglasses|glasses|spectacles?|optical\s*frames?|frames?|lenses?|goggles?|aviator|wayfarer)\b/i, 30],
   ['innerwear', /\b(underwear|briefs?|boxers?|trunks?|vests?|innerwear|lingerie|bras?|bralettes?|sports?\s+bras?|pant(?:y|ies)|camisoles?|shapewear|bikinis?|swimsuits?|swimwear|monokinis?|tankinis?)\b/i, 30],
   ['sleepwear', /\b(night(?:y|ie|wear|gown|suit|dress)|sleepwear|pajamas?|pyjamas?|loungewear|robe)\b/i, 26],
-  ['dresses', /\b(dresses?|gowns?|bodycon|maxi|midi|mini\s*dress|a-line\s*dress|wrap\s*dress|party\s*dress)\b/i, 24],
+  ['dresses', /\b(dress(?:es)?|gowns?|bodycon|maxi|midi|mini\s*dress|a-line\s*dress|wrap\s*dress|party\s*dress)\b/i, 24],
   ['skirts', /\b(skirts?|skorts?)\b/i, 24],
   ['watches', /\b(watches?|smart\s*watches?|smartwatch(?:es)?|chronograph)\b/i, 24],
   ['shoes', /\b(shoes?|sneakers?|boots?|loafers?|sandals?|slippers?|heels?|pumps?|flats?|footwear|trainers?)\b/i, 24],
@@ -618,6 +620,224 @@ function buildProductTags({ title, description, bullets, brand, category, gender
       .filter((tag) => tag && !['amazon', 'amazon.com', 'brand unavailable', 'clothing'].includes(tag)),
     14
   );
+}
+
+const colorKeywords = [
+  'black',
+  'white',
+  'pink',
+  'red',
+  'blue',
+  'green',
+  'yellow',
+  'purple',
+  'violet',
+  'orange',
+  'brown',
+  'beige',
+  'cream',
+  'ivory',
+  'grey',
+  'gray',
+  'gold',
+  'silver',
+  'maroon',
+  'navy',
+  'teal',
+  'olive',
+  'khaki'
+];
+
+function normalizeColorWord(value = '') {
+  const text = String(value || '').toLowerCase().trim();
+  if (text === 'gray') return 'grey';
+  if (text === 'off white' || text === 'off-white') return 'white';
+  return text;
+}
+
+function colorWordsFromText(value = '') {
+  const text = ` ${String(value || '').toLowerCase().replace(/[-_/]+/g, ' ')} `;
+  return uniqueList(
+    colorKeywords
+      .filter((color) => new RegExp(`\\b${escapeRegExp(color)}\\b`, 'i').test(text))
+      .map(normalizeColorWord),
+    8
+  );
+}
+
+function colorsFromFacts(facts) {
+  const explicit = factValue(facts, ['color', 'colour']);
+  return uniqueList(
+    String(explicit || '')
+      .split(/[,/|;&]+|\band\b/i)
+      .flatMap((item) => colorWordsFromText(item).length ? colorWordsFromText(item) : [decodeHtml(item).toLowerCase().trim()])
+      .map(normalizeColorWord)
+      .filter((item) => item && item.length <= 24 && !looksLikeSizeChartText(item)),
+    8
+  );
+}
+
+function normalizeSizeOption(value = '') {
+  const raw = decodeHtml(value).replace(/\s+/g, ' ').trim();
+  if (/^(?:free|one)\s+size$/i.test(raw)) return raw.toUpperCase();
+  const text = raw
+    .replace(/\s+/g, ' ')
+    .replace(/\b(?:select|choose|size|size name|please select|one size fits all)\b/gi, ' ')
+    .replace(/[()[\]{}]/g, ' ')
+    .trim()
+    .toUpperCase();
+  if (!text || text.length > 18 || looksLikeSizeChartText(text)) return '';
+  if (/^(?:XS|S|M|L|XL|XXL|XXXL|[2-9]XL|FREE SIZE|ONE SIZE)$/.test(text)) return text;
+  if (/^(?:UK|US|EU|IND)?\s*\d{1,2}(?:\.\d)?(?:\s*[-/]\s*\d{1,2}(?:\.\d)?)?$/.test(text)) return text.replace(/\s+/g, ' ');
+  if (/^\d{1,2}\s*-\s*\d{1,2}\s*(?:Y|YEARS?)$/.test(text)) return text.replace(/\s+/g, ' ');
+  return '';
+}
+
+function sizesFromText(value = '') {
+  const text = decodeHtml(value);
+  if (!text || looksLikeSizeChartText(text)) return [];
+  return uniqueList(
+    text
+      .split(/[,/|;&]+|\s{2,}|\band\b/i)
+      .map(normalizeSizeOption)
+      .filter(Boolean),
+    18
+  );
+}
+
+function getSelectOptionsById(html, ids) {
+  const options = [];
+  for (const id of ids) {
+    const safeId = escapeRegExp(id);
+    const match = html.match(new RegExp(`<select[^>]+id=["']${safeId}["'][^>]*>([\\s\\S]*?)<\\/select>`, 'i'));
+    if (!match) continue;
+    for (const option of match[1].matchAll(/<option[^>]*>([\s\S]*?)<\/option>/gi)) {
+      const size = normalizeSizeOption(stripTags(option[1]));
+      if (size) options.push(size);
+    }
+  }
+  return uniqueList(options, 18);
+}
+
+function extractAvailableSizes(html, facts) {
+  const fromSelect = getSelectOptionsById(html, [
+    'native_dropdown_selected_size_name',
+    'dropdown_selected_size_name',
+    'size_name',
+    'variation_size_name'
+  ]);
+  const fromFacts = sizesFromText(factValue(facts, ['size', 'sizes', 'available sizes', 'available size']));
+  const fromSwatches = [...html.matchAll(/(?:data-a-html-content|title|aria-label)=["']([^"']{1,80})["']/gi)]
+    .flatMap((match) => sizesFromText(match[1]));
+  return uniqueList([...fromSelect, ...fromFacts, ...fromSwatches], 18);
+}
+
+function sizeNotesFromFacts(facts) {
+  const note = factValue(facts, ['fit type', 'size chart', 'size guide']);
+  if (!note || looksLikeSizeChartText(note)) return '';
+  return decodeHtml(note).replace(/\s+/g, ' ').trim().slice(0, 140);
+}
+
+function polishedDescription(value = '', { title = '' } = {}) {
+  let text = cleanDescription(value)
+    .replace(/^buy\s+/i, '')
+    .replace(/\s+(?:online|from\s+amazon)\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text && title) text = normalizeProductTitle(title);
+  return text;
+}
+
+function fieldWarning(field, title, detail, level = 'warning') {
+  return { field, title, detail, level };
+}
+
+function refineProductDraft(draft = {}, context = {}) {
+  const warnings = [];
+  const titleColors = colorWordsFromText(draft.name);
+  const descriptionColors = colorWordsFromText(draft.description);
+  const factColors = colorsFromFacts(context.facts || new Map());
+  const colors = uniqueList([...factColors, ...titleColors, ...descriptionColors], 8);
+  const explicitColorSet = new Set([...factColors, ...descriptionColors]);
+  const titleConflict = titleColors.filter((color) => explicitColorSet.size && !explicitColorSet.has(color));
+
+  if (titleConflict.length) {
+    warnings.push(fieldWarning(
+      'colors',
+      'Color conflict',
+      `Title mentions ${titleConflict.join(', ')}, but product details mention ${[...explicitColorSet].join(', ')}. Check the selected variant before publishing.`
+    ));
+  }
+
+  const rating = Number(draft.rating);
+  const ratingCount = Number(draft.ratingCount);
+  const hasRating = Number.isFinite(rating) && rating > 0;
+  const hasRatingCount = Number.isFinite(ratingCount) && ratingCount > 0;
+  let safeRating = draft.rating;
+  let safeRatingCount = draft.ratingCount;
+  if (hasRating && !hasRatingCount) {
+    safeRating = '';
+    safeRatingCount = '';
+    warnings.push(fieldWarning(
+      'rating',
+      'Rating count missing',
+      'The source exposed a star rating without a review count, so rating fields were left blank.'
+    ));
+  }
+
+  if (draft.remoteImageUrl) {
+    warnings.push(fieldWarning(
+      'remoteImageUrl',
+      'Image will be cached',
+      'Publishing with the fetched image now saves a copy into Lookmefy storage instead of relying on the source URL.',
+      'info'
+    ));
+  }
+
+  const explicitPlacement = String(draft.garmentPlacement || '').trim().toLowerCase();
+  const placement = explicitPlacement === 'accessory' || explicitPlacement === 'accessories'
+    ? 'accessory'
+    : ['full-body', 'full_body', 'full body', 'outfit', 'one-piece', 'one piece'].includes(explicitPlacement)
+      ? 'full-body'
+    : normalizeGarmentPlacement('', draft);
+  if (placement === 'full-body') {
+    warnings.push(fieldWarning(
+      'garmentPlacement',
+      'Full-body fit detected',
+      'This product looks like a dress, one-piece, or complete outfit and will use full-body try-on prompts.',
+      'info'
+    ));
+  }
+
+  const sizes = uniqueList([...(draft.sizes || []), ...extractAvailableSizes(context.html || '', context.facts || new Map())]
+    .map(normalizeSizeOption)
+    .filter(Boolean), 18);
+  const sizeNotes = String(draft.sizeNotes || sizeNotesFromFacts(context.facts || new Map())).trim();
+  if (!sizes.length && /size\s*chart|label\s+size|dropdown_selected_size_name|variation_size_name/i.test(context.html || '')) {
+    warnings.push(fieldWarning(
+      'sizes',
+      'Size options need review',
+      'The source had size-related markup, but only chart/noisy size data was found. Add available sizes manually if needed.'
+    ));
+  }
+
+  return {
+    ...draft,
+    description: polishedDescription(draft.description, { title: draft.name }),
+    rating: safeRating,
+    ratingCount: safeRatingCount,
+    colors,
+    sizes,
+    sizeNotes,
+    tags: uniqueList(
+      (draft.tags || [])
+        .map((tag) => String(tag || '').toLowerCase().replace(/\s+/g, ' ').trim())
+        .filter((tag) => tag && tag.length <= 32 && !/^(?:cc|care instructions|machine wash|hand wash|\d+(?:\.\d+)?%\s+\w+)$/.test(tag)),
+      14
+    ),
+    garmentPlacement: placement,
+    warnings
+  };
 }
 
 function numberFrom(value) {
@@ -929,7 +1149,7 @@ async function buildProductDraft(affiliateLink, { itemType = 'auto' } = {}) {
     ? 'accessory'
     : normalizeGarmentPlacement('', { name: title, category, description, tags: bullets });
 
-  return {
+  return refineProductDraft({
     affiliateLink: url,
     sourceUrl: canonicalUrl,
     name: title,
@@ -945,7 +1165,7 @@ async function buildProductDraft(affiliateLink, { itemType = 'auto' } = {}) {
     description,
     tags: buildProductTags({ title, description, bullets, brand, category, gender, facts }),
     remoteImageUrl: absoluteUrl(image, finalUrl)
-  };
+  }, { facts, bullets, html, finalUrl });
 }
 
 function externalProductId(value) {
@@ -985,6 +1205,29 @@ function draftToExternalProduct(draft, fallbackQuery = '') {
     imageUrl,
     isNewArrival: true
   };
+}
+
+async function cachedRemoteProductImage(remoteImageUrl) {
+  const url = cleanUrl(remoteImageUrl);
+  if (!url) return null;
+  const { response, buffer } = await safeFetchBuffer(url, {
+    maxBytes: 8 * 1024 * 1024,
+    headers: {
+      accept: 'image/avif,image/webp,image/apng,image/png,image/jpeg,*/*;q=0.8',
+      'user-agent': 'Mozilla/5.0 Lookmefy product image importer'
+    }
+  });
+  if (!response.ok) throw new Error(`Fetched image returned HTTP ${response.status}`);
+  const normalized = await normalizeRasterImageBuffer({
+    buffer,
+    filename: `product-remote-${Date.now()}-${Math.round(Math.random() * 1e9)}.jpg`
+  });
+  return saveBuffer({
+    key: normalized.filename,
+    buffer: normalized.buffer,
+    mimetype: normalized.mimetype,
+    filename: normalized.filename
+  });
 }
 
 function textForIntent(product = {}) {
@@ -1066,6 +1309,8 @@ function applyProductUpdate(product, body = {}) {
   if (body.description !== undefined) product.description = String(body.description || '').trim();
   if (body.tags !== undefined) product.tags = splitList(body.tags);
   if (body.colors !== undefined) product.colors = splitList(body.colors);
+  if (body.sizes !== undefined) product.sizes = splitList(body.sizes);
+  if (body.sizeNotes !== undefined) product.sizeNotes = String(body.sizeNotes || '').trim();
   if (body.tryOnModel !== undefined) product.tryOnModel = normalizeTryOnModel(body.tryOnModel);
   if (body.isFeatured !== undefined) product.isFeatured = toBoolean(body.isFeatured);
   if (body.isNewArrival !== undefined) product.isNewArrival = toBoolean(body.isNewArrival);
@@ -1351,7 +1596,11 @@ router.post('/', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimi
     });
     if (useBunny() || normalized.filename !== req.file.filename) await fs.unlink(req.file.path).catch(() => {});
   } else if (req.body.remoteImageUrl) {
-    image = { remoteUrl: cleanUrl(req.body.remoteImageUrl) };
+    try {
+      image = await cachedRemoteProductImage(req.body.remoteImageUrl);
+    } catch {
+      image = { remoteUrl: cleanUrl(req.body.remoteImageUrl) };
+    }
   }
 
   if (!image) return res.status(400).json({ message: 'Product image or fetched image URL is required' });
@@ -1373,6 +1622,8 @@ router.post('/', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimi
     description: req.body.description,
     tags: splitList(req.body.tags),
     colors: splitList(req.body.colors),
+    sizes: splitList(req.body.sizes),
+    sizeNotes: req.body.sizeNotes,
     tryOnModel: normalizeTryOnModel(req.body.tryOnModel),
     isFeatured: toBoolean(req.body.isFeatured),
     isNewArrival: toBoolean(req.body.isNewArrival),
@@ -1568,6 +1819,7 @@ export {
   getBestBrand,
   getProductFacts,
   normalizeGarmentPlacement,
+  refineProductDraft,
   runProductRecategorizationJob,
   temporaryExternalAmazonFilter
 };

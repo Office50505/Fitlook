@@ -19,6 +19,7 @@ import {
   cleanBrand,
   getBestBrand,
   getProductFacts,
+  refineProductDraft,
   temporaryExternalAmazonFilter
 } from '../server/routes/products.js';
 
@@ -112,7 +113,52 @@ test('rejects accessories and invalid gender/category pairs', () => {
 
 test('classifies garment placement', () => {
   assert.equal(inferPlacement({ category: 'Jeans', name: 'Blue jeans' }), 'bottom');
+  assert.equal(inferPlacement({ category: 'Dresses', name: 'Halter neck midi dress' }), 'full-body');
   assert.equal(inferPlacement({ category: 'T-Shirts', name: 'Crew neck tee' }), 'top');
+});
+
+test('refines fetched product drafts with warnings for review', () => {
+  const facts = new Map([['color', 'Black']]);
+  const html = '<select id="native_dropdown_selected_size_name"><option>Select Size</option><option>S</option><option>M</option><option>XL</option></select>';
+  const draft = refineProductDraft({
+    name: 'Aahwan Pink Solid Halter Neck Bodycon Midi Dress',
+    brand: 'Aahwan',
+    category: 'dresses',
+    gender: 'women',
+    garmentPlacement: 'top',
+    rating: 4,
+    ratingCount: 0,
+    description: 'Buy Aahwan Black Solid Halter Neck Bodycon Midi Dress for Women',
+    tags: ['dresses', 'women', 'aahwan', '95% cotton', '5% spedex', 'cc', 'solid'],
+    remoteImageUrl: 'https://m.media-amazon.in/images/I/example.jpg'
+  }, { facts, html });
+
+  assert.equal(draft.garmentPlacement, 'full-body');
+  assert.equal(draft.rating, '');
+  assert.equal(draft.ratingCount, '');
+  assert.ok(draft.description.startsWith('Aahwan Black'));
+  assert.ok(draft.colors.includes('black'));
+  assert.ok(draft.colors.includes('pink'));
+  assert.ok(!draft.tags.includes('cc'));
+  assert.ok(!draft.tags.includes('5% spedex'));
+  assert.ok(!draft.tags.includes('95% cotton'));
+  assert.deepEqual(draft.sizes, ['S', 'M', 'XL']);
+  assert.ok(draft.warnings.some((warning) => warning.title === 'Color conflict'));
+  assert.ok(draft.warnings.some((warning) => warning.title === 'Rating count missing'));
+});
+
+test('refined product drafts warn when only size-chart text is available', () => {
+  const draft = refineProductDraft({
+    name: 'Cotton Shirt',
+    category: 'shirts',
+    description: 'Regular cotton shirt'
+  }, {
+    facts: new Map(),
+    html: '<div>Label Size Bust Waist Hip Length cm inches</div>'
+  });
+
+  assert.deepEqual(draft.sizes, []);
+  assert.ok(draft.warnings.some((warning) => warning.title === 'Size options need review'));
 });
 
 test('dry-run performs zero writes and enforces per-category limit', async () => {

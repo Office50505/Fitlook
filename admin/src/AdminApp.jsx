@@ -115,6 +115,7 @@ function displayCategory(product) {
 
 function garmentPlacementLabel(value) {
   if (value === 'accessory') return 'Accessory';
+  if (value === 'full-body') return 'Full body';
   return value === 'bottom' ? 'Bottom' : 'Top';
 }
 
@@ -126,6 +127,7 @@ function inferGarmentPlacement(product = {}) {
     Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
   ].filter(Boolean).join(' ').toLowerCase();
   if (/\b(accessor(?:y|ies)|bags?|handbags?|purses?|wallets?|belts?|scarves?|jewelry|jewellery|necklaces?|rings?|earrings?|bracelets?|watches?|sunglasses?|eyewear|hats?|caps?)\b/.test(text)) return 'accessory';
+  if (/\b(outfits?|sets?|co-?ords?|coordinated|tracksuits?|suits?|jumpsuits?|rompers?|playsuits?|dress(?:es)?|gowns?|sarees?|saris?|lehenga(?:s)?|kurta\s?sets?)\b/.test(text)) return 'full-body';
   return /\b(pants?|trousers?|jeans?|denim|shorts?|skirts?|leggings?|joggers?|palazzos?|bottoms?|lower)\b/.test(text) ? 'bottom' : 'top';
 }
 
@@ -433,7 +435,8 @@ function AdminApp() {
   const [draftStatus, setDraftStatus] = useState({
     tone: 'idle',
     title: 'Ready to fetch',
-    detail: 'Paste a product link to prefill the draft, or complete the fields manually.'
+    detail: 'Paste a product link to prefill the draft, or complete the fields manually.',
+    warnings: []
   });
   const [editingProduct, setEditingProduct] = useState(null);
   const [editMessage, setEditMessage] = useState('');
@@ -678,8 +681,8 @@ function AdminApp() {
 
   const setField = (name, value) => {
     const field = formRef.current?.elements.namedItem(name);
-    if (!field || value === undefined || value === null || value === '') return;
-    field.value = Array.isArray(value) ? value.join(', ') : value;
+    if (!field || value === undefined) return;
+    field.value = Array.isArray(value) ? value.join(', ') : (value ?? '');
   };
 
   const previewAffiliate = async () => {
@@ -701,7 +704,8 @@ function AdminApp() {
     setDraftStatus({
       tone: 'loading',
       title: 'Fetching product details',
-      detail: 'Reading the source page, looking for product copy, price, and usable imagery.'
+      detail: 'Reading the source page, looking for product copy, price, and usable imagery.',
+      warnings: []
     });
     setMessage('Fetching product details...');
     try {
@@ -723,6 +727,9 @@ function AdminApp() {
         'ratingCount',
         'description',
         'tags',
+        'colors',
+        'sizes',
+        'sizeNotes',
         'remoteImageUrl',
         'sourceUrl'
       ];
@@ -736,14 +743,16 @@ function AdminApp() {
       setDraftStatus({
         tone: 'success',
         title: 'Draft details fetched',
-        detail: `Filled ${filledCount} fields${draft.remoteImageUrl ? ' and found a product image' : ''}. Review the draft before publishing.`
+        detail: `Filled ${filledCount} fields${draft.remoteImageUrl ? ' and found a product image' : ''}. Review the draft before publishing.`,
+        warnings: Array.isArray(draft.warnings) ? draft.warnings : []
       });
       setMessage('Draft filled. Review it, adjust anything missing, then save.');
     } catch (err) {
       setDraftStatus({
         tone: 'error',
         title: 'Could not fetch details',
-        detail: err.message
+        detail: err.message,
+        warnings: []
       });
       setMessage(err.message);
     } finally {
@@ -946,6 +955,8 @@ function AdminApp() {
       badge: fieldValue(form, 'badge'),
       tags: fieldValue(form, 'tags'),
       colors: fieldValue(form, 'colors'),
+      sizes: fieldValue(form, 'sizes'),
+      sizeNotes: fieldValue(form, 'sizeNotes'),
       description: fieldValue(form, 'description'),
       affiliateLink: fieldValue(form, 'affiliateLink'),
       sourceUrl: fieldValue(form, 'sourceUrl'),
@@ -1260,10 +1271,11 @@ function AdminApp() {
                   <label className="field"><span>Category</span><input name="category" required placeholder="shirts" disabled={creatingProduct} /></label>
                   <label className="field"><span>Gender</span><select name="gender" defaultValue="men" disabled={creatingProduct}><option value="men">Men</option><option value="women">Women</option><option value="unisex">Unisex</option></select></label>
                 </div>
-                <fieldset className="segmented-field" disabled={creatingProduct}>
+                <fieldset className="segmented-field placement-field" disabled={creatingProduct}>
                   <legend>Fit area</legend>
                   <label><input type="radio" name="garmentPlacement" value="top" defaultChecked /><span>Top</span></label>
                   <label><input type="radio" name="garmentPlacement" value="bottom" /><span>Bottom</span></label>
+                  <label><input type="radio" name="garmentPlacement" value="full-body" /><span>Full body</span></label>
                   <label><input type="radio" name="garmentPlacement" value="accessory" /><span>Accessory</span></label>
                 </fieldset>
                 <label className="field"><span>Description</span><textarea name="description" rows="4" placeholder="Short product description" disabled={creatingProduct} /></label>
@@ -1281,6 +1293,8 @@ function AdminApp() {
                 <label className="field"><span>Badge</span><input name="badge" placeholder="New" disabled={creatingProduct} /></label>
                 <label className="field"><span>Tags</span><input name="tags" placeholder="linen, casual, summer" disabled={creatingProduct} /></label>
                 <label className="field"><span>Colors</span><input name="colors" placeholder="#d9c8b4, #123323, white" disabled={creatingProduct} /></label>
+                <label className="field"><span>Sizes</span><input name="sizes" placeholder="S, M, L, XL" disabled={creatingProduct} /></label>
+                <label className="field"><span>Size note</span><input name="sizeNotes" placeholder="Optional fit or sizing note" disabled={creatingProduct} /></label>
               </section>
               <section className="form-section">
                 <div className="form-section-title"><strong>Media & Publish</strong><span>Upload an image only if affiliate fetch did not find one.</span></div>
@@ -2736,6 +2750,7 @@ function AdminLogin({ onLogin, theme, onThemeToggle }) {
 function DraftFetchStatus({ status }) {
   const tone = status?.tone || 'idle';
   const isLoading = tone === 'loading';
+  const warnings = Array.isArray(status?.warnings) ? status.warnings : [];
 
   return (
     <div className={`draft-fetch-status ${tone}`} role={tone === 'error' ? 'alert' : 'status'} aria-live="polite">
@@ -2751,6 +2766,16 @@ function DraftFetchStatus({ status }) {
             <em />
             <em />
           </div>
+        )}
+        {warnings.length > 0 && (
+          <ul className="draft-warning-list">
+            {warnings.slice(0, 5).map((warning, index) => (
+              <li key={`${warning.field || 'draft'}-${index}`} className={warning.level === 'info' ? 'info' : ''}>
+                <strong>{warning.title || 'Review field'}</strong>
+                <span>{warning.detail || 'Check this field before publishing.'}</span>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>
@@ -2949,6 +2974,7 @@ function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlace
             <div className="row-segmented" aria-label={`Fit area for ${product.name}`}>
               <button className={(product.garmentPlacement || 'top') === 'top' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'top')}>Top</button>
               <button className={product.garmentPlacement === 'bottom' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'bottom')}>Bottom</button>
+              <button className={product.garmentPlacement === 'full-body' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'full-body')}>Full body</button>
               <button className={product.garmentPlacement === 'accessory' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'accessory')}>Accessory</button>
             </div>
           </div>
@@ -2993,10 +3019,11 @@ function ProductEditor({ product, message, saving, onClose, onSubmit }) {
               <label className="field"><span>Category</span><input name="category" required defaultValue={product.category || ''} /></label>
               <label className="field"><span>Gender</span><select name="gender" defaultValue={product.gender || 'unisex'}><option value="men">Men</option><option value="women">Women</option><option value="unisex">Unisex</option></select></label>
             </div>
-            <fieldset className="segmented-field">
+            <fieldset className="segmented-field placement-field">
               <legend>Fit area</legend>
               <label><input type="radio" name="garmentPlacement" value="top" defaultChecked={(product.garmentPlacement || 'top') === 'top'} /><span>Top</span></label>
               <label><input type="radio" name="garmentPlacement" value="bottom" defaultChecked={product.garmentPlacement === 'bottom'} /><span>Bottom</span></label>
+              <label><input type="radio" name="garmentPlacement" value="full-body" defaultChecked={product.garmentPlacement === 'full-body'} /><span>Full body</span></label>
               <label><input type="radio" name="garmentPlacement" value="accessory" defaultChecked={product.garmentPlacement === 'accessory'} /><span>Accessory</span></label>
             </fieldset>
             <label className="field"><span>Description</span><textarea name="description" rows="4" defaultValue={product.description || ''} /></label>
@@ -3019,6 +3046,8 @@ function ProductEditor({ product, message, saving, onClose, onSubmit }) {
             </div>
             <label className="field"><span>Tags</span><input name="tags" defaultValue={(product.tags || []).join(', ')} /></label>
             <label className="field"><span>Colors</span><input name="colors" defaultValue={(product.colors || []).join(', ')} /></label>
+            <label className="field"><span>Sizes</span><input name="sizes" defaultValue={(product.sizes || []).join(', ')} /></label>
+            <label className="field"><span>Size note</span><input name="sizeNotes" defaultValue={product.sizeNotes || ''} placeholder="Optional fit or sizing note" /></label>
             <div className="checks">
               <label><input name="isFeatured" type="checkbox" defaultChecked={Boolean(product.isFeatured)} /> Featured</label>
               <label><input name="isNewArrival" type="checkbox" defaultChecked={Boolean(product.isNewArrival)} /> New arrival</label>

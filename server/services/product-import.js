@@ -20,9 +20,9 @@ const DEFAULT_REPORTS_DIR = path.join(ROOT_DIR, 'reports');
 const REPLACE_CONFIRMATION = 'REPLACE_ACTIVE_CATALOG';
 
 const ACCESSORY_PATTERN = /\b(bags?|handbags?|backpacks?|wallets?|purses?|jewellery|jewelry|watches?|belts?|sunglasses|eyewear|caps?|hats?|scarves?|ties?|bow\s*ties?|gloves?|socks?|shoes?|sandals?|slippers?|footwear|cosmetics?|perfumes?|electronics?|toys?|home|stationery|fabric\s*only|mannequins?|costume\s+accessor(?:y|ies))\b/i;
-const CLOTHING_PATTERN = /\b(cloth(?:e|es|ing)?|garments?|apparel|shirts?|t\s*-?\s*shirts?|tops?|blouses?|tunics?|kurtas?|kurtis?|sarees?|lehengas?|dresses?|gowns?|jumpsuits?|co-ords?|jeans?|trousers?|pants?|chinos?|joggers?|leggings?|palazzos?|skirts?|shorts?|hoodies?|sweatshirts?|sweaters?|jackets?|blazers?|suits?|sherwanis?|dhotis?|lungis?|pajamas?|pyjamas?|night(?:ies|y|wear|suits?)|vests?|briefs?|trunks?|boxers?|bras?|panties|lingerie|camisoles?|slips?|shapewear|swimwear|bikinis?)\b/i;
+const CLOTHING_PATTERN = /\b(cloth(?:e|es|ing)?|garments?|apparel|shirts?|t\s*-?\s*shirts?|tops?|blouses?|tunics?|kurtas?|kurtis?|sarees?|lehengas?|dress(?:es)?|gowns?|jumpsuits?|co-ords?|jeans?|trousers?|pants?|chinos?|joggers?|leggings?|palazzos?|skirts?|shorts?|hoodies?|sweatshirts?|sweaters?|jackets?|blazers?|suits?|sherwanis?|dhotis?|lungis?|pajamas?|pyjamas?|night(?:ies|y|wear|suits?)|vests?|briefs?|trunks?|boxers?|bras?|panties|lingerie|camisoles?|slips?|shapewear|swimwear|bikinis?)\b/i;
 const BOTTOM_PATTERN = /\b(jeans?|trousers?|chinos?|cargo\s+pants?|joggers?|track\s+pants?|shorts?|skirts?|leggings?|palazzos?|pajama\s+bottoms?|pyjama\s+bottoms?|dhotis?|lungis?)\b/i;
-const FULL_BODY_PATTERN = /\b(dresses?|sarees?|gowns?|jumpsuits?|nighties|suits?|co-ord\s+sets?|kurta\s+sets?|salwar\s+suits?|lehengas?|sherwanis?)\b/i;
+const FULL_BODY_PATTERN = /\b(dress(?:es)?|sarees?|gowns?|jumpsuits?|nighties|suits?|co-ord\s+sets?|kurta\s+sets?|salwar\s+suits?|lehengas?|sherwanis?)\b/i;
 const UNAVAILABLE_PATTERN = /\b(currently\s+unavailable|out\s+of\s+stock|temporarily\s+unavailable|not\s+available)\b/i;
 
 function compact(value) {
@@ -119,8 +119,9 @@ function normalizeCategoryForGender(category, gender, taxonomy) {
 
 function inferPlacement(product = {}) {
   const explicit = normalizeKey(product.garmentPlacement);
-  if (explicit === 'bottom' || explicit === 'top' || explicit === 'accessory') return explicit;
+  if (explicit === 'bottom' || explicit === 'top' || explicit === 'accessory' || explicit === 'full-body') return explicit;
   const text = productText(product);
+  if (FULL_BODY_PATTERN.test(text)) return 'full-body';
   if (BOTTOM_PATTERN.test(text)) return 'bottom';
   return 'top';
 }
@@ -190,6 +191,8 @@ function validateAndBuildProduct(draft, entry, context = {}) {
     description: compact(draft.description),
     tags,
     colors: splitList(entry.colors),
+    sizes: splitList(entry.sizes || draft.sizes),
+    sizeNotes: compact(entry.sizeNotes || draft.sizeNotes),
     tryOnModel: inferTryOnModel({ ...draft, category, tags }),
     image: { remoteUrl: imageUrl },
     sourceProvider: 'amazon',

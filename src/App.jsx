@@ -8979,6 +8979,8 @@ function AuthPage({ mode, setUser }) {
   const bodyPhotoCameraRef = useRef(null);
   const [message, setMessage] = useState('');
   const [nameValue, setNameValue] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
   const [signupStep, setSignupStep] = useState('phone');
   const [phoneValue, setPhoneValue] = useState('');
   const [otpValue, setOtpValue] = useState('');
@@ -9008,6 +9010,8 @@ function AuthPage({ mode, setUser }) {
     setOtpSession('');
     setLocalTestOtp('');
     setLocalOtpIssue('');
+    setSignupPassword('');
+    setSignupConfirmPassword('');
     if (mode === 'signup') {
       setSignupStep('phone');
     }
@@ -9208,12 +9212,19 @@ function AuthPage({ mode, setUser }) {
     if (isSubmitting) return;
     if (isSignup && signupStep !== 'details') return;
     setIsSubmitting(true);
-    setMessage(isSignup ? 'Creating account...' : 'Working...');
+    setMessage(isSignup ? 'Creating account...' : 'Logging in...');
     try {
       const form = event.currentTarget;
-      const body = isSignup ? new FormData(form) : JSON.stringify(Object.fromEntries(new FormData(form)));
+      if (!isSignup && !isLikelyIndianMobile(phoneValue)) throw new Error('Enter a valid mobile number.');
+      const body = isSignup
+        ? new FormData(form)
+        : JSON.stringify({ phone: phoneValue, password: String(new FormData(form).get('password') || '') });
       if (isSignup) {
         const cleanName = String(body.get('name') || '').trim();
+        const password = String(body.get('password') || '');
+        const confirmPassword = String(body.get('confirmPassword') || '');
+        if (password.length < 12) throw new Error('Password must be at least 12 characters.');
+        if (password !== confirmPassword) throw new Error('Passwords do not match.');
         const random = Math.random().toString(36).slice(2, 8);
         const suffix = `${Date.now().toString(36)}${random}`;
         const baseUsername = cleanName
@@ -9225,7 +9236,7 @@ function AuthPage({ mode, setUser }) {
         if (!bodyPhoto) throw new Error('Choose or take a profile photo first.');
         body.set('username', `${baseUsername}_${suffix}`.slice(0, 48));
         body.set('email', `profile_${suffix}@fitlook.local`);
-        body.set('password', `Lookmefy-${suffix}-${random}`);
+        body.set('password', password);
         body.set('phone', phoneValue);
         body.set('otpSession', otpSession);
         body.set('bodyPhoto', await prepareBodyPhoto(bodyPhoto));
@@ -9273,25 +9284,22 @@ function AuthPage({ mode, setUser }) {
           <div className="auth-login-card">
             <a className="auth-login-mobile-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
             <h1 id="login-title">Welcome Back</h1>
-            <p className="auth-login-copy">Login with your mobile number and OTP.</p>
-            <div className="auth-login-tabs" aria-hidden="true"><span>Mobile OTP</span></div>
-            <form className="auth-login-form" onSubmit={(event) => event.preventDefault()} aria-busy={otpLoading}>
+            <p className="auth-login-copy">Login with your mobile number and password.</p>
+            <div className="auth-login-tabs" aria-hidden="true"><span>Mobile Password</span></div>
+            <form className="auth-login-form" onSubmit={submit} aria-busy={isSubmitting}>
               <label className="signup-field">
                 <span>Mobile number</span>
                 <input name="loginPhone" type="tel" inputMode="numeric" pattern="[0-9+\\s-]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('login', event.target.value)} />
               </label>
-              <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestLoginOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
-              {otpSession && (
-                <div className="auth-signup-reference-fields">
-                  <OtpCodeFields idPrefix="login-otp" value={otpValue} onChange={setOtpValue} disabled={otpLoading} />
-                  {renderLocalTestOtpHelper('login')}
-                  <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifyLoginOtp}>{otpLoading ? 'Verifying...' : 'Verify & login'}</button>
-                </div>
-              )}
+              <label className="signup-field">
+                <span>Password</span>
+                <input name="password" type="password" required autoComplete="current-password" placeholder="Enter your password" />
+              </label>
+              <button className="signup-submit-button signup-otp-button" type="submit" disabled={isSubmitting || !phoneValue.trim()}>{isSubmitting ? 'Logging in...' : 'Login'}</button>
               <p className="auth-login-switch-inline">New to Lookmefy? <a href="/signup">Sign up</a></p>
               <p className="auth-login-switch-inline"><a href="/categories">Explore without login</a></p>
             </form>
-            {message && <p className={`auth-login-message form-message ${/OTP sent|Local code filled|Logging in|Working/.test(message) ? '' : 'error-message'}`}>{message}</p>}
+            {message && <p className={`auth-login-message form-message ${/Logging in|Working/.test(message) ? '' : 'error-message'}`}>{message}</p>}
           </div>
         </section>
       </main>
@@ -9305,7 +9313,7 @@ function AuthPage({ mode, setUser }) {
           <a className="auth-signup-reference-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
           <header className="auth-signup-reference-head">
             <h1 id="signup-title">{signupStep === 'phone' ? <>Verify Your<br />Number</> : <>Create Your<br />Account</>}</h1>
-            <p>{signupStep === 'phone' ? 'Start with your mobile number and OTP verification.' : 'Add the style details for your AI try-on profile.'}</p>
+            <p>{signupStep === 'phone' ? 'Start with your mobile number and OTP verification.' : 'Set your password and add the style details for your AI try-on profile.'}</p>
           </header>
 
           {signupStep === 'phone' ? (
@@ -9332,6 +9340,14 @@ function AuthPage({ mode, setUser }) {
                 <label className="signup-field">
                   <span>Full name</span>
                   <input name="name" required autoFocus={shouldAutoFocusAuthField} value={nameValue} autoComplete="name" placeholder="Enter your name" onChange={(event) => setNameValue(event.target.value)} />
+                </label>
+                <label className="signup-field">
+                  <span>Create password</span>
+                  <input name="password" type="password" required minLength="12" value={signupPassword} autoComplete="new-password" placeholder="At least 12 characters" onChange={(event) => setSignupPassword(event.target.value)} />
+                </label>
+                <label className="signup-field">
+                  <span>Confirm password</span>
+                  <input name="confirmPassword" type="password" required minLength="12" value={signupConfirmPassword} autoComplete="new-password" placeholder="Repeat your password" onChange={(event) => setSignupConfirmPassword(event.target.value)} />
                 </label>
               </div>
 

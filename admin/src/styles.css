@@ -3081,6 +3081,10 @@ h1 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.segmented-field.placement-field {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .segmented-field legend {
   grid-column: 1 / -1;
   padding: 0;
@@ -3180,6 +3184,23 @@ h1 {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.draft-warning-list {
+  display: grid;
+  gap: 7px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.draft-warning-list li {
+  border-left: 3px solid #c17632;
+  padding: 2px 0 2px 9px;
+}
+
+.draft-warning-list li.info {
+  border-left-color: rgba(18, 51, 35, .46);
 }
 
 .fetch-status-steps {
@@ -4067,6 +4088,10 @@ h1 {
 
   .admin-workspace {
     padding: 14px;
+  }
+
+  .segmented-field.placement-field {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .admin-sidebar {

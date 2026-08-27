@@ -756,18 +756,19 @@ router.get('/username-suggestions', usernameSuggestionLimiter, async (req, res) 
 });
 
 router.post('/login', authIpLimiter, loginAttemptLimiter, asyncRoute(async (req, res) => {
+  const phone = normalizePhone(req.body?.phone);
   const identifier = String(req.body.email || req.body.username || '').trim().toLowerCase();
   const { password } = req.body;
-  if (!identifier || !password) return res.status(400).json({ message: 'Email or username and password are required' });
+  if ((!phone && !identifier) || !password) return res.status(400).json({ message: 'Mobile number and password are required' });
   const user = await User.findOne({
     $or: [
-      { email: identifier },
-      { username: normalizeUsername(identifier) }
+      ...(phone ? [{ phone }] : []),
+      ...(identifier ? [{ email: identifier }, { username: normalizeUsername(identifier) }] : [])
     ]
   });
-  if (!user) return res.status(401).json({ message: 'Invalid email/username or password' });
+  if (!user) return res.status(401).json({ message: 'Invalid mobile number or password' });
   const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ message: 'Invalid email/username or password' });
+  if (!ok) return res.status(401).json({ message: 'Invalid mobile number or password' });
   const accessError = accountAccessError(user);
   if (accessError) return res.status(accessError.statusCode).json({ message: accessError.message });
   res.json(await authenticatedUserPayload(user, req, 'password'));

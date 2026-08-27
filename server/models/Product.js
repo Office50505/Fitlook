@@ -4,13 +4,14 @@ import { productAvailabilityStatus } from '../utils/productAvailability.js';
 const LEGACY_UNRESTRICTED_MODEL = ['v' + 'to', 'unrestricted'].join('-');
 
 function inferGarmentPlacement(product = {}) {
-  if (['top', 'bottom', 'accessory'].includes(product.garmentPlacement)) return product.garmentPlacement;
+  if (['top', 'bottom', 'accessory', 'full-body'].includes(product.garmentPlacement)) return product.garmentPlacement;
   const text = [
     product.name,
     product.category,
     product.description,
     Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
   ].filter(Boolean).join(' ').toLowerCase();
+  if (/\b(outfits?|sets?|co-?ords?|coordinated|tracksuits?|suits?|jumpsuits?|rompers?|playsuits?|dress(?:es)?|gowns?|sarees?|saris?|lehenga(?:s)?|kurta\s?sets?)\b/.test(text)) return 'full-body';
   if (/\b(pants?|trousers?|jeans?|denim|shorts?|skirts?|leggings?|joggers?|palazzos?|bottoms?|lower)\b/.test(text)) return 'bottom';
   return 'top';
 }
@@ -35,7 +36,7 @@ const productSchema = new mongoose.Schema(
     gender: { type: String, trim: true, default: 'unisex' },
     garmentPlacement: {
       type: String,
-      enum: ['top', 'bottom', 'accessory'],
+      enum: ['top', 'bottom', 'accessory', 'full-body'],
       default: 'top',
       index: true
     },
@@ -49,6 +50,8 @@ const productSchema = new mongoose.Schema(
     description: { type: String, trim: true },
     tags: [{ type: String, trim: true }],
     colors: [{ type: String, trim: true }],
+    sizes: [{ type: String, trim: true }],
+    sizeNotes: { type: String, trim: true },
     tryOnModel: {
       type: String,
       enum: ['gpt-image-2', 'wan-v2.6-image-to-image'],
@@ -136,6 +139,8 @@ function productToClient(product) {
     description: decodeHtml(product.description),
     tags: product.tags?.map(decodeHtml),
     colors: product.colors,
+    sizes: product.sizes?.map(decodeHtml),
+    sizeNotes: decodeHtml(product.sizeNotes),
     tryOnModel: product.tryOnModel === LEGACY_UNRESTRICTED_MODEL ? 'wan-v2.6-image-to-image' : product.tryOnModel || 'gpt-image-2',
     imageUrl: product.image?.url || (product.image?.path ? `/${product.image.path}` : product.image?.remoteUrl || null),
     isFeatured: product.isFeatured,
