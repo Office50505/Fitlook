@@ -39,12 +39,12 @@ Validate with `curl -fsS http://127.0.0.1/nginx_status`. Do not expose this rout
 
 ## 3. Prometheus or CloudWatch
 
-Prometheus can scrape `https://api.lookmefy.in/api/metrics/prometheus` with `Authorization: Bearer <METRICS_BEARER_TOKEN>`. The endpoint is hidden with `404` when no token is configured.
+Prometheus can scrape `https://api.lookmefy.com/api/metrics/prometheus` with `Authorization: Bearer <METRICS_BEARER_TOKEN>`. The endpoint is hidden with `404` when no token is configured.
 
 For AWS, attach the CloudWatch Agent or an OpenTelemetry collector to both instances and use the same instance/environment labels. Configure external checks against:
 
-- `https://api.lookmefy.in/api/health/live` for process availability.
-- `https://api.lookmefy.in/api/health/ready` for MongoDB/Redis readiness.
+- `https://api.lookmefy.com/api/health/live` for process availability.
+- `https://api.lookmefy.com/api/health/ready` for MongoDB/Redis readiness.
 
 Alerts should cover: readiness failure for two consecutive checks, HTTP 5xx rate above 2%, p95 above 2 seconds, disk above 80%, memory above 85%, and no healthy backend target. An SNS topic/email/Slack destination is required before alerts can notify anyone.
 

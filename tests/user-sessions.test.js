@@ -18,7 +18,7 @@ test('session identifiers are stored as deterministic hashes', () => {
 
 test('session paths exclude query strings and fragments', () => {
   assert.equal(normalizeSessionPath('/product/123?token=secret#details'), '/product/123');
-  assert.equal(normalizeSessionPath('https://lookmefy.in/categories?gender=women'), '/categories');
+  assert.equal(normalizeSessionPath('https://lookmefy.com/categories?gender=women'), '/categories');
 });
 
 test('active duration increments are capped and ignore stale gaps', () => {
