@@ -8747,6 +8747,251 @@ function OtpCodeFields({ idPrefix, value, onChange, disabled }) {
   );
 }
 
+function AuthEditorialStory() {
+  return (
+    <section className="auth-login-story auth-login-reference-story" aria-label="Lookmefy fashion experience">
+      <OptimizedImage className="auth-login-background" src={asset('login-editorial-couple.png')} alt="" eager />
+      <div className="auth-login-scrim" aria-hidden="true" />
+      <a className="auth-login-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
+      <div className="auth-login-story-copy">
+        <h2>AI Fashion Try-On Experience</h2>
+        <p>See it on you before you buy it. Experience a more personal way to shop.</p>
+        <ul className="auth-login-benefits" aria-label="Lookmefy benefits">
+          {[
+            ['AI Try-On', 'See selected styles on your profile.'],
+            ['Smart Closet', 'Keep your wardrobe in one place.'],
+            ['AI Stylist', 'Find looks that fit your point of view.']
+          ].map(([title, copy]) => (
+            <li key={title}>
+              <strong>{title}</strong>
+              <small>{copy}</small>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <p className="auth-login-copyright">Lookmefy, curated with intelligence.</p>
+    </section>
+  );
+}
+
+function ForgotPasswordPage() {
+  const [step, setStep] = useState('phone');
+  const [phoneValue, setPhoneValue] = useState('');
+  const [otpValue, setOtpValue] = useState('');
+  const [otpSession, setOtpSession] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [message, setMessage] = useState('');
+  const [messageTone, setMessageTone] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [localOtpLoading, setLocalOtpLoading] = useState(false);
+  const [localTestOtp, setLocalTestOtp] = useState('');
+  const [localOtpIssue, setLocalOtpIssue] = useState('');
+  const shouldAutoFocusAuthField = typeof window !== 'undefined'
+    && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches
+    && window.innerWidth > 700;
+
+  const cancelReset = async (session = otpSession, phone = phoneValue) => {
+    if (!session || !phone) return;
+    try {
+      await api('/auth/password-reset/cancel-otp', {
+        method: 'POST',
+        body: JSON.stringify({ phone, otpSession: session }),
+        retry: 0
+      });
+    } catch {
+      // Reset completion remains server-authoritative.
+    }
+  };
+
+  const fetchLocalTestOtp = async (session, phone, { fill = false } = {}) => {
+    if (!ENABLE_TEST_OTP_HELPER || !session || !phone || localOtpLoading) return '';
+    setLocalOtpLoading(true);
+    setLocalOtpIssue('');
+    try {
+      const params = new URLSearchParams({ purpose: 'password-reset', phone, otpSession: session });
+      const data = await api(`/auth/test-otp?${params.toString()}`, { retry: 0 });
+      const otp = String(data.otp || '').replace(/\D/g, '').slice(0, 6);
+      setLocalTestOtp(otp);
+      if (fill) setOtpValue(otp);
+      if (!otp) setLocalOtpIssue('No local test OTP was returned for this request.');
+      return otp;
+    } catch (error) {
+      setLocalTestOtp('');
+      const detail = error?.message && !/not found/i.test(error.message)
+        ? ` ${error.message}`
+        : ' Enable mock OTP delivery and ENABLE_TEST_OTP_HELPER on the server.';
+      setLocalOtpIssue(`Local test OTP is unavailable.${detail}`);
+      return '';
+    } finally {
+      setLocalOtpLoading(false);
+    }
+  };
+
+  const requestOtp = async (event) => {
+    event?.preventDefault();
+    if (loading) return;
+    if (!isLikelyIndianMobile(phoneValue)) {
+      setMessage('Enter a valid mobile number.');
+      setMessageTone('error');
+      return;
+    }
+    setLoading(true);
+    setMessage('');
+    setMessageTone('');
+    try {
+      const data = await api('/auth/password-reset/request-otp', {
+        method: 'POST',
+        body: JSON.stringify({ phone: phoneValue })
+      });
+      const nextSession = data.otpSession || '';
+      const nextPhone = data.phone || phoneValue;
+      setOtpSession(nextSession);
+      setPhoneValue(nextPhone);
+      setOtpValue('');
+      setLocalTestOtp('');
+      setLocalOtpIssue('');
+      setStep('otp');
+      const testOtp = await fetchLocalTestOtp(nextSession, nextPhone);
+      setMessage(testOtp ? `OTP sent. Test code: ${testOtp}` : data.message || 'OTP sent.');
+      setMessageTone('success');
+    } catch (error) {
+      setMessage(error.message);
+      setMessageTone('error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async (event) => {
+    event.preventDefault();
+    if (loading) return;
+    setLoading(true);
+    setMessage('');
+    setMessageTone('');
+    try {
+      const data = await api('/auth/password-reset/verify-otp', {
+        method: 'POST',
+        body: JSON.stringify({ phone: phoneValue, otp: otpValue, otpSession })
+      });
+      setOtpSession(data.otpSession || otpSession);
+      setPhoneValue(data.phone || phoneValue);
+      setStep('password');
+      setMessage('');
+      setMessageTone('');
+    } catch (error) {
+      setMessage(error.message);
+      setMessageTone('error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetPassword = async (event) => {
+    event.preventDefault();
+    if (loading) return;
+    if (newPassword.length < 12) {
+      setMessage('Password must be at least 12 characters.');
+      setMessageTone('error');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setMessage('Passwords do not match.');
+      setMessageTone('error');
+      return;
+    }
+    setLoading(true);
+    setMessage('Resetting password...');
+    setMessageTone('');
+    try {
+      await api('/auth/password-reset', {
+        method: 'POST',
+        body: JSON.stringify({ phone: phoneValue, otpSession, password: newPassword })
+      });
+      window.history.pushState({}, '', '/login?passwordReset=success');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } catch (error) {
+      setMessage(error.message);
+      setMessageTone('error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const changeNumber = () => {
+    const session = otpSession;
+    const phone = phoneValue;
+    setStep('phone');
+    setOtpSession('');
+    setOtpValue('');
+    setLocalTestOtp('');
+    setLocalOtpIssue('');
+    setMessage('');
+    setMessageTone('');
+    if (session) void cancelReset(session, phone);
+  };
+
+  const title = step === 'phone' ? 'Forgot Password?' : step === 'otp' ? 'Enter Your OTP' : 'Create New Password';
+  const copy = step === 'phone'
+    ? 'Enter the mobile number linked to your Lookmefy account.'
+    : step === 'otp'
+      ? `Enter the 6-digit code sent to ${phoneValue}.`
+      : 'Choose a new password for your account.';
+
+  return (
+    <main className="auth-login-page auth-login-reference-page auth-reset-page" aria-labelledby="forgot-password-title">
+      <AuthEditorialStory />
+      <section className="auth-login-panel auth-login-reference-panel">
+        <div className="auth-login-card">
+          <a className="auth-login-mobile-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
+          <p className="auth-reset-eyebrow">Account recovery</p>
+          <h1 id="forgot-password-title">{title}</h1>
+          <p className="auth-login-copy">{copy}</p>
+
+          {step === 'phone' && (
+            <form className="auth-login-form auth-reset-form" onSubmit={requestOtp} aria-busy={loading}>
+              <AuthInputField label="Mobile number" name="resetPhone" type="tel" inputMode="numeric" pattern="[0-9]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => setPhoneValue(normalizePhoneEntry(event.target.value))} />
+              <button className="signup-submit-button signup-otp-button" type="submit" disabled={loading || !phoneValue.trim()}>{loading ? 'Sending OTP...' : 'Send OTP'}</button>
+            </form>
+          )}
+
+          {step === 'otp' && (
+            <form className="auth-login-form auth-reset-form" onSubmit={verifyOtp} aria-busy={loading}>
+              <OtpCodeFields idPrefix="password-reset-otp" value={otpValue} onChange={setOtpValue} disabled={loading} />
+              {ENABLE_TEST_OTP_HELPER && (
+                <div className="signup-test-otp-panel" role="status" aria-live="polite">
+                  <p className={`signup-test-otp ${localOtpIssue && !localTestOtp ? 'signup-test-otp-error' : ''}`}>
+                    {localTestOtp ? <>Test OTP: <strong>{localTestOtp}</strong></> : localOtpLoading ? 'Getting test OTP...' : localOtpIssue || 'Test OTP appears here when local mock delivery is enabled.'}
+                  </p>
+                  <button className="signup-test-otp-action" type="button" disabled={localOtpLoading || !otpSession} onClick={() => fetchLocalTestOtp(otpSession, phoneValue, { fill: true })}>
+                    {localTestOtp ? 'Fill OTP' : localOtpLoading ? 'Checking...' : 'Show test OTP'}
+                  </button>
+                </div>
+              )}
+              <button className="signup-submit-button signup-otp-button" type="submit" disabled={loading || otpValue.length < 6}>{loading ? 'Verifying...' : 'Verify OTP'}</button>
+              <div className="auth-reset-actions">
+                <button type="button" onClick={requestOtp} disabled={loading}>Resend OTP</button>
+                <button type="button" onClick={changeNumber} disabled={loading}>Change number</button>
+              </div>
+            </form>
+          )}
+
+          {step === 'password' && (
+            <form className="auth-login-form auth-reset-form" onSubmit={resetPassword} aria-busy={loading}>
+              <AuthInputField label="New password" name="newPassword" type="password" required minLength="12" maxLength="72" autoComplete="new-password" placeholder="At least 12 characters" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+              <AuthInputField label="Confirm password" name="confirmPassword" type="password" required minLength="12" maxLength="72" autoComplete="new-password" placeholder="Repeat your password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+              <button className="signup-submit-button signup-otp-button" type="submit" disabled={loading || !newPassword || !confirmPassword}>{loading ? 'Resetting...' : 'Reset Password'}</button>
+            </form>
+          )}
+
+          {message && <p className={`auth-login-message form-message ${messageTone === 'error' ? 'error-message' : ''}`} role="status" aria-live="polite">{message}</p>}
+          <p className="auth-login-switch-inline"><a href="/login" onClick={() => void cancelReset()}>Back to login</a></p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function AuthPage({ mode, setUser }) {
   const bodyPhotoCameraRef = useRef(null);
   const [message, setMessage] = useState('');
@@ -8772,7 +9017,8 @@ function AuthPage({ mode, setUser }) {
     && window.innerWidth > 700;
 
   useEffect(() => {
-    setMessage('');
+    const resetSucceeded = mode === 'login' && new URLSearchParams(window.location.search).get('passwordReset') === 'success';
+    setMessage(resetSucceeded ? 'Password reset successfully. Sign in with your new password.' : '');
     setCapsLock(false);
     setIsSubmitting(false);
     setOtpLoading(false);
@@ -9030,28 +9276,7 @@ function AuthPage({ mode, setUser }) {
   if (!isSignup) {
     return (
       <main className="auth-login-page auth-login-reference-page" aria-labelledby="login-title">
-        <section className="auth-login-story auth-login-reference-story" aria-label="Lookmefy fashion experience">
-          <OptimizedImage className="auth-login-background" src={asset('login-editorial-couple.png')} alt="" eager />
-          <div className="auth-login-scrim" aria-hidden="true" />
-          <a className="auth-login-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
-          <div className="auth-login-story-copy">
-            <h2>AI Fashion Try-On Experience</h2>
-            <p>See it on you before you buy it. Experience a more personal way to shop.</p>
-            <ul className="auth-login-benefits" aria-label="Lookmefy benefits">
-              {[
-                ['AI Try-On', 'See selected styles on your profile.'],
-                ['Smart Closet', 'Keep your wardrobe in one place.'],
-                ['AI Stylist', 'Find looks that fit your point of view.']
-              ].map(([title, copy]) => (
-                <li key={title}>
-                  <strong>{title}</strong>
-                  <small>{copy}</small>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <p className="auth-login-copyright">Lookmefy, curated with intelligence.</p>
-        </section>
+        <AuthEditorialStory />
 
         <section className="auth-login-panel auth-login-reference-panel">
           <div className="auth-login-card">
@@ -9060,19 +9285,14 @@ function AuthPage({ mode, setUser }) {
             <p className="auth-login-copy">Login with your mobile number and password.</p>
             <div className="auth-login-tabs" aria-hidden="true"><span>Mobile Password</span></div>
             <form className="auth-login-form" onSubmit={submit} aria-busy={isSubmitting}>
-              <label className="signup-field">
-                <span>Mobile number</span>
-                <input name="loginPhone" type="tel" inputMode="numeric" pattern="[0-9+\\s-]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('login', event.target.value)} />
-              </label>
-              <label className="signup-field">
-                <span>Password</span>
-                <input name="password" type="password" required autoComplete="current-password" placeholder="Enter your password" />
-              </label>
+              <AuthInputField label="Mobile number" name="loginPhone" type="tel" inputMode="numeric" pattern="[0-9]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('login', event.target.value)} />
+              <AuthInputField label="Password" name="password" type="password" required autoComplete="current-password" placeholder="Enter your password" />
+              <p className="auth-login-switch-inline auth-forgot-password-link"><a href="/forgot-password">Forgot password?</a></p>
               <button className="signup-submit-button signup-otp-button" type="submit" disabled={isSubmitting || !phoneValue.trim()}>{isSubmitting ? 'Logging in...' : 'Login'}</button>
               <p className="auth-login-switch-inline">New to Lookmefy? <a href="/signup">Sign up</a></p>
               <p className="auth-login-switch-inline"><a href="/categories">Explore without login</a></p>
             </form>
-            {message && <p className={`auth-login-message form-message ${/Logging in|Working/.test(message) ? '' : 'error-message'}`}>{message}</p>}
+            {message && <p className={`auth-login-message form-message ${/Logging in|Working|Password reset successfully/.test(message) ? '' : 'error-message'}`}>{message}</p>}
           </div>
         </section>
       </main>
@@ -9094,7 +9314,7 @@ function AuthPage({ mode, setUser }) {
               <div className="auth-signup-reference-fields">
                 <label className="signup-field">
                   <span>Mobile number</span>
-                  <input name="phoneDisplay" type="tel" inputMode="numeric" pattern="[0-9+\\s-]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('signup', event.target.value)} />
+                  <input name="phoneDisplay" type="tel" inputMode="numeric" pattern="[0-9]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('signup', event.target.value)} />
                 </label>
               </div>
               <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || !phoneValue.trim()} onClick={requestSignupOtp}>{otpLoading ? 'Sending OTP...' : otpSession ? 'Resend OTP' : 'Send OTP'}</button>
@@ -9116,11 +9336,11 @@ function AuthPage({ mode, setUser }) {
                 </label>
                 <label className="signup-field">
                   <span>Create password</span>
-                  <input name="password" type="password" required minLength="12" value={signupPassword} autoComplete="new-password" placeholder="At least 12 characters" onChange={(event) => setSignupPassword(event.target.value)} />
+                  <input name="password" type="password" required minLength="12" maxLength="72" value={signupPassword} autoComplete="new-password" placeholder="At least 12 characters" onChange={(event) => setSignupPassword(event.target.value)} />
                 </label>
                 <label className="signup-field">
                   <span>Confirm password</span>
-                  <input name="confirmPassword" type="password" required minLength="12" value={signupConfirmPassword} autoComplete="new-password" placeholder="Repeat your password" onChange={(event) => setSignupConfirmPassword(event.target.value)} />
+                  <input name="confirmPassword" type="password" required minLength="12" maxLength="72" value={signupConfirmPassword} autoComplete="new-password" placeholder="Repeat your password" onChange={(event) => setSignupConfirmPassword(event.target.value)} />
                 </label>
               </div>
 
@@ -9225,7 +9445,7 @@ function App() {
     if (next === current) return;
     const currentPath = normalizePath();
     const nextPath = new URL(next, window.location.href).pathname.replace(/\.html$/, '').replace(/\/$/, '') || '/';
-    if ((currentPath === '/login' || currentPath === '/signup' || nextPath === '/login' || nextPath === '/signup') && document.activeElement instanceof HTMLElement) {
+    if ((['/login', '/signup', '/forgot-password'].includes(currentPath) || ['/login', '/signup', '/forgot-password'].includes(nextPath)) && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
     scrollPositions.current.set(current, window.scrollY);
@@ -9359,20 +9579,20 @@ function App() {
   }, [path, routeKey]);
 
   useEffect(() => {
-    if (!user || (path !== '/signup' && path !== '/login')) return;
+    if (!user || !['/signup', '/login', '/forgot-password'].includes(path)) return;
     const destination = authReturnPath();
     window.history.replaceState({}, '', destination);
     setPath(normalizePath());
   }, [path, routeKey, user]);
 
   useEffect(() => {
-    if (path !== '/signup' && path !== '/login') return;
+    if (!['/signup', '/login', '/forgot-password'].includes(path)) return;
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
   }, [path, routeKey]);
 
   useEffect(() => {
-    const isAuthRoute = path === '/signup' || path === '/login';
+    const isAuthRoute = ['/signup', '/login', '/forgot-password'].includes(path);
     if (!isAuthRoute) {
       document.documentElement.style.removeProperty('--fitlook-auth-height');
       document.documentElement.style.removeProperty('--fitlook-auth-width');
@@ -9415,9 +9635,10 @@ function App() {
     if (path === '/profile') return <ProfilePage user={user} setUser={setUser} />;
     if (path === '/generation-history') return <GenerationHistoryPage user={user} />;
     if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} />;
-    if ((path === '/signup' || path === '/login') && user) return <SearchPage user={user} setUser={setUser} />;
+    if (['/signup', '/login', '/forgot-password'].includes(path) && user) return <SearchPage user={user} setUser={setUser} />;
     if (path === '/signup') return <AuthPage mode="signup" setUser={setUser} />;
     if (path === '/login') return <AuthPage mode="login" setUser={setUser} />;
+    if (path === '/forgot-password') return <ForgotPasswordPage />;
     if (path === '/how-it-works') return <HowItWorks user={user} />;
     if (path === '/about') return <AboutPage user={user} />;
     if (path === '/download') return <DownloadAppPage />;
@@ -9484,7 +9705,7 @@ function App() {
   }, [routeKey]);
 
   const authFallbackRoutes = ['/try-on', '/custom-try-on', '/closet', '/closet/add', '/closet/combo', '/closet/items', '/style-bot', '/tokens', '/profile', '/generation-history'];
-  const isStandaloneAuth = (path === '/login' || path === '/signup') && !user;
+  const isStandaloneAuth = ['/login', '/signup', '/forgot-password'].includes(path) && !user;
   const isConciergePage = path === '/style-bot' && Boolean(user);
   const isProductPage = /^\/product\/[^/]+$/.test(path);
   const isOpeningPage = path === '/';

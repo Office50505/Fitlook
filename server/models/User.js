@@ -43,6 +43,15 @@ const userSchema = new mongoose.Schema(
       sparse: true
     },
     passwordHash: { type: String, required: true },
+    authVersion: {
+      type: Number,
+      default: 0,
+      min: 0,
+      validate: {
+        validator: Number.isSafeInteger,
+        message: 'Authentication version must be a non-negative whole number'
+      }
+    },
     genderPreference: {
       type: String,
       enum: ['male', 'female', 'other'],

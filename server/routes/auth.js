@@ -57,6 +57,11 @@ import {
 } from '../utils/security.js';
 import { createTempSessionStore } from '../utils/tempSessions.js';
 import {
+  authenticationVersion,
+  tokenAuthenticationVersionMatches,
+  userPasswordError
+} from '../utils/userCredentials.js';
+import {
   createUserSession,
   endUserSession,
   findActiveUserSession,
@@ -76,8 +81,10 @@ const debugGenerationLogs = ['1', 'true', 'yes', 'on'].includes(String(process.e
 const signupOtpTtlMs = 5 * 60 * 1000;
 const signupOtpSessions = createTempSessionStore('otp:signup', { ttlMs: signupOtpTtlMs });
 const loginOtpSessions = createTempSessionStore('otp:login', { ttlMs: signupOtpTtlMs });
+const passwordResetOtpSessions = createTempSessionStore('otp:password-reset', { ttlMs: signupOtpTtlMs });
 const signupOtpCurrentSessions = createTempSessionStore('otp:signup-current', { ttlMs: signupOtpTtlMs });
 const loginOtpCurrentSessions = createTempSessionStore('otp:login-current', { ttlMs: signupOtpTtlMs });
+const passwordResetOtpCurrentSessions = createTempSessionStore('otp:password-reset-current', { ttlMs: signupOtpTtlMs });
 const requireUserOperationsAdmin = requireAdminSection(ADMIN_SECTIONS.USER_OPERATIONS);
 const requireSystemAdmin = requireAdminSection(ADMIN_SECTIONS.SYSTEM_MANAGEMENT);
 const authIpLimiter = createRateLimiter({
@@ -547,7 +554,11 @@ async function generateFullBodyProfileInBackground(userId, sourceBodyPhoto, { en
 }
 
 function sign(user, sessionId) {
-  return jwt.sign({ sub: user._id.toString(), ...(sessionId ? { sid: sessionId } : {}) }, process.env.JWT_SECRET, { expiresIn: '14d' });
+  return jwt.sign({
+    sub: user._id.toString(),
+    ver: authenticationVersion(user.authVersion),
+    ...(sessionId ? { sid: sessionId } : {})
+  }, process.env.JWT_SECRET, { expiresIn: '14d' });
 }
 
 async function authenticatedUserPayload(user, req, authMethod) {
@@ -601,6 +612,9 @@ async function requireUser(req, res, next) {
       decoded.sid ? findActiveUserSession({ userId: decoded.sub, sessionId: decoded.sid }) : null
     ]);
     if (!user) return res.status(401).json({ message: 'User not found' });
+    if (!tokenAuthenticationVersionMatches(user, decoded)) {
+      return res.status(401).json({ message: 'Session has ended. Please sign in again.' });
+    }
     if (decoded.sid && !session) return res.status(401).json({ message: 'Session has ended. Please sign in again.' });
     const accessError = accountAccessError(user);
     if (accessError) return res.status(accessError.statusCode).json({ message: accessError.message });
@@ -647,7 +661,7 @@ router.post('/signup/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, 
 router.get('/test-otp', authIpLimiter, asyncRoute(async (req, res) => {
   if (!testOtpHelperEnabled()) return res.status(404).json({ message: 'Not found' });
   const purpose = String(req.query?.purpose || '').trim();
-  if (!['signup', 'login'].includes(purpose)) return res.status(400).json({ message: 'Invalid OTP purpose.' });
+  if (!['signup', 'login', 'password-reset'].includes(purpose)) return res.status(400).json({ message: 'Invalid OTP purpose.' });
   const phone = normalizePhone(req.query?.phone);
   const otpSession = String(req.query?.otpSession || '').trim();
   if (!phone || !otpSession) return res.status(400).json({ message: 'Missing OTP request details.' });
@@ -701,7 +715,8 @@ router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) =
     : false;
   if (!phone || !phoneSession || phoneSession.phone !== phone || !phoneSession.verified || phoneSession.expiresAt <= Date.now() || !isCurrentSignupSession) return res.status(400).json({ message: 'Verify your phone number first' });
   if (!name || !email || !password || !username || !genderPreference) return res.status(400).json({ message: 'Name, username, email, gender preference, and password are required' });
-  if (String(password).length < 12) return res.status(400).json({ message: 'Password must be at least 12 characters' });
+  const passwordError = userPasswordError(password);
+  if (passwordError) return res.status(400).json({ message: passwordError });
   if (username.length < 3) return res.status(400).json({ message: 'Username must be at least 3 characters' });
   if (!req.file) return res.status(400).json({ message: 'Full-body photo is required' });
 
@@ -854,6 +869,112 @@ router.post('/login/cancel-otp', authIpLimiter, asyncRoute(async (req, res) => {
     otpSession
   });
   res.json({ cancelled: true });
+}));
+
+router.post('/password-reset/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, otpRequestPhoneHourlyLimiter, asyncRoute(async (req, res) => {
+  const phone = normalizePhone(req.body?.phone);
+  if (!phone) return res.status(400).json({ message: 'Enter a valid mobile number.' });
+
+  const user = await User.findOne({ phone });
+  const accessError = user ? accountAccessError(user) : null;
+  const eligibleUser = user && !accessError ? user : null;
+
+  const { otpSession, otp, expiresAt } = await createOtpChallenge({
+    sessions: passwordResetOtpSessions,
+    currentSessions: passwordResetOtpCurrentSessions,
+    purpose: 'password-reset',
+    phone,
+    metadata: eligibleUser ? { userId: eligibleUser._id.toString() } : {}
+  });
+  if (eligibleUser) {
+    try {
+      await deliverOtp({ phone, otp, purpose: 'password-reset', otpSession, expiresAt });
+    } catch (error) {
+      await passwordResetOtpSessions.remove(otpSession);
+      await removeCurrentSession({ currentSessions: passwordResetOtpCurrentSessions, purpose: 'password-reset', phone });
+      throw error;
+    }
+  }
+
+  res.json({
+    otpSession,
+    phone,
+    message: 'If an active account exists for this number, an OTP has been sent.'
+  });
+}));
+
+router.post('/password-reset/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
+  const phone = normalizePhone(req.body?.phone);
+  const otpSession = String(req.body?.otpSession || '');
+  const result = await verifyOtpChallenge({
+    sessions: passwordResetOtpSessions,
+    currentSessions: passwordResetOtpCurrentSessions,
+    purpose: 'password-reset',
+    phone,
+    otpSession,
+    otp: req.body?.otp
+  });
+  if (!result.ok || !result.session?.userId) {
+    return res.status(result.status || 400).json({ message: result.message || 'Request a new OTP' });
+  }
+  res.json({ verified: true, otpSession, phone });
+}));
+
+router.post('/password-reset/cancel-otp', authIpLimiter, asyncRoute(async (req, res) => {
+  const phone = normalizePhone(req.body?.phone);
+  const otpSession = String(req.body?.otpSession || '');
+  await cancelOtpChallenge({
+    sessions: passwordResetOtpSessions,
+    currentSessions: passwordResetOtpCurrentSessions,
+    purpose: 'password-reset',
+    phone,
+    otpSession
+  });
+  res.json({ cancelled: true });
+}));
+
+router.post('/password-reset', authIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
+  const phone = normalizePhone(req.body?.phone);
+  const otpSession = String(req.body?.otpSession || '');
+  const password = String(req.body?.password || '');
+  const passwordError = userPasswordError(password);
+  if (passwordError) return res.status(400).json({ message: passwordError });
+
+  const pendingSession = await passwordResetOtpSessions.get(otpSession);
+  const isCurrent = phone && otpSession
+    ? await currentSessionMatches({
+      currentSessions: passwordResetOtpCurrentSessions,
+      purpose: 'password-reset',
+      phone,
+      otpSession
+    })
+    : false;
+  if (!pendingSession?.verified || pendingSession.phone !== phone || !pendingSession.userId || !isCurrent) {
+    return res.status(400).json({ message: 'Verify your mobile number again before resetting the password.' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const resetSession = await passwordResetOtpSessions.consume(otpSession);
+  const isStillCurrent = await currentSessionMatches({
+    currentSessions: passwordResetOtpCurrentSessions,
+    purpose: 'password-reset',
+    phone,
+    otpSession
+  });
+  if (!resetSession?.verified || resetSession.phone !== phone || resetSession.userId !== pendingSession.userId || !isStillCurrent) {
+    return res.status(400).json({ message: 'This password reset has expired or already been used.' });
+  }
+  await removeCurrentSession({ currentSessions: passwordResetOtpCurrentSessions, purpose: 'password-reset', phone });
+
+  const user = await User.findOneAndUpdate(
+    { _id: resetSession.userId, phone, $or: [{ accountStatus: 'active' }, { accountStatus: { $exists: false } }] },
+    { $set: { passwordHash }, $inc: { authVersion: 1 } },
+    { new: true }
+  );
+  if (!user) return res.status(400).json({ message: 'This password reset is no longer available.' });
+  await revokeUserSessions(user._id);
+
+  res.json({ reset: true, message: 'Password reset successfully. Sign in with your new password.' });
 }));
 
 router.post('/admin-request-access', asyncRoute(async (req, res) => {

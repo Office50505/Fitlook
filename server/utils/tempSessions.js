@@ -113,7 +113,21 @@ function createTempSessionStore(name, options = {}) {
     store.delete(id);
   }
 
-  return { create, get, set, update, remove };
+  async function consume(id) {
+    if (!id) return null;
+    const redis = await redisOrFallback();
+    if (redis) {
+      const raw = await withTimeout(redis.getDel(redisKey(id)));
+      if (!raw) return null;
+      const session = JSON.parse(raw);
+      return session?.expiresAt > Date.now() ? session : null;
+    }
+    const session = store.get(id);
+    store.delete(id);
+    return session?.expiresAt > Date.now() ? session : null;
+  }
+
+  return { create, get, set, update, remove, consume };
 }
 
 export { createTempSessionStore };

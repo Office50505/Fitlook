@@ -36170,6 +36170,80 @@ label,
   cursor: not-allowed !important;
   opacity: .65 !important;
 }
+
+/* Password recovery shares the login shell while keeping each step compact. */
+.auth-reset-page .auth-login-card {
+  display: grid;
+  align-content: center;
+}
+
+.auth-reset-eyebrow {
+  margin: 0 0 10px;
+  color: #746b65;
+  font-family: var(--font-interface);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.auth-reset-form {
+  margin-top: 24px;
+}
+
+.auth-forgot-password-link {
+  justify-self: end !important;
+  margin: -6px 0 0 !important;
+}
+
+.auth-reset-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.auth-reset-actions button {
+  min-height: 32px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #302925;
+  cursor: pointer;
+  font-family: var(--font-interface);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-reset-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.auth-reset-page .auth-login-message {
+  margin: 16px 0 0 !important;
+}
+
+.auth-reset-page .auth-login-card > .auth-login-switch-inline {
+  justify-self: start !important;
+  margin: 14px 0 0 !important;
+}
+
+@media (max-width: 760px) {
+  .auth-reset-page .auth-login-card {
+    align-content: start;
+  }
+
+  .auth-reset-form {
+    margin-top: 8px !important;
+  }
+
+  .auth-reset-eyebrow {
+    margin-bottom: 12px;
+  }
+}
 /* Global premium logo lockup: [LM] | Lookmefy. */
 .brand-logo-lockup {
   --logo-mark-size: 40px;

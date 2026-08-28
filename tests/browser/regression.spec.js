@@ -32,12 +32,13 @@ async function createAccountViaApi(request) {
   });
   expect(verify.ok()).toBeTruthy();
   const verifyData = await verify.json();
+  const password = `Browser-${runId}-Password-12345`;
   const signup = await request.post('/api/auth/signup', {
     multipart: {
       name: `Browser User ${runId}`,
       username: `browser_${runId}`.slice(0, 40),
       email: `browser-${runId}@fitlook.local`,
-      password: `Browser-${runId}-Password-12345`,
+      password,
       phone,
       otpSession: verifyData.otpSession,
       genderPreference: 'other',
@@ -55,7 +56,7 @@ async function createAccountViaApi(request) {
     headers: { Authorization: `Bearer ${signupData.token}` },
     data: { reason: 'browser-regression' }
   });
-  return { phone, token: signupData.token, user: signupData.user };
+  return { phone, password, token: signupData.token, user: signupData.user };
 }
 
 async function installToken(context, token) {
@@ -233,6 +234,39 @@ test('responsive menu, OTP inputs, search layout, and payment summary fit every 
   }
   await expect(page.getByRole('button', { name: /Set up ₹500\/month mandate/ })).toBeVisible();
   await page.screenshot({ path: `${screenshotDir}/${testInfo.project.name}-responsive-core.png`, fullPage: false });
+});
+
+test('forgot password verifies OTP, changes the password, and ends existing sessions', async ({ page, request }) => {
+  const account = await createAccountViaApi(request);
+  const nextPassword = `Reset-${Date.now()}-Password-12345`;
+
+  await page.goto('/login');
+  await page.getByRole('link', { name: 'Forgot password?' }).click();
+  await expect(page).toHaveURL(/\/forgot-password$/);
+  await page.getByLabel('Mobile number').fill(account.phone);
+  await page.getByRole('button', { name: 'Send OTP' }).click();
+  await page.getByLabel('6-digit OTP').fill(await latestOtp(account.phone, 'password-reset'));
+  await page.getByRole('button', { name: 'Verify OTP' }).click();
+
+  await page.getByLabel('New password').fill(nextPassword);
+  await page.getByLabel('Confirm password').fill(nextPassword);
+  await page.getByRole('button', { name: 'Reset Password' }).click();
+  await expect(page).toHaveURL(/\/login\?passwordReset=success$/);
+  await expect(page.getByText('Password reset successfully. Sign in with your new password.')).toBeVisible();
+
+  const oldSession = await request.get('/api/auth/me', {
+    headers: { Authorization: `Bearer ${account.token}` }
+  });
+  expect(oldSession.status()).toBe(401);
+  const oldPasswordLogin = await request.post('/api/auth/login', {
+    data: { phone: account.phone, password: account.password }
+  });
+  expect(oldPasswordLogin.status()).toBe(401);
+
+  await page.getByLabel('Mobile number').fill(account.phone);
+  await page.getByLabel('Password', { exact: true }).fill(nextPassword);
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await expect(page).not.toHaveURL(/\/login/);
 });
 
 test('search suggestions and popular terms return useful UI states', async ({ page }) => {
