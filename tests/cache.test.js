@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import { createHybridCache } from '../server/utils/cache.js';
+import { cleanRedisError, createHybridCache, redisTargetLabel } from '../server/utils/cache.js';
 
 test('hybrid cache coalesces concurrent misses for the same key', async () => {
   const previousRedisUrl = process.env.REDIS_URL;
@@ -30,4 +30,10 @@ test('hybrid cache coalesces concurrent misses for the same key', async () => {
     if (previousRedisUrl === undefined) delete process.env.REDIS_URL;
     else process.env.REDIS_URL = previousRedisUrl;
   }
+});
+
+test('redis diagnostics mask credentials in targets and errors', () => {
+  assert.equal(redisTargetLabel('redis://:secret@172.31.11.104:6379/2'), 'redis://172.31.11.104:6379/2');
+  assert.equal(redisTargetLabel('rediss://user:secret@example.com/0'), 'rediss://example.com:6380/0');
+  assert.equal(cleanRedisError(new Error('Failed to connect redis://:secret@example.com:6379')), 'Failed to connect redis://[redacted]@example.com:6379');
 });

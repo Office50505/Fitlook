@@ -6,6 +6,14 @@ let redisClientUrl = null;
 let redisConnectPromise = null;
 let redisDisabledUntil = 0;
 let lastRedisWarningAt = 0;
+let lastRedisStatus = {
+  configured: false,
+  ok: false,
+  target: '',
+  error: '',
+  checkedAt: null,
+  disabledUntil: null
+};
 
 function warnRedis(message) {
   const now = Date.now();
@@ -18,8 +26,61 @@ function redisTimeoutMs() {
   return Number(process.env.REDIS_TIMEOUT_MS || 250);
 }
 
+function redisConnectTimeoutMs() {
+  const configured = Number(process.env.REDIS_CONNECT_TIMEOUT_MS || 1000);
+  return Number.isFinite(configured) && configured > 0 ? configured : 1000;
+}
+
 function keyPrefix() {
   return process.env.REDIS_KEY_PREFIX || 'fitlook';
+}
+
+function redisTargetLabel(redisUrl = process.env.REDIS_URL) {
+  const raw = String(redisUrl || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    const port = url.port || (url.protocol === 'rediss:' ? '6380' : '6379');
+    const database = url.pathname && url.pathname !== '/' ? url.pathname : '';
+    return `${url.protocol}//${url.hostname}:${port}${database}`;
+  } catch {
+    return '[invalid REDIS_URL]';
+  }
+}
+
+function cleanRedisError(error) {
+  const raw = String(error?.message || error || 'Redis cache unavailable');
+  const configuredUrl = String(process.env.REDIS_URL || '');
+  const withoutInlineCredentials = raw
+    .replace(/rediss?:\/\/[^@\s]+@/gi, (match) => `${match.split('://')[0]}://[redacted]@`)
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (configuredUrl ? withoutInlineCredentials.replace(configuredUrl, '[redacted REDIS_URL]') : withoutInlineCredentials)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+}
+
+function rememberRedisStatus(status = {}) {
+  lastRedisStatus = {
+    configured: Boolean(process.env.REDIS_URL),
+    ok: false,
+    target: redisTargetLabel(),
+    error: '',
+    checkedAt: new Date().toISOString(),
+    disabledUntil: redisDisabledUntil > Date.now() ? new Date(redisDisabledUntil).toISOString() : null,
+    ...status
+  };
+  return lastRedisStatus;
+}
+
+function redisConnectionStatus() {
+  return {
+    ...lastRedisStatus,
+    configured: Boolean(process.env.REDIS_URL),
+    target: redisTargetLabel(),
+    disabledForMs: Math.max(0, redisDisabledUntil - Date.now())
+  };
 }
 
 function withTimeout(promise, timeoutMs = redisTimeoutMs()) {
@@ -31,24 +92,64 @@ function withTimeout(promise, timeoutMs = redisTimeoutMs()) {
   ]);
 }
 
+function destroyRedisClientQuietly(client) {
+  try {
+    client?.destroy?.();
+  } catch {
+    // The Redis client can already be closed after a failed connect attempt.
+  }
+}
+
 async function getRedisClient() {
   const redisUrl = process.env.REDIS_URL;
-  if (!redisUrl || Date.now() < redisDisabledUntil) return null;
-  if (redisClient?.isOpen && redisClientUrl === redisUrl) return redisClient;
+  if (!redisUrl) {
+    rememberRedisStatus({ configured: false, ok: false, target: '', error: 'REDIS_URL is not configured' });
+    return null;
+  }
+  if (Date.now() < redisDisabledUntil) {
+    rememberRedisStatus({
+      ok: false,
+      error: lastRedisStatus.error || 'Redis reconnect cooldown is active',
+      disabledUntil: new Date(redisDisabledUntil).toISOString()
+    });
+    return null;
+  }
+  if (redisClient?.isOpen && redisClientUrl === redisUrl) {
+    rememberRedisStatus({ ok: true, error: '', disabledUntil: null });
+    return redisClient;
+  }
   if (redisConnectPromise) return redisConnectPromise;
 
-  redisClient = createClient({ url: redisUrl });
+  rememberRedisStatus({ ok: false, error: 'Connecting to Redis' });
+  redisClient = createClient({
+    url: redisUrl,
+    socket: {
+      connectTimeout: redisConnectTimeoutMs(),
+      reconnectStrategy: false
+    }
+  });
   redisClientUrl = redisUrl;
   redisClient.on('error', (error) => {
-    warnRedis(error.message || 'Redis cache error');
+    const message = cleanRedisError(error);
+    rememberRedisStatus({ ok: false, error: message });
+    warnRedis(message || 'Redis cache error');
   });
 
-  redisConnectPromise = withTimeout(redisClient.connect(), 1000)
-    .then(() => redisClient)
+  redisConnectPromise = withTimeout(redisClient.connect(), redisConnectTimeoutMs() + 250)
+    .then(() => {
+      rememberRedisStatus({ ok: true, error: '', disabledUntil: null });
+      return redisClient;
+    })
     .catch((error) => {
       redisDisabledUntil = Date.now() + 10_000;
-      warnRedis(error.message || 'Redis cache unavailable');
-      redisClient?.destroy?.();
+      const message = cleanRedisError(error);
+      rememberRedisStatus({
+        ok: false,
+        error: message,
+        disabledUntil: new Date(redisDisabledUntil).toISOString()
+      });
+      warnRedis(message || 'Redis cache unavailable');
+      destroyRedisClientQuietly(redisClient);
       redisClient = null;
       redisClientUrl = null;
       return null;
@@ -69,9 +170,9 @@ async function closeRedisClient() {
   if (!client) return;
   try {
     if (client.isOpen) await client.quit();
-    else client.destroy?.();
+    else destroyRedisClientQuietly(client);
   } catch {
-    client.destroy?.();
+    destroyRedisClientQuietly(client);
   }
 }
 
@@ -198,4 +299,14 @@ function createHybridCache(name, options = {}) {
   return { get, set, remember, clear };
 }
 
-export { closeRedisClient, createHybridCache, getRedisClient, keyPrefix, ttlSeconds, withTimeout };
+export {
+  cleanRedisError,
+  closeRedisClient,
+  createHybridCache,
+  getRedisClient,
+  keyPrefix,
+  redisConnectionStatus,
+  redisTargetLabel,
+  ttlSeconds,
+  withTimeout
+};

@@ -182,10 +182,12 @@ async function systemSummary() {
   const readiness = configurationReadiness();
   const mongoReady = Boolean(metrics.mongo?.ok && mongoPing);
   const redisConfigured = Boolean(process.env.REDIS_URL);
+  const redisTarget = metrics.redis?.target ? ` at ${metrics.redis.target}` : '';
+  const redisError = metrics.redis?.error ? `: ${metrics.redis.error}` : '';
   const services = [
     serviceStatus({ id: 'api', label: 'API server', status: 'healthy', detail: `Process ${metrics.system?.process?.pid || '-'} is responding.` }),
     serviceStatus({ id: 'mongodb', label: 'MongoDB', status: mongoReady ? 'healthy' : 'down', detail: mongoReady ? `Connected to ${metrics.mongo?.name || 'database'}.` : 'Database connection is unavailable.' }),
-    serviceStatus({ id: 'redis', label: 'Redis', status: !redisConfigured ? 'not_configured' : metrics.redis?.ok ? 'healthy' : 'down', detail: !redisConfigured ? 'Redis is not configured.' : metrics.redis?.ok ? `${metrics.redis.connected_clients || 0} clients connected.` : 'Redis did not respond.' }),
+    serviceStatus({ id: 'redis', label: 'Redis', status: !redisConfigured ? 'not_configured' : metrics.redis?.ok ? 'healthy' : 'down', detail: !redisConfigured ? 'Redis is not configured.' : metrics.redis?.ok ? `${metrics.redis.connected_clients || 0} clients connected.` : `Redis${redisTarget} did not respond${redisError}.` }),
     serviceStatus({ id: 'queue', label: 'Job queue', status: queueEnabled() ? 'healthy' : 'disabled', detail: queueEnabled() ? 'Queue workers are enabled.' : 'Queue mode is disabled.' }),
     serviceStatus({ id: 'nginx', label: 'Nginx', status: metrics.nginx?.ok ? 'healthy' : 'unknown', detail: metrics.nginx?.ok ? `${metrics.nginx.active || 0} active connections.` : 'Nginx status endpoint is not connected.' }),
     serviceStatus({ id: 'storage', label: 'Bunny storage', status: !bunnyHealth.configured ? 'not_configured' : bunnyHealth.healthy ? 'healthy' : 'down', detail: bunnyHealth.detail, group: 'provider' }),
