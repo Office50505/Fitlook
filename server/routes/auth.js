@@ -1,4 +1,3 @@
-import bcrypt from 'bcryptjs';
 import express from 'express';
 import heicConvert from 'heic-convert';
 import jwt from 'jsonwebtoken';
@@ -29,7 +28,9 @@ import { ADMIN_SECTIONS, adminToClient, normalizeAdminEmail } from '../utils/adm
 import { buildAdminUserSearchFilter, buildAdminUserTokenFilter } from '../utils/adminUserSearch.js';
 import { normalizeGenderPreference } from '../utils/genderPreference.js';
 import { enqueueJob, safeJobId } from '../utils/jobQueue.js';
+import { signUserMediaToken } from '../utils/mediaTokens.js';
 import { normalizeIndianMobile } from '../utils/phone.js';
+import { hashPassword, verifyPassword } from '../utils/passwordHashing.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { deleteStoredFile, deleteStoredPrefix, publicUrlForStoredFile, readStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
 import {
@@ -53,7 +54,7 @@ import {
   isAllowedRasterImageUpload,
   isDevelopmentModeAllowed,
   normalizeRasterImageBuffer,
-  safeFetchBuffer
+  safeFetchImageBuffer
 } from '../utils/security.js';
 import { createTempSessionStore } from '../utils/tempSessions.js';
 import {
@@ -355,7 +356,7 @@ async function generatedBytesFromUrl(url) {
     return { bytes, mimetype: metadata || imageMimeTypeFromBuffer(bytes) || 'image/png' };
   }
 
-  const { response, buffer: bytes } = await safeFetchBuffer(url, {
+  const { response, buffer: bytes, mimetype } = await safeFetchImageBuffer(url, {
     maxBytes: 12 * 1024 * 1024,
     headers: {
       accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
@@ -363,7 +364,7 @@ async function generatedBytesFromUrl(url) {
     }
   });
   if (!response.ok) throw new Error('Could not download generated profile image');
-  return { bytes, mimetype: imageMimeTypeFromResponse(response, bytes) };
+  return { bytes, mimetype: mimetype || imageMimeTypeFromResponse(response, bytes) };
 }
 
 function fullBodyProfilePrompt() {
@@ -567,7 +568,7 @@ async function authenticatedUserPayload(user, req, authMethod) {
     authMethod,
     userAgent: req.headers?.['user-agent'] || ''
   });
-  return { token: sign(user, sessionId), user: user.toClient() };
+  return { token: sign(user, sessionId), mediaToken: signUserMediaToken(user._id), user: user.toClient() };
 }
 
 function normalizeUsername(value = '') {
@@ -734,7 +735,7 @@ router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) =
   try {
     const generateFullBody = shouldGenerateFullBodyProfileForRequest(req);
     const bodyPhoto = await bodyPhotoFromUpload(req.file, { generateFullBody });
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await hashPassword(password);
     const user = await User.create({
       name,
       email,
@@ -780,12 +781,20 @@ router.post('/login', authIpLimiter, loginAttemptLimiter, asyncRoute(async (req,
       ...(phone ? [{ phone }] : []),
       ...(identifier ? [{ email: identifier }, { username: normalizeUsername(identifier) }] : [])
     ]
-  });
+  }).select('+passwordHash');
   if (!user) return res.status(401).json({ message: 'Invalid mobile number or password' });
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ message: 'Invalid mobile number or password' });
+  const passwordVerification = await verifyPassword(password, user.passwordHash);
+  if (!passwordVerification.valid) return res.status(401).json({ message: 'Invalid mobile number or password' });
   const accessError = accountAccessError(user);
   if (accessError) return res.status(accessError.statusCode).json({ message: accessError.message });
+  if (passwordVerification.needsUpgrade) {
+    const previousHash = user.passwordHash;
+    const upgradedHash = await hashPassword(password);
+    await User.updateOne(
+      { _id: user._id, passwordHash: previousHash },
+      { $set: { passwordHash: upgradedHash } }
+    );
+  }
   res.json(await authenticatedUserPayload(user, req, 'password'));
 }));
 
@@ -953,7 +962,7 @@ router.post('/password-reset', authIpLimiter, otpVerifyLimiter, asyncRoute(async
     return res.status(400).json({ message: 'Verify your mobile number again before resetting the password.' });
   }
 
-  const passwordHash = await bcrypt.hash(password, 12);
+  const passwordHash = await hashPassword(password);
   const resetSession = await passwordResetOtpSessions.consume(otpSession);
   const isStillCurrent = await currentSessionMatches({
     currentSessions: passwordResetOtpCurrentSessions,
@@ -998,7 +1007,7 @@ router.post('/admin-request-access', asyncRoute(async (req, res) => {
     admin = await AdminUser.create({
       name,
       email,
-      credentialHash: await bcrypt.hash(password, 12),
+      credentialHash: await hashPassword(password),
       role: 'developer',
       sectionAccess: [],
       status: 'pending'
@@ -1029,12 +1038,21 @@ router.post('/admin-login', asyncRoute(async (req, res) => {
 
   const admin = await AdminUser.findOne({ email }).select('+credentialHash');
   if (!admin) return res.status(401).json({ message: 'Invalid admin email or password' });
-  const validPassword = await bcrypt.compare(password, admin.credentialHash || '');
-  if (!validPassword) return res.status(401).json({ message: 'Invalid admin email or password' });
+  const passwordVerification = await verifyPassword(password, admin.credentialHash || '');
+  if (!passwordVerification.valid) return res.status(401).json({ message: 'Invalid admin email or password' });
   if (admin.status === 'pending') {
     return res.status(403).json({ message: 'Your account has no permissions yet. A Master must approve your access.' });
   }
   if (admin.status !== 'active') return res.status(403).json({ message: 'This admin account is disabled' });
+
+  if (passwordVerification.needsUpgrade) {
+    const previousHash = admin.credentialHash;
+    const upgradedHash = await hashPassword(password);
+    await AdminUser.updateOne(
+      { _id: admin._id, credentialHash: previousHash },
+      { $set: { credentialHash: upgradedHash } }
+    );
+  }
 
   admin.lastLoginAt = new Date();
   await admin.save();
@@ -1773,7 +1791,7 @@ router.delete('/admin/users/:id', requireAdmin, requireUserOperationsAdmin, admi
     user.email = identity.email;
     user.username = identity.username;
     user.phone = undefined;
-    user.passwordHash = await bcrypt.hash(randomBytes(48).toString('hex'), 12);
+    user.passwordHash = await hashPassword(randomBytes(48).toString('hex'));
     user.genderPreference = 'other';
     user.tokens = 0;
     user.devMode = false;
@@ -1812,7 +1830,12 @@ router.delete('/admin/users/:id', requireAdmin, requireUserOperationsAdmin, admi
 });
 
 router.get('/me', requireUser, (req, res) => {
-  res.json({ user: req.user.toClient() });
+  res.json({ user: req.user.toClient(), mediaToken: signUserMediaToken(req.user._id) });
+});
+
+router.get('/media-token', requireUser, (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ mediaToken: signUserMediaToken(req.user._id) });
 });
 
 function addStoredFile(files, file) {

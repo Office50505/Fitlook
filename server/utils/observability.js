@@ -2,6 +2,7 @@ import os from 'node:os';
 import fs from 'node:fs/promises';
 import RequestMetric from '../models/RequestMetric.js';
 import { cleanRedisError, getRedisClient, redisConnectionStatus, withTimeout } from './cache.js';
+import { requestPath } from './logSanitization.js';
 import { serviceMetadata } from './runtime.js';
 
 const startedAt = Date.now();
@@ -188,7 +189,7 @@ function requestLogger(req, res, next) {
       event: 'http_request',
       ...service,
       method: req.method,
-      path: req.originalUrl,
+      path: requestPath(req),
       route: key,
       status: res.statusCode,
       durationMs: Math.round(durationMs * 100) / 100,

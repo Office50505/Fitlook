@@ -2992,6 +2992,167 @@ h1 {
   align-items: end;
 }
 
+.smart-import-section {
+  border-color: rgba(18, 51, 35, .24);
+  background: #f4f8f4;
+}
+
+.smart-import-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 176px;
+  gap: 9px;
+  align-items: end;
+}
+
+.smart-import-command button,
+.smart-import-result-head button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--green);
+  padding: 10px 13px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.smart-import-command button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.smart-import-command button:disabled {
+  cursor: not-allowed;
+  opacity: .62;
+}
+
+.smart-import-result {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 11px;
+}
+
+.smart-import-result.success {
+  border-color: rgba(18, 51, 35, .3);
+}
+
+.smart-import-result.warning,
+.smart-import-result.error {
+  border-color: #d9a59c;
+  background: #fff7f4;
+}
+
+.smart-import-result > strong,
+.smart-import-result > span,
+.smart-import-result-head strong,
+.smart-import-result-head span {
+  display: block;
+}
+
+.smart-import-result > strong,
+.smart-import-result-head strong {
+  font-size: 13px;
+}
+
+.smart-import-result > span,
+.smart-import-result-head span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.smart-import-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.smart-import-result-head button {
+  min-height: 34px;
+  flex: 0 0 auto;
+  padding: 7px 12px;
+}
+
+.smart-import-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.smart-import-counts span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  border-left: 2px solid var(--line);
+  padding-left: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.smart-import-counts b {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.smart-import-products {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.smart-import-products span {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--soft);
+  padding: 5px 8px;
+  color: var(--ink);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smart-import-issues summary {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.smart-import-issues ul {
+  display: grid;
+  gap: 7px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.smart-import-issues li {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 10px;
+}
+
+.smart-import-issues li b {
+  color: var(--danger);
+  text-transform: capitalize;
+}
+
+.smart-import-issues li span {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .affiliate-import button,
 .section-head button,
 .submit,
@@ -3456,7 +3617,7 @@ h1 {
 
 .catalog-table-head {
   display: grid;
-  grid-template-columns: minmax(280px, 1.3fr) minmax(170px, .8fr) minmax(220px, .9fr) minmax(130px, .55fr) 210px;
+  grid-template-columns: minmax(280px, 1.3fr) minmax(150px, .7fr) minmax(190px, .8fr) minmax(120px, .5fr) minmax(260px, .85fr);
   gap: 12px;
   align-items: center;
   border-bottom: 1px solid var(--line);
@@ -3474,7 +3635,7 @@ h1 {
 .admin-product {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(280px, 1.3fr) minmax(170px, .8fr) minmax(220px, .9fr) minmax(130px, .55fr) 210px;
+  grid-template-columns: minmax(280px, 1.3fr) minmax(150px, .7fr) minmax(190px, .8fr) minmax(120px, .5fr) minmax(260px, .85fr);
   gap: 12px;
   align-items: stretch;
   border: 1px solid var(--line);
@@ -3750,8 +3911,7 @@ h1 {
 }
 
 .row-actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
   gap: 8px;
   min-width: 0;
 }
@@ -3759,6 +3919,7 @@ h1 {
 .row-actions button,
 .row-actions a {
   display: inline-grid;
+  flex: 1 1 72px;
   width: 100%;
   min-height: 34px;
   place-items: center;
@@ -3787,7 +3948,7 @@ h1 {
 .admin-product-actions label {
   display: grid;
   gap: 5px;
-  min-width: 150px;
+  min-width: 0;
 }
 
 .admin-product-actions span {
@@ -3798,6 +3959,7 @@ h1 {
 }
 
 .admin-product-actions select {
+  width: 100%;
   min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -4166,8 +4328,18 @@ h1 {
   }
 
   .two-col,
-  .affiliate-import {
+  .affiliate-import,
+  .smart-import-command {
     grid-template-columns: 1fr;
+  }
+
+  .smart-import-result-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .smart-import-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .admin-command-bar {
@@ -4679,7 +4851,7 @@ button,
 
 .row-control-cluster {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   align-items: end;
 }
@@ -4687,10 +4859,6 @@ button,
 .fit-area-control {
   display: grid;
   gap: 5px;
-}
-
-.row-actions {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .row-actions .delete-action {
@@ -4927,6 +5095,17 @@ html[data-theme='dark'] .system-alert {
 
 html[data-theme='dark'] .product-thumbnail {
   background: #343b36;
+}
+
+html[data-theme='dark'] .smart-import-result {
+  border-color: var(--line);
+  background: var(--surface-raised);
+}
+
+html[data-theme='dark'] .smart-import-result.warning,
+html[data-theme='dark'] .smart-import-result.error {
+  border-color: #70423e;
+  background: var(--danger-surface);
 }
 
 html[data-theme='dark'] .overview-command-card {

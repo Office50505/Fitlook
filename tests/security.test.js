@@ -6,7 +6,8 @@ import {
   isBlockedIp,
   isDevelopmentModeAllowed,
   safeFetchText,
-  securityHeaders
+  securityHeaders,
+  validateRasterImageResponse
 } from '../server/utils/security.js';
 
 function withEnv(overrides, fn) {
@@ -43,13 +44,31 @@ test('development billing bypass requires explicit server opt-in and user flag',
   });
 });
 
-test('SSRF guard rejects private, local, metadata, and reserved addresses', async () => {
-  for (const address of ['127.0.0.1', '10.0.0.1', '172.16.0.1', '192.168.1.1', '169.254.169.254', '::1', 'fc00::1']) {
+test('SSRF guard rejects private, local, metadata, reserved, and mapped addresses', async () => {
+  for (const address of ['127.0.0.1', '10.0.0.1', '172.16.0.1', '192.168.1.1', '169.254.169.254', '::1', 'fc00::1', '::ffff:10.0.0.1', '::ffff:a9fe:a9fe']) {
     assert.equal(isBlockedIp(address), true, `${address} should be blocked`);
     const host = address.includes(':') ? `[${address}]` : address;
     await assert.rejects(() => safeFetchText(`https://${host}/image.jpg`), /private|reserved|Localhost|allowed/i);
   }
   assert.equal(isBlockedIp('8.8.8.8'), false);
+});
+
+test('remote image validation checks both declared content type and raster bytes', async () => {
+  const jpeg = await (await import('sharp')).default({
+    create: { width: 2, height: 2, channels: 3, background: '#ffffff' }
+  }).jpeg().toBuffer();
+  assert.equal(
+    await validateRasterImageResponse(new Response(jpeg, { status: 200, headers: { 'content-type': 'image/jpeg' } }), jpeg),
+    'image/jpeg'
+  );
+  assert.equal(
+    await validateRasterImageResponse(new Response(jpeg, { status: 200, headers: { 'content-type': 'application/octet-stream' } }), jpeg),
+    'image/jpeg'
+  );
+  await assert.rejects(
+    validateRasterImageResponse(new Response('<html></html>', { status: 200, headers: { 'content-type': 'text/html' } }), Buffer.from('<html></html>')),
+    /supported image/
+  );
 });
 
 test('upload allowlist rejects SVG and arbitrary image MIME types', () => {

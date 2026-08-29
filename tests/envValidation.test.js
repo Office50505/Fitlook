@@ -2,8 +2,35 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { configurationReadiness, phonePeEnabled, validateServerEnv } from '../server/utils/envValidation.js';
 
+const productionAiEnv = {
+  AI_PROVIDER: 'pruna',
+  TRYON_VIDEO_PROVIDER: 'pixverse',
+  PRUNA_API_KEY: 'pruna-test-key',
+  FAL_KEY: 'fal-test-key',
+  FITROOM_API_KEY: 'fitroom-test-key'
+};
+
 test('validateServerEnv requires production-critical values', () => {
   assert.throws(() => validateServerEnv({ MONGODB_URI: '', JWT_SECRET: '' }), /MONGODB_URI, JWT_SECRET/);
+});
+
+test('validateServerEnv validates peppered password hashing as one complete configuration', () => {
+  const base = {
+    MONGODB_URI: 'mongodb://localhost:27017/fitlook',
+    JWT_SECRET: 'secret',
+    PASSWORD_HASH_SCHEME: 'bcrypt-hmac-sha384-v2',
+    PASSWORD_BCRYPT_ROUNDS: '12',
+    PASSWORD_PEPPER_ACTIVE_ID: 'v1'
+  };
+  assert.throws(() => validateServerEnv(base), /PASSWORD_PEPPER_V1 is required/);
+  assert.throws(
+    () => validateServerEnv({ ...base, PASSWORD_PEPPER_V1: 'too-short' }),
+    /at least 32 bytes/
+  );
+  assert.doesNotThrow(() => validateServerEnv({
+    ...base,
+    PASSWORD_PEPPER_V1: 'production-like-test-pepper-with-32-bytes'
+  }));
 });
 
 test('validateServerEnv reports partial feature configuration without failing startup', () => {
@@ -31,6 +58,7 @@ test('validateServerEnv warns when OTP webhook delivery is incomplete outside pr
 test('MSG91 OTP delivery is valid and reported configured with complete server credentials', () => {
   const env = {
     NODE_ENV: 'production',
+    ...productionAiEnv,
     MONGODB_URI: 'mongodb://localhost:27017/fitlook',
     JWT_SECRET: 'secret',
     PHONEPE_ENABLED: 'false',
@@ -51,6 +79,7 @@ test('MSG91 OTP delivery is valid and reported configured with complete server c
 test('MSG91 OTP delivery reports missing required credentials', () => {
   assert.throws(() => validateServerEnv({
     NODE_ENV: 'production',
+    ...productionAiEnv,
     MONGODB_URI: 'mongodb://localhost:27017/fitlook',
     JWT_SECRET: 'secret',
     PHONEPE_ENABLED: 'false',
@@ -63,6 +92,7 @@ test('validateServerEnv rejects unsafe OTP delivery but permits fail-closed OTP 
   assert.throws(
     () => validateServerEnv({
       NODE_ENV: 'production',
+      ...productionAiEnv,
       MONGODB_URI: 'mongodb://localhost:27017/fitlook',
       JWT_SECRET: 'secret',
       OTP_DELIVERY_PROVIDER: 'mock',
@@ -74,6 +104,7 @@ test('validateServerEnv rejects unsafe OTP delivery but permits fail-closed OTP 
   assert.throws(
     () => validateServerEnv({
       NODE_ENV: 'production',
+      ...productionAiEnv,
       MONGODB_URI: 'mongodb://localhost:27017/fitlook',
       JWT_SECRET: 'secret',
       OTP_DELIVERY_PROVIDER: 'webhook',
@@ -84,6 +115,7 @@ test('validateServerEnv rejects unsafe OTP delivery but permits fail-closed OTP 
 
   assert.doesNotThrow(() => validateServerEnv({
     NODE_ENV: 'production',
+    ...productionAiEnv,
     MONGODB_URI: 'mongodb://localhost:27017/fitlook',
     JWT_SECRET: 'secret',
     OTP_DELIVERY_PROVIDER: 'disabled',
@@ -94,6 +126,7 @@ test('validateServerEnv rejects unsafe OTP delivery but permits fail-closed OTP 
 test('PhonePe can be explicitly disabled without validating stale partial credentials', () => {
   const env = {
     NODE_ENV: 'production',
+    ...productionAiEnv,
     MONGODB_URI: 'mongodb://localhost:27017/fitlook',
     JWT_SECRET: 'secret',
     OTP_DELIVERY_PROVIDER: 'disabled',
@@ -113,6 +146,7 @@ test('PhonePe can be explicitly disabled without validating stale partial creden
 test('partial PhonePe production configuration still fails when payments are enabled', () => {
   assert.throws(() => validateServerEnv({
     NODE_ENV: 'production',
+    ...productionAiEnv,
     MONGODB_URI: 'mongodb://localhost:27017/fitlook',
     JWT_SECRET: 'secret',
     OTP_DELIVERY_PROVIDER: 'disabled',
@@ -137,6 +171,7 @@ test('validateServerEnv rejects fixed OTP in production', () => {
   assert.throws(
     () => validateServerEnv({
       NODE_ENV: 'production',
+      ...productionAiEnv,
       MONGODB_URI: 'mongodb://localhost:27017/fitlook',
       JWT_SECRET: 'secret',
       OTP_DELIVERY_PROVIDER: 'webhook',
@@ -150,6 +185,7 @@ test('validateServerEnv rejects fixed OTP in production', () => {
 test('validateServerEnv allows explicitly enabled fixed OTP in production', () => {
   const env = {
     NODE_ENV: 'production',
+    ...productionAiEnv,
     MONGODB_URI: 'mongodb://localhost:27017/fitlook',
     JWT_SECRET: 'secret',
     OTP_DELIVERY_PROVIDER: 'disabled',
@@ -164,6 +200,19 @@ test('validateServerEnv allows explicitly enabled fixed OTP in production', () =
     otpProviderType: 'fixed',
     phonePe: 'disabled'
   });
+});
+
+test('production requires keys for selected AI providers and enabled generation features', () => {
+  const base = {
+    NODE_ENV: 'production',
+    MONGODB_URI: 'mongodb://localhost:27017/fitlook',
+    JWT_SECRET: 'secret',
+    OTP_DELIVERY_PROVIDER: 'disabled',
+    PHONEPE_ENABLED: 'false'
+  };
+  assert.throws(() => validateServerEnv(base), /PRUNA_API_KEY.*FAL_KEY.*FITROOM_API_KEY/);
+  assert.doesNotThrow(() => validateServerEnv({ ...base, ...productionAiEnv }));
+  assert.doesNotThrow(() => validateServerEnv({ ...base, AI_FEATURES_ENABLED: 'false' }));
 });
 
 test('validateServerEnv allows fixed OTP for staging mock delivery', () => {

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { publicUrlForKey, publicUrlForStoredFile, readStoredFile, saveBuffer, useBunny } from './storage.js';
-import { safeFetchBuffer } from './security.js';
+import { safeFetchImageBuffer } from './security.js';
 
 const PROCESSING_VERSION = 'subject-isolation-v4';
 const DEFAULT_PROVIDER = 'semantic-rembg';
@@ -168,7 +168,7 @@ async function imageBufferFromInput({ rootDir, imageUrl, imageBuffer, storedImag
   }
 
   if (/^https?:\/\//i.test(source)) {
-    const { response, buffer: bytes } = await safeFetchBuffer(source, {
+    const { response, buffer: bytes } = await safeFetchImageBuffer(source, {
       maxBytes: 12 * 1024 * 1024,
       headers: {
         accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',

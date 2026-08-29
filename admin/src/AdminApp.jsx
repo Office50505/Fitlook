@@ -431,6 +431,9 @@ function AdminApp() {
   const [mediaUser, setMediaUser] = useState(null);
   const [previewImage, setPreviewImage] = useState('');
   const [fetchingDraft, setFetchingDraft] = useState(false);
+  const [smartCommand, setSmartCommand] = useState('');
+  const [smartImporting, setSmartImporting] = useState(false);
+  const [smartImportResult, setSmartImportResult] = useState(null);
   const [creatingProduct, setCreatingProduct] = useState(false);
   const [draftStatus, setDraftStatus] = useState({
     tone: 'idle',
@@ -554,7 +557,7 @@ function AdminApp() {
   }, [state.facets.categoryCounts, state.products]);
   const pageCopy = PAGE_COPY[activePage] || PAGE_COPY.overview;
   const adminDisplayName = currentAdmin?.name || currentAdmin?.email || 'Admin';
-  const createBusy = fetchingDraft || creatingProduct;
+  const createBusy = fetchingDraft || smartImporting || creatingProduct;
 
   useEffect(() => {
     const handleHashChange = () => setActivePage(pageFromHash());
@@ -686,7 +689,7 @@ function AdminApp() {
   };
 
   const previewAffiliate = async () => {
-    if (fetchingDraft || creatingProduct) return;
+    if (fetchingDraft || smartImporting || creatingProduct) return;
     const form = formRef.current;
     const affiliateLink = String(form?.elements.namedItem('affiliateLink')?.value || '').trim();
     const itemType = String(form?.elements.namedItem('fetchItemType')?.value || 'auto');
@@ -760,9 +763,46 @@ function AdminApp() {
     }
   };
 
+  const runSmartImport = async () => {
+    const command = smartCommand.trim();
+    if (!command || smartImporting || creatingProduct || fetchingDraft) {
+      if (!command) setMessage('Describe the products you want to fetch.');
+      return;
+    }
+    setSmartImporting(true);
+    setSmartImportResult(null);
+    setMessage('Finding matching products and creating drafts...');
+    try {
+      const data = await api('/products/smart-import', {
+        method: 'POST',
+        body: JSON.stringify({ command })
+      });
+      const batch = data.batch || null;
+      setSmartImportResult(batch);
+      setMessage(batch?.created
+        ? `Created ${batch.created} draft product${batch.created === 1 ? '' : 's'} for review.`
+        : 'No new drafts were created. Review the import report.');
+      if (batch?.created) {
+        setRefresh((value) => value + 1);
+        setOperationsRefresh((value) => value + 1);
+      }
+    } catch (error) {
+      setMessage(error.message);
+      setSmartImportResult({ error: error.message, created: 0, products: [], issues: [] });
+    } finally {
+      setSmartImporting(false);
+    }
+  };
+
+  const reviewSmartDrafts = () => {
+    setInventoryPage(1);
+    setFilters((current) => ({ ...current, q: '', availability: 'draft', sort: 'newest' }));
+    showPage('inventory');
+  };
+
   const submit = async (event) => {
     event.preventDefault();
-    if (fetchingDraft || creatingProduct) return;
+    if (fetchingDraft || smartImporting || creatingProduct) return;
     setMessage('Uploading product...');
     setCreatingProduct(true);
     try {
@@ -1233,8 +1273,34 @@ function AdminApp() {
                   <h2>Create Product</h2>
                   <p>Fetch a draft, review the details, and publish to the catalog.</p>
                 </div>
-                <span>{creatingProduct ? 'Publishing' : fetchingDraft ? 'Fetching draft' : 'Draft to publish'}</span>
+                <span>{creatingProduct ? 'Publishing' : smartImporting ? 'Fetching batch' : fetchingDraft ? 'Fetching draft' : 'Draft to publish'}</span>
               </div>
+              <section className="form-section smart-import-section">
+                <div className="form-section-title"><strong>Smart catalog fetch</strong><span>Draft review required</span></div>
+                <div className="smart-import-command">
+                  <label className="field">
+                    <span>Products to find</span>
+                    <input
+                      type="text"
+                      value={smartCommand}
+                      maxLength="180"
+                      placeholder="10 black T-shirts for men"
+                      disabled={createBusy}
+                      onChange={(event) => setSmartCommand(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return;
+                        event.preventDefault();
+                        runSmartImport();
+                      }}
+                    />
+                  </label>
+                  <button type="button" onClick={runSmartImport} disabled={createBusy || !smartCommand.trim()}>
+                    {smartImporting && <span className="button-spinner" aria-hidden="true" />}
+                    {smartImporting ? 'Fetching batch...' : 'Find and create drafts'}
+                  </button>
+                </div>
+                {smartImportResult && <SmartImportResult batch={smartImportResult} onReview={reviewSmartDrafts} />}
+              </section>
               <section className="form-section">
                 <div className="form-section-title"><strong>Import</strong><span>Start from an affiliate URL or fill manually.</span></div>
                 <fieldset className="segmented-field fetch-type-field" disabled={creatingProduct}>
@@ -1358,7 +1424,6 @@ function AdminApp() {
                     onEdit={() => openEditor(product)}
                     onPlacement={updateGarmentPlacement}
                     onAvailability={updateProductAvailability}
-                    onRemove={removeProduct}
                     onDelete={requestDeleteProduct}
                   />
                 ))}
@@ -2782,6 +2847,35 @@ function DraftFetchStatus({ status }) {
   );
 }
 
+function SmartImportResult({ batch, onReview }) {
+  if (batch.error) {
+    return <div className="smart-import-result error" role="alert"><strong>Smart fetch failed</strong><span>{batch.error}</span></div>;
+  }
+  const products = Array.isArray(batch.products) ? batch.products : [];
+  const issues = Array.isArray(batch.issues) ? batch.issues : [];
+  return (
+    <div className={`smart-import-result ${batch.created ? 'success' : 'warning'}`} role="status" aria-live="polite">
+      <div className="smart-import-result-head">
+        <div><strong>{batch.created ? `${batch.created} drafts created` : 'No new drafts created'}</strong><span>{batch.command}</span></div>
+        {batch.created > 0 && <button type="button" onClick={onReview}>Review drafts</button>}
+      </div>
+      <div className="smart-import-counts" aria-label="Smart fetch results">
+        <span><b>{batch.requested || 0}</b>Requested</span>
+        <span><b>{batch.created || 0}</b>Created</span>
+        <span><b>{batch.duplicates || 0}</b>Duplicates</span>
+        <span><b>{(batch.rejected || 0) + (batch.failed || 0)}</b>Skipped</span>
+      </div>
+      {products.length > 0 && <div className="smart-import-products">{products.slice(0, 6).map((product) => <span key={product.id}>{product.name}</span>)}</div>}
+      {issues.length > 0 && (
+        <details className="smart-import-issues">
+          <summary>{issues.length} import note{issues.length === 1 ? '' : 's'}</summary>
+          <ul>{issues.slice(0, 8).map((issue, index) => <li key={`${issue.sourceUrl || issue.type}-${index}`}><b>{issue.type || 'skipped'}</b><span>{issue.reason}</span></li>)}</ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function CatalogFilters({ filters, facets, onChange, onClear }) {
   const [expanded, setExpanded] = useState(false);
   const categories = facets?.categories || [];
@@ -2897,7 +2991,7 @@ function BulkActionBar({ selectedProducts, onFeature, onUnfeature, onNewArrival,
   );
 }
 
-function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlacement, onAvailability, onRemove, onDelete }) {
+function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlacement, onAvailability, onDelete }) {
   const openProduct = () => onEdit(product);
   const openProductFromKeyboard = (event) => {
     if (event.target !== event.currentTarget) return;
@@ -2949,7 +3043,7 @@ function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlace
         </div>
         {qaFlags.length > 0 && (
           <div className="qa-flags">
-            {qaFlags.slice(0, 2).map((flag) => <button type="button" key={`${product.id}-${flag}`} onClick={openProduct}>{flag} - Fix</button>)}
+            {qaFlags.slice(0, 2).map((flag) => <span key={`${product.id}-${flag}`}>{flag}</span>)}
           </div>
         )}
       </div>
@@ -2969,20 +3063,23 @@ function AdminProductRow({ product, selected, qaFlags, onSelect, onEdit, onPlace
               <option value="archived">Archived</option>
             </select>
           </label>
-          <div className="fit-area-control">
+          <label className="fit-area-control">
             <span>Fit area</span>
-            <div className="row-segmented" aria-label={`Fit area for ${product.name}`}>
-              <button className={(product.garmentPlacement || 'top') === 'top' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'top')}>Top</button>
-              <button className={product.garmentPlacement === 'bottom' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'bottom')}>Bottom</button>
-              <button className={product.garmentPlacement === 'full-body' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'full-body')}>Full body</button>
-              <button className={product.garmentPlacement === 'accessory' ? 'active' : ''} type="button" onClick={() => onPlacement(product.id, 'accessory')}>Accessory</button>
-            </div>
-          </div>
+            <select
+              aria-label={`Fit area for ${product.name}`}
+              value={product.garmentPlacement || 'top'}
+              onChange={(event) => onPlacement(product.id, event.target.value)}
+            >
+              <option value="top">Top</option>
+              <option value="bottom">Bottom</option>
+              <option value="full-body">Full body</option>
+              <option value="accessory">Accessory</option>
+            </select>
+          </label>
         </div>
         <div className="row-actions">
           {product.availabilityStatus === 'available' && <a className="preview-action" href={productPublicUrl(product)} target="_blank" rel="noreferrer">Preview</a>}
           <button type="button" onClick={openProduct}>Edit</button>
-          <button className="danger-action" type="button" onClick={() => onRemove(product.id)}>Archive</button>
           <button className="delete-action" type="button" onClick={() => onDelete(product)}>Delete</button>
         </div>
       </div>

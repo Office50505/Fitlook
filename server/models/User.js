@@ -42,7 +42,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       sparse: true
     },
-    passwordHash: { type: String, required: true },
+    passwordHash: { type: String, required: true, select: false },
     authVersion: {
       type: Number,
       default: 0,

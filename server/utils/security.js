@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import sharp from 'sharp';
 import User from '../models/User.js';
 import { accountAccessError } from './accountState.js';
+import { verifyUserMediaToken } from './mediaTokens.js';
 
 const ALLOWED_RASTER_MIME_TYPES = new Set([
   'image/jpeg',
@@ -20,6 +21,7 @@ const ALLOWED_RASTER_MIME_TYPES = new Set([
 const ALLOWED_RASTER_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif', '.heic', '.heif']);
 const FORBIDDEN_IMAGE_MIME_TYPES = new Set(['image/svg+xml', 'image/gif']);
 const FORBIDDEN_IMAGE_EXTENSIONS = new Set(['.svg', '.svgz', '.gif']);
+const ALLOWED_RASTER_FORMATS = new Set(['jpeg', 'png', 'webp', 'avif', 'heif']);
 const DEFAULT_FETCH_TIMEOUT_MS = 12_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 const MAX_IMAGE_INPUT_PIXELS = 40_000_000;
@@ -156,6 +158,15 @@ function isBlockedIp(address) {
   }
   if (ipVersion === 6) {
     const normalized = address.toLowerCase();
+    const dottedIpv4 = normalized.match(/(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/)?.[1];
+    if (dottedIpv4 && net.isIP(dottedIpv4) === 4 && isBlockedIp(dottedIpv4)) return true;
+    const mappedHex = normalized.match(/^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (mappedHex) {
+      const high = Number.parseInt(mappedHex[1], 16);
+      const low = Number.parseInt(mappedHex[2], 16);
+      const mapped = `${high >>> 8}.${high & 0xff}.${low >>> 8}.${low & 0xff}`;
+      if (isBlockedIp(mapped)) return true;
+    }
     return (
       normalized === '::' ||
       normalized === '::1' ||
@@ -254,6 +265,40 @@ async function safeFetchBuffer(url, options = {}) {
   return { response, finalUrl, buffer: await responseBuffer(response, maxBytes) };
 }
 
+async function validateRasterImageResponse(response, buffer) {
+  if (!response?.ok) return '';
+  const declared = String(response.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (FORBIDDEN_IMAGE_MIME_TYPES.has(declared)) throw new Error('Remote image type is not allowed');
+  if (declared && declared !== 'application/octet-stream' && !ALLOWED_RASTER_MIME_TYPES.has(declared)) {
+    throw new Error('Remote URL did not return a supported image');
+  }
+
+  let metadata;
+  try {
+    metadata = await sharp(buffer, { failOn: 'error', limitInputPixels: MAX_IMAGE_INPUT_PIXELS }).metadata();
+  } catch {
+    throw new Error('Remote URL did not return a valid raster image');
+  }
+  if (!ALLOWED_RASTER_FORMATS.has(String(metadata.format || '').toLowerCase())) {
+    throw new Error('Remote image format is not allowed');
+  }
+  if (!metadata.width || !metadata.height || metadata.width * metadata.height > MAX_IMAGE_INPUT_PIXELS) {
+    throw new Error('Remote image dimensions are not allowed');
+  }
+  if (Number(metadata.pages || 1) > 1) throw new Error('Animated remote images are not allowed');
+  return declared && declared !== 'application/octet-stream'
+    ? declared
+    : metadata.format === 'jpeg'
+      ? 'image/jpeg'
+      : `image/${metadata.format}`;
+}
+
+async function safeFetchImageBuffer(url, options = {}) {
+  const result = await safeFetchBuffer(url, options);
+  const mimetype = await validateRasterImageResponse(result.response, result.buffer);
+  return { ...result, mimetype };
+}
+
 async function safeFetchText(url, options = {}) {
   const { buffer, response, finalUrl } = await safeFetchBuffer(url, {
     maxBytes: options.maxBytes || DEFAULT_MAX_RESPONSE_BYTES,
@@ -265,7 +310,7 @@ async function safeFetchText(url, options = {}) {
 function mediaToken(req) {
   const header = req.headers.authorization || '';
   if (header.startsWith('Bearer ')) return header.slice(7);
-  return String(req.query?.token || '');
+  return String(req.query?.mediaToken || req.query?.token || '');
 }
 
 function sameStoredPath(stored, clean) {
@@ -286,11 +331,16 @@ async function authorizeUploadRequest(req, clean) {
   }
   let decoded;
   try {
-    decoded = jwt.verify(token, process.env.JWT_SECRET);
+    decoded = verifyUserMediaToken(token);
   } catch {
-    const error = new Error('Invalid or expired session');
-    error.status = 401;
-    throw error;
+    try {
+      // Temporary compatibility for media URLs created before scoped tokens shipped.
+      decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    } catch {
+      const error = new Error('Invalid or expired media access');
+      error.status = 401;
+      throw error;
+    }
   }
   const user = await User.findById(decoded.sub);
   if (!user) {
@@ -351,7 +401,9 @@ export {
   normalizeRasterImageBuffer,
   safeOutboundFetch,
   safeFetchBuffer,
+  safeFetchImageBuffer,
   safeFetchText,
   securityHeaders,
-  serveUploadedMedia
+  serveUploadedMedia,
+  validateRasterImageResponse
 };
