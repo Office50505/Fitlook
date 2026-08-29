@@ -26,6 +26,7 @@ import {
   catalogIntentCompatibility,
   parseCatalogCommand
 } from '../services/catalogAutomation.js';
+import { catalogSearchProviderName, searchSerpApiAmazon } from '../services/catalogSearchProvider.js';
 import {
   PRODUCT_AVAILABILITY_STATUSES,
   adminAvailabilityClause,
@@ -1606,11 +1607,56 @@ function smartImportRecord(draft, searchResult, intent, batchId) {
   };
 }
 
+function smartImportDraftFromSearchResult(searchResult, intent) {
+  const name = normalizeProductTitle(searchResult.name);
+  const description = cleanDescription(searchResult.description || name);
+  const inferredCategory = inferCategory({ title: name, description, query: intent.query });
+  const category = inferredCategory === 'clothing' ? intent.category : inferredCategory;
+  const gender = intent.gender === 'unisex' ? inferGender(`${name} ${description}`) : intent.gender;
+  const brand = cleanBrand(searchResult.brand) || titleBrandCandidate(name) || 'Brand unavailable';
+  const colors = uniqueList([
+    ...colorWordsFromText(name),
+    ...colorWordsFromText(description)
+  ], 8);
+  const tags = uniqueList([
+    category,
+    gender,
+    brand,
+    ...colors,
+    ...collectKeywordTags(`${name} ${description}`)
+  ].map((tag) => String(tag || '').toLowerCase()), 14);
+
+  return {
+    affiliateLink: searchResult.link,
+    sourceUrl: searchResult.link,
+    name,
+    brand,
+    category,
+    gender,
+    garmentPlacement: intent.itemType === 'accessory'
+      ? 'accessory'
+      : normalizeGarmentPlacement(intent.garmentPlacement, { name, category, description, tags }),
+    price: searchResult.price,
+    compareAtPrice: searchResult.compareAtPrice,
+    currency: searchResult.currency || 'INR',
+    rating: searchResult.rating,
+    ratingCount: searchResult.ratingCount,
+    description,
+    tags,
+    colors,
+    sizes: [],
+    sizeNotes: '',
+    remoteImageUrl: searchResult.remoteImageUrl
+  };
+}
+
 async function fetchSmartImportRecord(searchResult, intent, batchId) {
-  const draft = await buildProductDraft(withAmazonAssociateTag(searchResult.link), {
-    itemType: intent.itemType,
-    timeoutMs: 7_000
-  });
+  const draft = searchResult.provider === 'serpapi'
+    ? smartImportDraftFromSearchResult(searchResult, intent)
+    : await buildProductDraft(withAmazonAssociateTag(searchResult.link), {
+      itemType: intent.itemType,
+      timeoutMs: 7_000
+    });
   const merged = {
     ...draft,
     price: draft.price ?? searchResult.price,
@@ -1641,24 +1687,33 @@ router.post('/smart-import', requireAdmin, requireUserOperationsAdmin, adminSmar
   const searchResults = [];
   const seenSearchLinks = new Set();
   const desiredCandidateCount = Math.min(intent.quantity + 8, 18);
+  const searchProvider = catalogSearchProviderName();
   let searchError = null;
   let searchedPages = 0;
   for (let page = 1; page <= smartImportSearchPageCount() && searchResults.length < desiredCandidateCount; page += 1) {
-    const pageUrl = new URL(searchUrl);
-    if (page > 1) pageUrl.searchParams.set('page', String(page));
     try {
-      const { response, text: html, finalUrl } = await safeFetchText(pageUrl.toString(), {
-        maxBytes: 5 * 1024 * 1024,
-        timeoutMs: 10_000,
-        headers: {
-          accept: 'text/html,application/xhtml+xml',
-          'accept-language': 'en-IN,en;q=0.9',
-          'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
-        }
-      });
-      if (!response.ok) throw new Error(`Amazon search returned HTTP ${response.status}`);
+      let pageResults;
+      if (searchProvider === 'serpapi') {
+        pageResults = await searchSerpApiAmazon(searchQuery, { page });
+      } else if (['amazon', 'amazon-html'].includes(searchProvider)) {
+        const pageUrl = new URL(searchUrl);
+        if (page > 1) pageUrl.searchParams.set('page', String(page));
+        const { response, text: html, finalUrl } = await safeFetchText(pageUrl.toString(), {
+          maxBytes: 5 * 1024 * 1024,
+          timeoutMs: 10_000,
+          headers: {
+            accept: 'text/html,application/xhtml+xml',
+            'accept-language': 'en-IN,en;q=0.9',
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+          }
+        });
+        if (!response.ok) throw new Error(`Amazon search returned HTTP ${response.status}`);
+        pageResults = extractAmazonSearchResults(html, finalUrl || pageUrl.toString());
+      } else {
+        throw new Error(`Unsupported catalog search provider: ${searchProvider}`);
+      }
       searchedPages += 1;
-      for (const result of extractAmazonSearchResults(html, finalUrl || pageUrl.toString())) {
+      for (const result of pageResults) {
         if (seenSearchLinks.has(result.link)) continue;
         seenSearchLinks.add(result.link);
         searchResults.push(result);
@@ -1759,6 +1814,7 @@ router.post('/smart-import', requireAdmin, requireUserOperationsAdmin, adminSmar
       rejected: rejectedCount,
       failed: failedCount,
       searchedPages,
+      searchProvider,
       query: intent.query
     }
   });
@@ -1771,6 +1827,7 @@ router.post('/smart-import', requireAdmin, requireUserOperationsAdmin, adminSmar
       requested: intent.quantity,
       discovered: searchResults.length,
       searchedPages,
+      searchProvider,
       inspected: inspectedCount,
       created: created.length,
       duplicates: duplicateCount,
@@ -2106,6 +2163,7 @@ export {
   normalizeGarmentPlacement,
   refineProductDraft,
   runProductRecategorizationJob,
+  smartImportDraftFromSearchResult,
   smartImportRecord,
   temporaryExternalAmazonFilter
 };

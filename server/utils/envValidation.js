@@ -77,6 +77,13 @@ export function validateServerEnv(env = process.env) {
 
   const production = isProductionEnv(env);
   validateProductionAiConfiguration(env, errors);
+  const catalogSearchProvider = String(env.CATALOG_SEARCH_PROVIDER || '').trim().toLowerCase();
+  if (catalogSearchProvider && !['amazon', 'amazon-html', 'serpapi'].includes(catalogSearchProvider)) {
+    errors.push(`Unsupported CATALOG_SEARCH_PROVIDER "${catalogSearchProvider}".`);
+  }
+  if (production && catalogSearchProvider === 'serpapi' && !String(env.SERPAPI_API_KEY || '').trim()) {
+    errors.push('SERPAPI_API_KEY is required in production when CATALOG_SEARCH_PROVIDER=serpapi.');
+  }
   try {
     passwordHashingConfig(env);
   } catch (error) {

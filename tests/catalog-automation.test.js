@@ -6,7 +6,7 @@ import {
   catalogIntentCompatibility,
   parseCatalogCommand
 } from '../server/services/catalogAutomation.js';
-import { smartImportRecord } from '../server/routes/products.js';
+import { smartImportDraftFromSearchResult, smartImportRecord } from '../server/routes/products.js';
 
 function productDraft(overrides = {}) {
   return {
@@ -96,6 +96,29 @@ test('builds hidden, unapproved catalog records from accepted products', () => {
   assert.equal(record.catalogApproved, false);
   assert.equal(record.availabilitySource, 'smart-import');
   assert.match(record.inventoryNotes, /10 black T-shirts/);
+});
+
+test('builds complete smart-import drafts directly from SerpApi search data', () => {
+  const intent = parseCatalogCommand('2 white dresses for women');
+  const draft = smartImportDraftFromSearchResult({
+    provider: 'serpapi',
+    link: 'https://www.amazon.in/dp/B0ABCDEF12',
+    name: 'Acme Women White Cotton Midi Dress',
+    price: 799,
+    compareAtPrice: 1199,
+    currency: 'INR',
+    rating: 4.3,
+    ratingCount: 182,
+    remoteImageUrl: 'https://m.media-amazon.com/images/I/example.jpg'
+  }, intent);
+
+  assert.equal(draft.category, 'dresses');
+  assert.equal(draft.gender, 'women');
+  assert.equal(draft.garmentPlacement, 'full-body');
+  assert.equal(draft.brand, 'Acme');
+  assert.deepEqual(draft.colors, ['white']);
+  assert.equal(draft.price, 799);
+  assert.equal(draft.ratingCount, 182);
 });
 
 test('extracts Amazon ASINs and rejects incomplete smart records', () => {
