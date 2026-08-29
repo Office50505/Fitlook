@@ -1590,7 +1590,10 @@ function smartImportRecord(draft, searchResult, intent, batchId) {
     sourceUrl,
     description: cleanDescription(draft.description),
     tags,
-    colors: uniqueList(draft.colors || intent.colors, 8),
+    colors: uniqueList([
+      ...(Array.isArray(draft.colors) ? draft.colors : []),
+      ...(!Array.isArray(draft.colors) || draft.colors.length === 0 ? intent.colors : [])
+    ], 8),
     sizes: uniqueList(draft.sizes || [], 18),
     sizeNotes: String(draft.sizeNotes || '').trim(),
     tryOnModel: inferTryOnModel({ ...draft, category, gender, tags }),
@@ -1668,8 +1671,13 @@ async function fetchSmartImportRecord(searchResult, intent, batchId) {
   const gender = genderCompatibility(merged, intent.genderPreference);
   if (!gender.compatible) throw new Error(gender.reason);
   if (!queryIntentCompatibility(merged, intent.query)) throw new Error('Result did not match the requested product type');
-  const intentMatch = catalogIntentCompatibility(merged, intent);
+  const intentMatch = catalogIntentCompatibility(merged, intent, {
+    allowUnverifiedColor: searchResult.provider === 'serpapi'
+  });
   if (!intentMatch.compatible) throw new Error(intentMatch.reason);
+  if (intentMatch.unverifiedColors?.length) {
+    merged.colors = uniqueList([...(merged.colors || []), ...intentMatch.unverifiedColors], 8);
+  }
   return smartImportRecord(merged, searchResult, intent, batchId);
 }
 

@@ -81,6 +81,28 @@ test('checks requested category and color against fetched details', () => {
   );
 });
 
+test('allows unmentioned SerpApi colors but rejects explicit color conflicts', () => {
+  const intent = parseCatalogCommand('10 black T-shirts for men');
+  const noColor = productDraft({
+    name: 'Acme Cotton Crew Neck T-Shirt for Men',
+    description: 'Cotton crew neck T-shirt for men',
+    tags: ['cotton'],
+    colors: []
+  });
+  const inferred = catalogIntentCompatibility(noColor, intent, { allowUnverifiedColor: true });
+  assert.equal(inferred.compatible, true);
+  assert.deepEqual(inferred.unverifiedColors, ['black']);
+
+  const conflicting = catalogIntentCompatibility(productDraft({
+    name: 'Acme Red Cotton T-Shirt for Men',
+    description: 'Red cotton crew neck T-shirt for men',
+    tags: ['cotton', 'red'],
+    colors: ['red']
+  }), intent, { allowUnverifiedColor: true });
+  assert.equal(conflicting.compatible, false);
+  assert.match(conflicting.reason, /red instead of the requested color: black/);
+});
+
 test('builds hidden, unapproved catalog records from accepted products', () => {
   const intent = parseCatalogCommand('10 black T-shirts for men');
   const record = smartImportRecord(

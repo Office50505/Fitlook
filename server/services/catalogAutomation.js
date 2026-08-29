@@ -130,7 +130,7 @@ function productText(product = {}) {
   ].filter(Boolean).join(' '));
 }
 
-function catalogIntentCompatibility(product = {}, intent = {}) {
+function catalogIntentCompatibility(product = {}, intent = {}, options = {}) {
   const text = productText(product);
   const productCategory = compact(product.category).toLowerCase();
   if (intent.category) {
@@ -144,6 +144,16 @@ function catalogIntentCompatibility(product = {}, intent = {}) {
     const normalizedText = text.toLowerCase().replace(/\bgray\b/g, 'grey');
     const missingColors = intent.colors.filter((color) => !new RegExp(`\\b${color}\\b`, 'i').test(normalizedText));
     if (missingColors.length === intent.colors.length) {
+      const mentionedColors = colorsFromText(normalizedText);
+      if (options.allowUnverifiedColor && mentionedColors.length === 0) {
+        return { compatible: true, unverifiedColors: [...intent.colors] };
+      }
+      if (options.allowUnverifiedColor && mentionedColors.length > 0) {
+        return {
+          compatible: false,
+          reason: `Result mentioned ${mentionedColors.join(', ')} instead of the requested color: ${intent.colors.join(', ')}`
+        };
+      }
       return { compatible: false, reason: `Result did not mention the requested color: ${intent.colors.join(', ')}` };
     }
   }
