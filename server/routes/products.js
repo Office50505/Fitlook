@@ -61,13 +61,6 @@ const adminProductWriteLimiter = createRateLimiter({
   keyGenerator: rateLimitKeys.userOrIp,
   message: 'Too many product admin actions. Please pause briefly and try again.'
 });
-const adminSmartImportLimiter = createRateLimiter({
-  name: 'products:admin-smart-import',
-  windowMs: 30 * 60 * 1000,
-  max: 8,
-  keyGenerator: rateLimitKeys.userOrIp,
-  message: 'Smart catalog fetching is temporarily limited. Please review the current drafts before starting another batch.'
-});
 
 async function clearProductReadCaches() {
   await Promise.all([
@@ -1681,7 +1674,7 @@ async function fetchSmartImportRecord(searchResult, intent, batchId) {
   return smartImportRecord(merged, searchResult, intent, batchId);
 }
 
-router.post('/smart-import', requireAdmin, requireUserOperationsAdmin, adminSmartImportLimiter, async (req, res) => {
+router.post('/smart-import', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   let intent;
   try {
     intent = parseCatalogCommand(req.body?.command, { maxQuantity: smartImportMaxQuantity() });

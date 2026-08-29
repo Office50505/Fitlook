@@ -156,9 +156,10 @@ test('extracts Amazon ASINs and rejects incomplete smart records', () => {
   );
 });
 
-test('smart import route requires user-operation admin access and approves drafts only on availability change', async () => {
+test('smart import route requires user-operation admin access without a request limiter', async () => {
   const productsRoute = await fs.readFile(new URL('../server/routes/products.js', import.meta.url), 'utf8');
-  assert.match(productsRoute, /router\.post\('\/smart-import', requireAdmin, requireUserOperationsAdmin, adminSmartImportLimiter/);
+  assert.match(productsRoute, /router\.post\('\/smart-import', requireAdmin, requireUserOperationsAdmin, async/);
+  assert.doesNotMatch(productsRoute, /adminSmartImportLimiter|products:admin-smart-import/);
   assert.match(productsRoute, /SMART_CATALOG_SEARCH_PAGES[\s\S]*page <= smartImportSearchPageCount\(\)/);
   assert.match(productsRoute, /catalogApproved: false[\s\S]*availabilityUpdate\('draft'/);
   assert.match(productsRoute, /availability\.availabilityStatus === 'available'\) product\.catalogApproved = true/);
