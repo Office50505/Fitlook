@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { signMediaToken } from '../utils/mediaTokens.js';
 
 const tryOnImageSchema = {
   filename: String,
@@ -92,13 +93,19 @@ tryOnSchema.index({ user: 1, product: 1 }, { unique: true });
 tryOnSchema.index({ user: 1, createdAt: -1 });
 
 function tryOnToClient(tryOn) {
+  const id = tryOn._id.toString();
+  const userId = tryOn.user?._id?.toString?.() || tryOn.user?.toString?.() || '';
+  const pendingProviderVideo = !tryOn.video?.path && Boolean(tryOn.video?.providerOutputUrl);
+  const pendingVideoUrl = pendingProviderVideo && userId
+    ? `/api/tryons/${id}/video/media?mediaToken=${encodeURIComponent(signMediaToken({ userId, mediaId: id, kind: 'tryon-video' }))}`
+    : null;
   return {
-    id: tryOn._id.toString(),
+    id,
     productId: tryOn.product.toString(),
     imageUrl: tryOn.image?.url || (tryOn.image?.path ? `/${tryOn.image.path}` : null),
     transparentImageUrl: tryOn.transparentImage?.url || (tryOn.transparentImage?.path ? `/${tryOn.transparentImage.path}` : (tryOn.imageProcessing?.transparentImageUrl || null)),
     imageProcessing: tryOn.imageProcessing || null,
-    videoUrl: tryOn.video?.url || (tryOn.video?.path ? `/${tryOn.video.path}` : null),
+    videoUrl: pendingVideoUrl || tryOn.video?.url || (tryOn.video?.path ? `/${tryOn.video.path}` : null),
     videoProvider: tryOn.video?.provider || '',
     videoModel: tryOn.video?.model || '',
     videoQuality: tryOn.video?.quality || '',

@@ -1,4 +1,5 @@
 import { isProductionEnv, validateConfiguredHttpsUrl } from './urlValidation.js';
+import { passwordHashingConfig } from './passwordHashing.js';
 
 const REQUIRED_SERVER_ENV = ['MONGODB_URI', 'JWT_SECRET'];
 
@@ -20,6 +21,46 @@ const FEATURE_ENV_GROUPS = [
 const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'off', 'disabled']);
 const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'on']);
 
+function featureEnabled(env, key, defaultValue = true) {
+  const value = String(env[key] ?? '').trim().toLowerCase();
+  if (!value) return defaultValue;
+  return !FALSE_ENV_VALUES.has(value);
+}
+
+function validateProductionAiConfiguration(env, errors) {
+  if (!isProductionEnv(env) || !featureEnabled(env, 'AI_FEATURES_ENABLED', true)) return;
+  const imageProvider = String(env.AI_PROVIDER || 'pruna').trim().toLowerCase();
+  const videoProvider = String(env.TRYON_VIDEO_PROVIDER || 'pixverse').trim().toLowerCase();
+  const required = new Map();
+  const requireKey = (key, feature) => {
+    if (!required.has(key)) required.set(key, []);
+    required.get(key).push(feature);
+  };
+
+  if (!['pruna', 'fitroom'].includes(imageProvider)) {
+    errors.push(`Unsupported AI_PROVIDER "${imageProvider}" in production.`);
+  } else if (imageProvider === 'pruna') requireKey('PRUNA_API_KEY', 'Pruna image try-on');
+  else requireKey('FITROOM_API_KEY', 'FitRoom image try-on');
+
+  if (!['pruna', 'pixverse', 'fal'].includes(videoProvider)) {
+    errors.push(`Unsupported TRYON_VIDEO_PROVIDER "${videoProvider}" in production.`);
+  } else if (videoProvider === 'pruna') requireKey('PRUNA_API_KEY', 'Pruna video generation');
+  else requireKey('FAL_KEY', 'PixVerse video generation');
+
+  if (featureEnabled(env, 'PROFILE_FULL_BODY_GENERATION', true)) {
+    requireKey('FAL_KEY', 'full-body profile generation');
+  }
+  if (featureEnabled(env, 'CLOSET_GENERATION_ENABLED', true)) {
+    requireKey('FITROOM_API_KEY', 'closet outfit generation');
+  }
+
+  for (const [key, features] of required) {
+    if (!String(env[key] || '').trim()) {
+      errors.push(`${key} is required in production for ${features.join(' and ')}.`);
+    }
+  }
+}
+
 export function phonePeEnabled(env = process.env) {
   const value = String(env.PHONEPE_ENABLED || '').trim().toLowerCase();
   return value ? !FALSE_ENV_VALUES.has(value) : true;
@@ -35,6 +76,19 @@ export function validateServerEnv(env = process.env) {
   if (missing.length) errors.push(`Missing required server environment variable${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`);
 
   const production = isProductionEnv(env);
+  validateProductionAiConfiguration(env, errors);
+  const catalogSearchProvider = String(env.CATALOG_SEARCH_PROVIDER || '').trim().toLowerCase();
+  if (catalogSearchProvider && !['amazon', 'amazon-html', 'serpapi'].includes(catalogSearchProvider)) {
+    errors.push(`Unsupported CATALOG_SEARCH_PROVIDER "${catalogSearchProvider}".`);
+  }
+  if (production && catalogSearchProvider === 'serpapi' && !String(env.SERPAPI_API_KEY || '').trim()) {
+    errors.push('SERPAPI_API_KEY is required in production when CATALOG_SEARCH_PROVIDER=serpapi.');
+  }
+  try {
+    passwordHashingConfig(env);
+  } catch (error) {
+    errors.push(error.message);
+  }
   const assertUrl = (key, options = {}) => {
     const value = String(env[key] || '').trim();
     if (!value) return;

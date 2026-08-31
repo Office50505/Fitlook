@@ -20,6 +20,7 @@ import { closeRedisClient, getRedisClient } from './utils/cache.js';
 import { closeJobQueues, queueEnabled } from './utils/jobQueue.js';
 import { configureMongoSlowQueryLogging, flushRequestMetrics, observabilitySnapshot, prometheusMetrics, requestLogger, startRequestMetricFlush } from './utils/observability.js';
 import { createRateLimiter, rateLimitKeys } from './utils/rateLimit.js';
+import { redactSensitiveText, requestPath } from './utils/logSanitization.js';
 import { appRole, mongoConnectOptions, serviceMetadata } from './utils/runtime.js';
 import { configurationReadiness, validateServerEnv } from './utils/envValidation.js';
 import { securityHeaders, serveUploadedMedia } from './utils/security.js';
@@ -194,7 +195,8 @@ app.use((error, req, res, _next) => {
       ? 'Could not process the profile photo. Please choose a different image and try again.'
       : error?.message || 'Request failed.';
 
-  console.error(`[api] ${req.method} ${req.originalUrl} failed:`, error);
+  const errorDetail = process.env.NODE_ENV === 'production' ? error?.message : error?.stack || error?.message;
+  console.error(`[api] ${req.method} ${requestPath(req)} failed: ${redactSensitiveText(errorDetail || 'Unknown error')}`);
   if (status >= 500) {
     void recordSystemIncident({
       service: 'api',

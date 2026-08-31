@@ -71,11 +71,11 @@ function fakeModel(existing = null) {
   };
 }
 
-test('extracts ASIN and builds canonical affiliate URL', () => {
+test('extracts ASIN and leaves the canonical URL untagged by default', () => {
   const url = 'https://www.amazon.in/Some-Product/dp/B0ABCDEF12/ref=sxin?tag=old-tag';
   assert.equal(extractAsin(url), 'B0ABCDEF12');
   assert.equal(canonicalAmazonUrl(url), 'https://www.amazon.in/dp/B0ABCDEF12');
-  assert.equal(withAssociateTag(url), 'https://www.amazon.in/dp/B0ABCDEF12?tag=stampmybrand-21');
+  assert.equal(withAssociateTag(url), 'https://www.amazon.in/dp/B0ABCDEF12');
 });
 
 test('parses quoted CSV manifest rows', () => {

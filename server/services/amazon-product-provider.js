@@ -1,7 +1,7 @@
 import { buildProductDraft } from '../routes/products.js';
 
 const DEFAULT_MARKETPLACE = 'www.amazon.in';
-const DEFAULT_ASSOCIATE_TAG = 'stampmybrand-21';
+const DEFAULT_ASSOCIATE_TAG = '';
 
 function safeUrl(value, base = `https://${DEFAULT_MARKETPLACE}`) {
   if (!value) return null;

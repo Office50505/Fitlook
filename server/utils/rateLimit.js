@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { getRedisClient, keyPrefix, ttlSeconds, withTimeout } from './cache.js';
+import { requestPath } from './logSanitization.js';
 import { normalizeIndianMobile } from './phone.js';
 
 const localBuckets = new Map();
@@ -109,7 +110,7 @@ function createRateLimiter(options = {}) {
         event: 'rate_limited',
         name,
         method: req.method,
-        path: req.originalUrl,
+        path: requestPath(req),
         userId: userId(req) || undefined,
         ip: clientIp(req),
         retryAfterSeconds

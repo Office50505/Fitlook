@@ -1,7 +1,8 @@
 import os from 'node:os';
 import fs from 'node:fs/promises';
 import RequestMetric from '../models/RequestMetric.js';
-import { getRedisClient, withTimeout } from './cache.js';
+import { cleanRedisError, getRedisClient, redisConnectionStatus, withTimeout } from './cache.js';
+import { requestPath } from './logSanitization.js';
 import { serviceMetadata } from './runtime.js';
 
 const startedAt = Date.now();
@@ -188,7 +189,7 @@ function requestLogger(req, res, next) {
       event: 'http_request',
       ...service,
       method: req.method,
-      path: req.originalUrl,
+      path: requestPath(req),
       route: key,
       status: res.statusCode,
       durationMs: Math.round(durationMs * 100) / 100,
@@ -284,9 +285,15 @@ async function persistentRequestMetrics(hours = 24) {
 
 async function redisMetrics() {
   const redis = await getRedisClient();
-  if (!redis) return { ok: false };
-  const info = await withTimeout(redis.info()).catch(() => '');
-  const metrics = { ok: true };
+  const status = redisConnectionStatus();
+  if (!redis) return { ...status, ok: false };
+  let info = '';
+  try {
+    info = await withTimeout(redis.info());
+  } catch (error) {
+    return { ...redisConnectionStatus(), ok: false, error: cleanRedisError(error) };
+  }
+  const metrics = { ...status, ok: true, error: '' };
   for (const line of info.split('\n')) {
     const [key, value] = line.trim().split(':');
     if (!key || value === undefined) continue;

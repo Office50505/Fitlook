@@ -1,10 +1,10 @@
-import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import AdminUser from '../server/models/AdminUser.js';
 import AdminAuditLog from '../server/models/AdminAuditLog.js';
 import { adminPasswordError, normalizeAdminName } from '../server/utils/adminCredentials.js';
 import { ADMIN_ROLES, ALL_ADMIN_SECTIONS, normalizeAdminEmail } from '../server/utils/adminPermissions.js';
+import { hashPassword } from '../server/utils/passwordHashing.js';
 
 dotenv.config({ path: process.env.ENV_FILE || '.env' });
 
@@ -38,10 +38,10 @@ async function main() {
     admin = new AdminUser({
       name: normalizeAdminName(process.env.MASTER_ADMIN_NAME, email),
       email,
-      credentialHash: await bcrypt.hash(password, 12)
+      credentialHash: await hashPassword(password)
     });
   } else {
-    admin.credentialHash = await bcrypt.hash(password, 12);
+    admin.credentialHash = await hashPassword(password);
     admin.credentialVersion = Number(admin.credentialVersion || 1) + 1;
   }
   admin.role = ADMIN_ROLES.MASTER;

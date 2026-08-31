@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import multer from 'multer';
 import path from 'node:path';
@@ -18,7 +19,14 @@ import { recordAdminAudit } from '../utils/adminAudit.js';
 import { requireAdmin, requireAdminSection } from '../utils/adminAccess.js';
 import { ADMIN_SECTIONS } from '../utils/adminPermissions.js';
 import { deleteStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
-import { isAllowedRasterImageUpload, normalizeRasterImageBuffer, safeFetchBuffer, safeFetchText } from '../utils/security.js';
+import { isAllowedRasterImageUpload, normalizeRasterImageBuffer, safeFetchImageBuffer, safeFetchText } from '../utils/security.js';
+import {
+  MAX_QUANTITY as SMART_IMPORT_DEFAULT_MAX,
+  amazonAsin,
+  catalogIntentCompatibility,
+  parseCatalogCommand
+} from '../services/catalogAutomation.js';
+import { catalogSearchProviderName, searchSerpApiAmazon } from '../services/catalogSearchProvider.js';
 import {
   PRODUCT_AVAILABILITY_STATUSES,
   adminAvailabilityClause,
@@ -1099,11 +1107,12 @@ function cleanDescription(value = '', bullets = []) {
   return `${clipped.slice(0, Math.max(clipped.lastIndexOf('.'), clipped.lastIndexOf(' '))).trim()}...`;
 }
 
-async function buildProductDraft(affiliateLink, { itemType = 'auto' } = {}) {
+async function buildProductDraft(affiliateLink, { itemType = 'auto', timeoutMs } = {}) {
   const url = cleanUrl(affiliateLink);
   if (!url) throw new Error('Affiliate link is required');
   const { response, text: html, finalUrl } = await safeFetchText(url, {
     maxBytes: 5 * 1024 * 1024,
+    timeoutMs,
     headers: {
       accept: 'text/html,application/xhtml+xml',
       'user-agent': 'Mozilla/5.0 Lookmefy product importer'
@@ -1210,7 +1219,7 @@ function draftToExternalProduct(draft, fallbackQuery = '') {
 async function cachedRemoteProductImage(remoteImageUrl) {
   const url = cleanUrl(remoteImageUrl);
   if (!url) return null;
-  const { response, buffer } = await safeFetchBuffer(url, {
+  const { response, buffer } = await safeFetchImageBuffer(url, {
     maxBytes: 8 * 1024 * 1024,
     headers: {
       accept: 'image/avif,image/webp,image/apng,image/png,image/jpeg,*/*;q=0.8',
@@ -1262,6 +1271,7 @@ function temporaryExternalAmazonFilter() {
   return {
     catalogApproved: { $ne: true },
     badge: 'Amazon',
+    availabilityStatus: { $ne: 'draft' },
     $or: [{ sourceUrl: /amazon\.[a-z.]+\/dp\//i }, { affiliateLink: /amazon\.[a-z.]+\/dp\//i }]
   };
 }
@@ -1315,10 +1325,12 @@ function applyProductUpdate(product, body = {}) {
   if (body.isFeatured !== undefined) product.isFeatured = toBoolean(body.isFeatured);
   if (body.isNewArrival !== undefined) product.isNewArrival = toBoolean(body.isNewArrival);
   if (body.availabilityStatus !== undefined) {
-    Object.assign(product, availabilityUpdate(body.availabilityStatus, {
+    const availability = availabilityUpdate(body.availabilityStatus, {
       source: 'manual',
       notes: body.inventoryNotes
-    }));
+    });
+    Object.assign(product, availability);
+    if (availability.availabilityStatus === 'available') product.catalogApproved = true;
   } else if (body.inventoryNotes !== undefined) {
     product.inventoryNotes = String(body.inventoryNotes || '').trim();
   }
@@ -1498,6 +1510,336 @@ router.post('/amazon-search', requireUser, amazonSearchLimiter, async (req, res)
   }
 });
 
+function smartImportMaxQuantity() {
+  const configured = Number(process.env.SMART_CATALOG_IMPORT_MAX || SMART_IMPORT_DEFAULT_MAX);
+  if (!Number.isInteger(configured)) return SMART_IMPORT_DEFAULT_MAX;
+  return Math.min(Math.max(configured, 1), 25);
+}
+
+function smartImportSearchPageCount() {
+  const configured = Number(process.env.SMART_CATALOG_SEARCH_PAGES || 2);
+  if (!Number.isInteger(configured)) return 2;
+  return Math.min(Math.max(configured, 1), 3);
+}
+
+function smartImportIssue(sourceUrl, reason, type = 'rejected') {
+  return {
+    type,
+    sourceUrl: cleanUrl(sourceUrl),
+    reason: String(reason || 'Product could not be imported').replace(/\s+/g, ' ').trim().slice(0, 220)
+  };
+}
+
+function numberOrZero(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function smartImportRecord(draft, searchResult, intent, batchId) {
+  const sourceUrl = amazonProductUrl(draft.sourceUrl || searchResult.link, searchResult.link);
+  const affiliateLink = cleanUrl(withAmazonAssociateTag(sourceUrl));
+  const sourceProductId = amazonAsin(sourceUrl);
+  const remoteImageUrl = cleanUrl(draft.remoteImageUrl || searchResult.remoteImageUrl);
+  const price = Number(draft.price ?? searchResult.price);
+  const category = String(draft.category || intent.category || '').trim();
+  const name = String(draft.name || '').replace(/\s+/g, ' ').trim();
+  const brand = String(draft.brand || '').replace(/\s+/g, ' ').trim();
+  const errors = [];
+
+  if (!sourceUrl || !sourceProductId) errors.push('Amazon product identifier is missing');
+  if (!name) errors.push('Product name is missing');
+  if (!brand) errors.push('Product brand is missing');
+  if (!category || category === 'clothing') errors.push('Product category needs manual review');
+  if (!Number.isFinite(price) || price <= 0) errors.push('Product price is missing');
+  if (!remoteImageUrl || !/^https:\/\//i.test(remoteImageUrl)) errors.push('Secure product image is missing');
+  if (errors.length) throw new Error(errors.join('; '));
+
+  const compareAtPrice = Number(draft.compareAtPrice);
+  const requestedGender = intent.gender === 'unisex' ? '' : intent.gender;
+  const gender = requestedGender || draft.gender || 'unisex';
+  const tags = uniqueList([
+    ...(draft.tags || []),
+    category,
+    gender,
+    ...intent.colors,
+    'smart-import'
+  ], 24);
+
+  return {
+    name,
+    brand,
+    category,
+    gender,
+    garmentPlacement: intent.itemType === 'accessory'
+      ? 'accessory'
+      : normalizeGarmentPlacement(draft.garmentPlacement || intent.garmentPlacement, draft),
+    price,
+    compareAtPrice: Number.isFinite(compareAtPrice) && compareAtPrice > price ? compareAtPrice : undefined,
+    currency: normalizeCurrency(draft.currency || searchResult.currency) || 'INR',
+    rating: Math.min(numberOrZero(draft.rating), 5),
+    ratingCount: Math.round(numberOrZero(draft.ratingCount)),
+    badge: 'Amazon',
+    affiliateLink,
+    sourceUrl,
+    description: cleanDescription(draft.description),
+    tags,
+    colors: uniqueList([
+      ...(Array.isArray(draft.colors) ? draft.colors : []),
+      ...(!Array.isArray(draft.colors) || draft.colors.length === 0 ? intent.colors : [])
+    ], 8),
+    sizes: uniqueList(draft.sizes || [], 18),
+    sizeNotes: String(draft.sizeNotes || '').trim(),
+    tryOnModel: inferTryOnModel({ ...draft, category, gender, tags }),
+    image: { remoteUrl: remoteImageUrl },
+    sourceProvider: 'amazon',
+    sourceProductId,
+    importBatchId: batchId,
+    catalogApproved: false,
+    isFeatured: false,
+    isNewArrival: true,
+    lastSyncedAt: new Date(),
+    inventoryNotes: `Smart import request: ${intent.command}`.slice(0, 300),
+    ...availabilityUpdate('draft', { source: 'smart-import' })
+  };
+}
+
+function smartImportDraftFromSearchResult(searchResult, intent) {
+  const name = normalizeProductTitle(searchResult.name);
+  const description = cleanDescription(searchResult.description || name);
+  const inferredCategory = inferCategory({ title: name, description, query: intent.query });
+  const category = inferredCategory === 'clothing' ? intent.category : inferredCategory;
+  const gender = intent.gender === 'unisex' ? inferGender(`${name} ${description}`) : intent.gender;
+  const brand = cleanBrand(searchResult.brand) || titleBrandCandidate(name) || 'Brand unavailable';
+  const colors = uniqueList([
+    ...colorWordsFromText(name),
+    ...colorWordsFromText(description)
+  ], 8);
+  const tags = uniqueList([
+    category,
+    gender,
+    brand,
+    ...colors,
+    ...collectKeywordTags(`${name} ${description}`)
+  ].map((tag) => String(tag || '').toLowerCase()), 14);
+
+  return {
+    affiliateLink: searchResult.link,
+    sourceUrl: searchResult.link,
+    name,
+    brand,
+    category,
+    gender,
+    garmentPlacement: intent.itemType === 'accessory'
+      ? 'accessory'
+      : normalizeGarmentPlacement(intent.garmentPlacement, { name, category, description, tags }),
+    price: searchResult.price,
+    compareAtPrice: searchResult.compareAtPrice,
+    currency: searchResult.currency || 'INR',
+    rating: searchResult.rating,
+    ratingCount: searchResult.ratingCount,
+    description,
+    tags,
+    colors,
+    sizes: [],
+    sizeNotes: '',
+    remoteImageUrl: searchResult.remoteImageUrl
+  };
+}
+
+async function fetchSmartImportRecord(searchResult, intent, batchId) {
+  const draft = searchResult.provider === 'serpapi'
+    ? smartImportDraftFromSearchResult(searchResult, intent)
+    : await buildProductDraft(withAmazonAssociateTag(searchResult.link), {
+      itemType: intent.itemType,
+      timeoutMs: 7_000
+    });
+  const merged = {
+    ...draft,
+    price: draft.price ?? searchResult.price,
+    currency: draft.currency || searchResult.currency,
+    remoteImageUrl: draft.remoteImageUrl || searchResult.remoteImageUrl
+  };
+  const wearable = wearableCompatibility(merged, { query: intent.query });
+  if (!wearable.compatible) throw new Error(wearable.reason);
+  const gender = genderCompatibility(merged, intent.genderPreference);
+  if (!gender.compatible) throw new Error(gender.reason);
+  if (!queryIntentCompatibility(merged, intent.query)) throw new Error('Result did not match the requested product type');
+  const intentMatch = catalogIntentCompatibility(merged, intent, {
+    allowUnverifiedColor: searchResult.provider === 'serpapi'
+  });
+  if (!intentMatch.compatible) throw new Error(intentMatch.reason);
+  if (intentMatch.unverifiedColors?.length) {
+    merged.colors = uniqueList([...(merged.colors || []), ...intentMatch.unverifiedColors], 8);
+  }
+  return smartImportRecord(merged, searchResult, intent, batchId);
+}
+
+router.post('/smart-import', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
+  let intent;
+  try {
+    intent = parseCatalogCommand(req.body?.command, { maxQuantity: smartImportMaxQuantity() });
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
+
+  const batchId = `smart-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
+  const searchQuery = genderedSearchQuery(intent.query, intent.genderPreference);
+  const searchUrl = `${amazonSearchBaseUrl()}/s?k=${encodeURIComponent(searchQuery)}`;
+  const searchResults = [];
+  const seenSearchLinks = new Set();
+  const desiredCandidateCount = Math.min(intent.quantity + 8, 18);
+  const searchProvider = catalogSearchProviderName();
+  let searchError = null;
+  let searchedPages = 0;
+  for (let page = 1; page <= smartImportSearchPageCount() && searchResults.length < desiredCandidateCount; page += 1) {
+    try {
+      let pageResults;
+      if (searchProvider === 'serpapi') {
+        pageResults = await searchSerpApiAmazon(searchQuery, { page });
+      } else if (['amazon', 'amazon-html'].includes(searchProvider)) {
+        const pageUrl = new URL(searchUrl);
+        if (page > 1) pageUrl.searchParams.set('page', String(page));
+        const { response, text: html, finalUrl } = await safeFetchText(pageUrl.toString(), {
+          maxBytes: 5 * 1024 * 1024,
+          timeoutMs: 10_000,
+          headers: {
+            accept: 'text/html,application/xhtml+xml',
+            'accept-language': 'en-IN,en;q=0.9',
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+          }
+        });
+        if (!response.ok) throw new Error(`Amazon search returned HTTP ${response.status}`);
+        pageResults = extractAmazonSearchResults(html, finalUrl || pageUrl.toString());
+      } else {
+        throw new Error(`Unsupported catalog search provider: ${searchProvider}`);
+      }
+      searchedPages += 1;
+      for (const result of pageResults) {
+        if (seenSearchLinks.has(result.link)) continue;
+        seenSearchLinks.add(result.link);
+        searchResults.push(result);
+      }
+    } catch (error) {
+      searchError = error;
+      break;
+    }
+  }
+  if (!searchResults.length && searchError) {
+    return res.status(502).json({ message: readableError(searchError, 'Could not search Amazon right now') });
+  }
+
+  const candidateLimit = Math.min(searchResults.length, desiredCandidateCount);
+  const candidates = searchResults.slice(0, candidateLimit);
+  if (!candidates.length) {
+    return res.status(422).json({ message: 'Amazon did not expose product links for that request. Try a more specific fashion description.' });
+  }
+
+  const candidateAsins = candidates.map((candidate) => amazonAsin(candidate.link)).filter(Boolean);
+  const existing = await Product.find({
+    $or: [
+      { sourceProvider: 'amazon', sourceProductId: { $in: candidateAsins } },
+      { sourceUrl: { $in: candidates.map((candidate) => candidate.link) } }
+    ]
+  }).select('sourceProductId sourceUrl affiliateLink').lean();
+  const existingAsins = new Set(existing.flatMap((product) => [
+    product.sourceProductId,
+    amazonAsin(product.sourceUrl),
+    amazonAsin(product.affiliateLink)
+  ]).filter(Boolean));
+
+  const records = [];
+  const issues = [];
+  const seenAsins = new Set(existingAsins);
+  let duplicateCount = 0;
+  let rejectedCount = 0;
+  let failedCount = 0;
+  let inspectedCount = 0;
+  const concurrency = 3;
+
+  for (let offset = 0; offset < candidates.length && records.length < intent.quantity; offset += concurrency) {
+    const chunk = candidates.slice(offset, offset + concurrency);
+    inspectedCount += chunk.length;
+    const eligible = chunk.filter((candidate) => {
+      const asin = amazonAsin(candidate.link);
+      if (!asin || seenAsins.has(asin)) {
+        duplicateCount += 1;
+        issues.push(smartImportIssue(candidate.link, asin ? 'Product already exists in the catalog' : 'Amazon product identifier is missing', 'duplicate'));
+        return false;
+      }
+      return true;
+    });
+    const settled = await Promise.allSettled(eligible.map((candidate) => fetchSmartImportRecord(candidate, intent, batchId)));
+    settled.forEach((result, index) => {
+      const candidate = eligible[index];
+      if (result.status === 'rejected') {
+        const reason = readableError(result.reason, 'Could not fetch product details');
+        const networkFailure = /could not open|fetch|timeout|abort|http\s+\d+/i.test(reason);
+        if (networkFailure) failedCount += 1;
+        else rejectedCount += 1;
+        issues.push(smartImportIssue(candidate?.link, reason, networkFailure ? 'failed' : 'rejected'));
+        return;
+      }
+      const asin = result.value.sourceProductId;
+      if (seenAsins.has(asin) || records.length >= intent.quantity) return;
+      seenAsins.add(asin);
+      records.push(result.value);
+    });
+  }
+
+  const created = [];
+  for (const record of records) {
+    try {
+      created.push(await Product.create(record));
+    } catch (error) {
+      if (error?.code === 11000) {
+        duplicateCount += 1;
+        issues.push(smartImportIssue(record.sourceUrl, 'Product was added by another import', 'duplicate'));
+      } else {
+        failedCount += 1;
+        issues.push(smartImportIssue(record.sourceUrl, readableError(error, 'Could not save product'), 'failed'));
+      }
+    }
+  }
+
+  if (created.length) await clearReadCachesAfterProductWrite();
+  await recordAdminAudit(req, {
+    action: 'smart_catalog_imported',
+    entityType: 'product',
+    label: intent.command,
+    detail: {
+      batchId,
+      requested: intent.quantity,
+      discovered: searchResults.length,
+      created: created.length,
+      duplicates: duplicateCount,
+      rejected: rejectedCount,
+      failed: failedCount,
+      searchedPages,
+      searchProvider,
+      query: intent.query
+    }
+  });
+
+  return res.status(created.length ? 201 : 200).json({
+    batch: {
+      id: batchId,
+      command: intent.command,
+      intent,
+      requested: intent.quantity,
+      discovered: searchResults.length,
+      searchedPages,
+      searchProvider,
+      inspected: inspectedCount,
+      created: created.length,
+      duplicates: duplicateCount,
+      rejected: rejectedCount,
+      failed: failedCount,
+      issues: issues.slice(0, 12),
+      products: created.map(productToAdminClient)
+    }
+  });
+});
+
 async function runProductRecategorizationJob() {
   const botAmazonRecord = temporaryExternalAmazonFilter();
   const products = await Product.find({ isActive: true, $nor: [botAmazonRecord] });
@@ -1656,6 +1998,7 @@ router.patch('/admin/inventory', requireAdmin, requireUserOperationsAdmin, admin
       source: 'manual',
       notes: req.body?.inventoryNotes
     });
+    if (update.availabilityStatus === 'available') update.catalogApproved = true;
   } catch (error) {
     return res.status(400).json({ message: error.message });
   }
@@ -1821,5 +2164,7 @@ export {
   normalizeGarmentPlacement,
   refineProductDraft,
   runProductRecategorizationJob,
+  smartImportDraftFromSearchResult,
+  smartImportRecord,
   temporaryExternalAmazonFilter
 };

@@ -24,6 +24,7 @@ const AI_VIDEO_TIMEOUT_MS = 300000;
 const PRODUCT_CACHE_TTL_MS = 30_000;
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const AUTH_TOKEN_KEY = 'fitlook_token';
+const MEDIA_TOKEN_KEY = 'fitlook_media_token';
 const ENABLE_TEST_OTP_HELPER = import.meta.env.DEV && import.meta.env.VITE_ENABLE_TEST_OTP_HELPER !== 'false';
 const APP_STORE_URL = safeExternalStoreUrl(import.meta.env.VITE_APP_STORE_URL);
 const PLAY_STORE_URL = safeExternalStoreUrl(import.meta.env.VITE_PLAY_STORE_URL);
@@ -817,9 +818,19 @@ function writeAuthToken(token) {
   sessionStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
+function readMediaToken() {
+  return sessionStorage.getItem(MEDIA_TOKEN_KEY) || '';
+}
+
+function writeMediaToken(token) {
+  if (token) sessionStorage.setItem(MEDIA_TOKEN_KEY, token);
+  else sessionStorage.removeItem(MEDIA_TOKEN_KEY);
+}
+
 function clearAuthToken() {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  sessionStorage.removeItem(MEDIA_TOKEN_KEY);
 }
 
 function currentSearchValue() {
@@ -846,10 +857,10 @@ function protectedMediaUrl(value = '') {
   const url = typeof value === 'string' ? value.trim() : '';
   if (!url || /^(?:data:|blob:)/i.test(url)) return url;
   if (!url.startsWith('/uploads/')) return url;
-  const token = readAuthToken();
-  if (!token || /(?:[?&])token=/.test(url)) return API_BASE_URL ? `${API_BASE_URL}${url}` : url;
+  const token = readMediaToken();
+  if (!token || /(?:[?&])mediaToken=/.test(url)) return API_BASE_URL ? `${API_BASE_URL}${url}` : url;
   const separator = url.includes('?') ? '&' : '?';
-  const withToken = `${url}${separator}token=${encodeURIComponent(token)}`;
+  const withToken = `${url}${separator}mediaToken=${encodeURIComponent(token)}`;
   return API_BASE_URL ? `${API_BASE_URL}${withToken}` : withToken;
 }
 
@@ -979,6 +990,7 @@ async function api(path, options = {}) {
         error.status = res.status;
         throw error;
       }
+      if (data?.mediaToken) writeMediaToken(data.mediaToken);
       return data;
     } catch (error) {
       if (externalSignal?.aborted) throw error;
@@ -9575,6 +9587,23 @@ function App() {
       .catch(() => clearAuthToken())
       .finally(() => setAuthChecked(true));
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    let active = true;
+    const refreshMediaToken = () => {
+      api('/auth/media-token', { retry: 0 })
+        .then(() => {
+          if (active) setUser((current) => current ? { ...current } : current);
+        })
+        .catch(() => {});
+    };
+    const timer = window.setInterval(refreshMediaToken, 10 * 60 * 1000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     const syncAuthAcrossTabs = (event) => {

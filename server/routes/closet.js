@@ -13,7 +13,7 @@ import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
 import { recordGenerationMetric } from '../utils/generationMetrics.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { deleteStoredFile, readStoredFile, saveBuffer } from '../utils/storage.js';
-import { developmentBillingBypass, isAllowedRasterImageUpload, safeFetchBuffer } from '../utils/security.js';
+import { developmentBillingBypass, isAllowedRasterImageUpload, safeFetchImageBuffer } from '../utils/security.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -490,7 +490,7 @@ async function waitForFitRoomTask(taskId, timer) {
 }
 
 async function generatedBytesFromUrl(url, timer) {
-  const { response, buffer: bytes } = await safeFetchBuffer(url, {
+  const { response, buffer: bytes, mimetype } = await safeFetchImageBuffer(url, {
     maxBytes: 12 * 1024 * 1024,
     headers: {
       accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
@@ -498,7 +498,6 @@ async function generatedBytesFromUrl(url, timer) {
     }
   });
   if (!response.ok) throw new Error('Could not download generated closet outfit');
-  const mimetype = (response.headers.get('content-type') || '').split(';')[0] || 'image/jpeg';
   timer?.mark('generated image downloaded', { kb: Math.round(bytes.length / 1024), mimetype });
   return { bytes, mimetype };
 }

@@ -18,6 +18,7 @@ import { wearableCompatibility } from '../utils/wearable.js';
 import { genderCompatibility } from '../utils/genderPreference.js';
 import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
 import { recordGenerationMetric } from '../utils/generationMetrics.js';
+import { verifyMediaToken } from '../utils/mediaTokens.js';
 import { enqueueJob, enqueueJobAndWait, safeJobId } from '../utils/jobQueue.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { readStoredFile, saveBuffer, storedFileSignature } from '../utils/storage.js';
@@ -25,7 +26,8 @@ import {
   developmentBillingBypass,
   isAllowedRasterImageUpload,
   normalizeRasterImageBuffer,
-  safeFetchBuffer
+  safeFetchBuffer,
+  safeFetchImageBuffer
 } from '../utils/security.js';
 import {
   createPrunaPrediction,
@@ -619,7 +621,7 @@ async function dataUriFromProduct(product, timer, options = {}) {
       let lastError;
       for (const url of candidateUrls) {
         try {
-          const { response, buffer: bytes } = await safeFetchBuffer(url, {
+          const { response, buffer: bytes, mimetype } = await safeFetchImageBuffer(url, {
             maxBytes: 12 * 1024 * 1024,
             headers: {
               accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
@@ -627,9 +629,6 @@ async function dataUriFromProduct(product, timer, options = {}) {
             }
           });
           if (!response.ok) throw new Error('Could not fetch product image');
-          const mimetype = response.headers.get('content-type') || 'image/jpeg';
-          if (!mimetype.startsWith('image/')) throw new Error('Product image URL is not an image');
-          if (/svg/i.test(mimetype)) throw new Error('SVG product images are not allowed');
           const normalized = await normalizeAvifImage({
             bytes,
             mimetype,
@@ -670,7 +669,7 @@ async function filePartFromUpload(image, label, timer) {
 }
 
 async function filePartFromRemoteUrl(url, label, timer) {
-  const { response, buffer: bytes } = await safeFetchBuffer(url, {
+  const { response, buffer: bytes, mimetype } = await safeFetchImageBuffer(url, {
     maxBytes: 12 * 1024 * 1024,
     headers: {
       accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
@@ -678,9 +677,6 @@ async function filePartFromRemoteUrl(url, label, timer) {
     }
   });
   if (!response.ok) throw new Error(`Could not fetch ${label} image`);
-  const mimetype = response.headers.get('content-type') || 'image/jpeg';
-  if (!mimetype.startsWith('image/')) throw new Error(`${label} image URL is not an image`);
-  if (/svg/i.test(mimetype)) throw new Error('SVG images are not allowed');
   const normalized = await normalizeAvifImage({
     bytes,
     mimetype,
@@ -1059,7 +1055,7 @@ async function generatedBytesFromUrl(url, timer) {
 
   let lastStatus = '';
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const { response, buffer: bytes } = await safeFetchBuffer(url, {
+    const { response, buffer: bytes, mimetype } = await safeFetchImageBuffer(url, {
       maxBytes: 12 * 1024 * 1024,
       headers: {
         accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
@@ -1069,7 +1065,7 @@ async function generatedBytesFromUrl(url, timer) {
     if (response.ok) {
       return {
         bytes,
-        mimetype: imageMimeTypeFromResponse(response, bytes)
+        mimetype: mimetype || imageMimeTypeFromResponse(response, bytes)
       };
     }
     lastStatus = `${response.status} ${response.statusText}`.trim();
@@ -1469,7 +1465,7 @@ async function callFalImageEdit({ user, product, garmentDataUri, prompt, timer }
   timer?.mark('fal result fetched');
   const generated = result.images?.[0];
   if (!generated?.url) throw new Error('FAL did not return an image');
-  const { response: imageResponse, buffer: bytes } = await safeFetchBuffer(generated.url, {
+  const { response: imageResponse, buffer: bytes, mimetype: validatedMimetype } = await safeFetchImageBuffer(generated.url, {
     maxBytes: 12 * 1024 * 1024,
     headers: {
       accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
@@ -1477,7 +1473,7 @@ async function callFalImageEdit({ user, product, garmentDataUri, prompt, timer }
     }
   });
   if (!imageResponse.ok) throw new Error('Could not download generated try-on image');
-  const mimetype = imageMimeTypeFromResponse(imageResponse, bytes);
+  const mimetype = validatedMimetype || imageMimeTypeFromResponse(imageResponse, bytes);
   timer?.mark('generated image downloaded', { outputKb: Math.round(bytes.length / 1024) });
   return {
     bytes,
@@ -1920,7 +1916,13 @@ router.get('/', requireUser, tryOnReadLimiter, async (req, res) => {
 
 router.get('/:tryOnId/video/media', async (req, res) => {
   try {
-    const tryOn = await TryOn.findById(req.params.tryOnId).select('video').lean();
+    let claims;
+    try {
+      claims = verifyMediaToken(req.query?.mediaToken, { mediaId: req.params.tryOnId, kind: 'tryon-video' });
+    } catch {
+      return res.status(401).json({ message: 'Invalid or expired media access' });
+    }
+    const tryOn = await TryOn.findOne({ _id: req.params.tryOnId, user: claims.sub }).select('video').lean();
     const outputUrl = String(tryOn?.video?.providerOutputUrl || '').trim();
     if (!outputUrl) return res.status(404).json({ message: 'Video is not available' });
 
@@ -1929,10 +1931,11 @@ router.get('/:tryOnId/video/media', async (req, res) => {
       range: req.headers.range || ''
     });
     if (!upstream.ok || !upstream.body) {
-      const detail = await upstream.text().catch(() => '');
-      return res.status(502).json({ message: `Could not stream video${detail ? `: ${detail.slice(0, 120)}` : ''}` });
+      await upstream.body?.cancel?.().catch?.(() => {});
+      return res.status(502).json({ message: 'Could not stream video' });
     }
 
+    res.setHeader('Cache-Control', 'private, no-store');
     res.status(upstream.status);
     for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control']) {
       const value = upstream.headers.get(header);
