@@ -13,7 +13,7 @@ import { isolateSubjectAsset } from '../utils/backgroundRemoval.js';
 import { recordGenerationMetric } from '../utils/generationMetrics.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { deleteStoredFile, readStoredFile, saveBuffer } from '../utils/storage.js';
-import { developmentBillingBypass, isAllowedRasterImageUpload, safeFetchImageBuffer } from '../utils/security.js';
+import { developmentBillingBypass, isAllowedRasterImageUpload, safeFetchBuffer } from '../utils/security.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -72,6 +72,9 @@ const colors = ['black', 'white', 'cream', 'beige', 'brown', 'tan', 'grey', 'gra
 const formalWords = ['office', 'work', 'formal', 'interview', 'meeting', 'business'];
 const partyWords = ['party', 'date', 'wedding', 'function', 'celebration', 'night'];
 const activeWords = ['gym', 'run', 'sports', 'walk', 'training'];
+const fitRoomUpperCategories = new Set(['tops', 'outerwear', 'activewear', 'ethnic']);
+const fitRoomLowerCategories = new Set(['bottoms']);
+const fitRoomFullSetCategories = new Set(['dresses', 'suits']);
 
 function isAllowedImageUpload(file) {
   const type = String(file.mimetype || '').toLowerCase();
@@ -107,6 +110,105 @@ function cleanDate(value) {
   if (Number.isNaN(date.getTime())) return null;
   date.setHours(0, 0, 0, 0);
   return date;
+}
+
+function textForClosetItem(item = {}) {
+  const visualProfile = item.visualProfile || {};
+  return [
+    item.name,
+    item.category,
+    item.color,
+    item.fabric,
+    item.pattern,
+    item.season,
+    item.formality,
+    ...(Array.isArray(item.tags) ? item.tags : []),
+    ...(Array.isArray(item.occasions) ? item.occasions : []),
+    visualProfile.subcategory,
+    visualProfile.fabricGuess,
+    visualProfile.fit,
+    visualProfile.silhouette,
+    visualProfile.rawDescription,
+    visualProfile.nameSuggestion,
+    ...(Array.isArray(visualProfile.styleTags) ? visualProfile.styleTags : [])
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function isFullSetClosetItem(item) {
+  if (fitRoomFullSetCategories.has(item?.category)) return true;
+  return /\b(dress|gown|jumpsuit|romper|saree|sari|lehenga|sherwani|kurta set|co-ord|coord|one[-\s]?piece)\b/i.test(textForClosetItem(item));
+}
+
+function isUpperClosetItem(item) {
+  return !isFullSetClosetItem(item) && fitRoomUpperCategories.has(item?.category);
+}
+
+function isLowerClosetItem(item) {
+  return fitRoomLowerCategories.has(item?.category);
+}
+
+function closetItemId(item) {
+  return item?._id?.toString?.() || item?.id || '';
+}
+
+function fitRoomPlanWithSelectedItems(plan, selected) {
+  const renderedIds = new Set(plan.renderedItemIds || []);
+  const ignoredItems = selected.filter((item) => !renderedIds.has(closetItemId(item)));
+  return {
+    ...plan,
+    items: selected,
+    ignoredItems,
+    requiresWan: selected.length > 1 || ignoredItems.length > 0
+  };
+}
+
+function selectFitRoomClosetPlan(items = []) {
+  const selected = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!selected.length) throw new Error('Select at least one closet item.');
+  const upperItem = selected.find(isUpperClosetItem);
+  const lowerItem = selected.find(isLowerClosetItem);
+  const fullSetItem = selected.find(isFullSetClosetItem);
+
+  if (upperItem && lowerItem) {
+    return fitRoomPlanWithSelectedItems({
+      clothType: 'combo',
+      upperItem,
+      lowerItem,
+      renderedItemIds: [upperItem._id?.toString?.(), lowerItem._id?.toString?.()].filter(Boolean)
+    }, selected);
+  }
+  if (fullSetItem) {
+    return fitRoomPlanWithSelectedItems({
+      clothType: 'full_set',
+      garmentItem: fullSetItem,
+      renderedItemIds: [fullSetItem._id?.toString?.()].filter(Boolean)
+    }, selected);
+  }
+  if (upperItem) {
+    return fitRoomPlanWithSelectedItems({
+      clothType: 'upper',
+      garmentItem: upperItem,
+      renderedItemIds: [upperItem._id?.toString?.()].filter(Boolean)
+    }, selected);
+  }
+  if (lowerItem) {
+    return fitRoomPlanWithSelectedItems({
+      clothType: 'lower',
+      garmentItem: lowerItem,
+      renderedItemIds: [lowerItem._id?.toString?.()].filter(Boolean)
+    }, selected);
+  }
+
+  return {
+    clothType: 'wardrobe_multi',
+    items: selected,
+    ignoredItems: [],
+    renderedItemIds: [],
+    requiresWan: true
+  };
 }
 
 function normalizeCategory(value, sourceText = '') {
@@ -175,6 +277,80 @@ function fitRoomBaseUrl() {
 
 function fitRoomHdMode() {
   return ['1', 'true', 'yes', 'on'].includes(String(process.env.FITROOM_HD_MODE || '').toLowerCase());
+}
+
+function imageMimeTypeFromBytes(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length < 12) return '';
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  const gifHeader = bytes.subarray(0, 6).toString('ascii');
+  if (gifHeader === 'GIF87a' || gifHeader === 'GIF89a') return 'image/gif';
+  return '';
+}
+
+function wanImageToImageModel() {
+  return process.env.FAL_WAN_IMAGE_TO_IMAGE_MODEL || 'wan/v2.6/image-to-image';
+}
+
+function wanImageSize() {
+  const width = Number(process.env.FAL_WAN_IMAGE_WIDTH || 1024);
+  const height = Number(process.env.FAL_WAN_IMAGE_HEIGHT || 1280);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return { width: 1024, height: 1280 };
+  return { width, height };
+}
+
+function closetNoOpFallbackEnabled() {
+  return !['0', 'false', 'no', 'off'].includes(String(process.env.CLOSET_NOOP_WAN_FALLBACK ?? 'true').toLowerCase());
+}
+
+function closetNoOpDiffThreshold() {
+  const value = Number(process.env.CLOSET_NOOP_DIFF_THRESHOLD || 3);
+  return Number.isFinite(value) && value > 0 ? value : 3;
+}
+
+function closetWanPrompt(plan) {
+  const hasComplexSelection = Boolean(plan?.requiresWan || plan?.clothType === 'wardrobe_multi');
+  const target = hasComplexSelection
+    ? 'correct corresponding body areas'
+    : plan?.clothType === 'combo'
+      ? 'upper- and lower-body garment areas'
+      : plan?.clothType === 'lower'
+        ? 'lower-body garment area only'
+        : plan?.clothType === 'upper'
+          ? 'upper-body garment area only'
+          : 'selected garment areas';
+  const selectedItems = Array.isArray(plan?.items) ? plan.items : [];
+  const itemSummary = selectedItems
+    .map((item) => `${cleanWord(item.name || item.category || 'wardrobe item')} (${cleanWord(item.category || 'item')})`)
+    .join(', ');
+  return [
+    'Create one photorealistic virtual try-on image for an ecommerce wardrobe preview.',
+    'Image 1 is the shopper and must remain the identity, face, hair, skin tone, body shape, hands, legs, natural proportions, and expression reference.',
+    itemSummary ? `Selected wardrobe pieces: ${itemSummary}.` : '',
+    `Image 2 is the wardrobe reference. Transfer every visible selected clothing, footwear, and accessory item from image 2 onto the shopper's ${target}.`,
+    'For tops, replace upper-body clothing. For bottoms, replace lower-body clothing. For dresses, suits, and co-ords, replace the full outfit. For shoes, replace the footwear on both feet. For hats/caps, place the item on the head. For sunglasses/eyewear, place the item on the eyes. For bags, belts, scarves, and jewelry, place the item naturally in the corresponding area.',
+    'If image 2 contains multiple wardrobe pieces arranged on a plain canvas, treat them as separate references and apply all selected pieces together in one complete outfit.',
+    'If image 2 is swimwear or innerwear, render it as a non-sexualized retail catalog try-on with accurate coverage and no nudity.',
+    'Do not ignore image 2 and do not keep the original garment in the target area when it conflicts with the clothing reference.',
+    'Preserve non-target clothing and body regions from image 1 unless they must be naturally covered or replaced by the uploaded garment.',
+    'Fit the garment naturally with correct scale, folds, occlusion, shadows, and fabric texture.',
+    'Use a clean full-body studio catalog composition with soft even lighting and a simple neutral light gray or off-white background.',
+    'Keep exactly one person in frame, full body visible head to toe, complete face and hair visible, both arms and hands visible, both legs and feet visible.',
+    'Do not add extra accessories, logos, text, people, duplicated limbs, body changes, beauty edits, or a comparison layout.'
+  ].filter(Boolean).join(' ');
+}
+
+function wanNegativePrompt() {
+  return [
+    'low resolution, blurry, distorted face, changed identity, changed pose, changed body, changed skin tone',
+    'extra limbs, extra fingers, missing head, missing hands, missing feet',
+    'cropped face, cropped head, cropped body, cropped legs, cropped feet, cropped ankles, cropped knees',
+    'half body, waist-up, bust shot, close-up crop, portrait crop',
+    'copied product model, mannequin identity bleed',
+    'text, watermark, logo hallucination, overexposed, low quality',
+    'two images, split screen, side by side, diptych, collage, grid, multiple panels, duplicate image, before and after, two people, comparison layout'
+  ].join(', ');
 }
 
 function readableError(value, fallback = 'Request failed') {
@@ -413,6 +589,59 @@ async function analyzeClosetItemImage(file, timer) {
   return visualProfile;
 }
 
+async function falJson(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: { ...falHeaders(), ...options.headers }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(readableError(data.detail || data.error || data.message || data, 'FAL closet try-on request failed'));
+  return data;
+}
+
+async function waitForFalResult(submission, timer) {
+  const statusUrl = submission.status_url;
+  const responseUrl = submission.response_url;
+  if (!statusUrl || !responseUrl) throw new Error('FAL did not return queue URLs');
+
+  const maxAttempts = Number(process.env.FAL_WAN_POLL_ATTEMPTS || 180);
+  const pollMs = Number(process.env.FAL_WAN_POLL_MS || 1500);
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const status = await falJson(statusUrl);
+    if (attempt === 0 || attempt % 5 === 0 || status.status === 'COMPLETED') timer?.mark('fal wan status poll', { attempt, status: status.status });
+    if (status.status === 'COMPLETED') return falJson(responseUrl);
+    if (status.status === 'FAILED' || status.error) throw new Error(readableError(status.error || status, 'FAL Wan closet try-on generation failed'));
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+  throw new Error(`FAL Wan closet try-on generation timed out after ${Math.round((maxAttempts * pollMs) / 1000)} seconds`);
+}
+
+function firstGeneratedImageUrl(value, depth = 0) {
+  if (!value || depth > 8) return '';
+  if (typeof value === 'string') return /^https?:\/\//i.test(value) || /^data:image\//i.test(value) ? value : '';
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = firstGeneratedImageUrl(item, depth + 1);
+      if (found) return found;
+    }
+    return '';
+  }
+  if (typeof value !== 'object') return '';
+  for (const key of ['url', 'image_url', 'imageUrl']) {
+    const found = firstGeneratedImageUrl(value[key], depth + 1);
+    if (found) return found;
+  }
+  for (const key of ['images', 'image', 'output', 'result', 'data']) {
+    const found = firstGeneratedImageUrl(value[key], depth + 1);
+    if (found) return found;
+  }
+  for (const child of Object.values(value)) {
+    const found = firstGeneratedImageUrl(child, depth + 1);
+    if (found) return found;
+  }
+  return '';
+}
+
 async function saveUploadFile(file, prefix, user, folder = 'closet') {
   const filename = `${prefix}-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(file.mimetype)}`;
   return saveBuffer({
@@ -490,7 +719,17 @@ async function waitForFitRoomTask(taskId, timer) {
 }
 
 async function generatedBytesFromUrl(url, timer) {
-  const { response, buffer: bytes, mimetype } = await safeFetchImageBuffer(url, {
+  if (/^data:image\//i.test(url)) {
+    const [, metadata = '', base64 = ''] = url.match(/^data:([^;]+);base64,(.+)$/i) || [];
+    if (!base64) throw new Error('Generated closet image data URI was invalid');
+    const bytes = Buffer.from(base64, 'base64');
+    return {
+      bytes,
+      mimetype: imageMimeTypeFromBytes(bytes) || metadata || 'image/png'
+    };
+  }
+
+  const { response, buffer: bytes } = await safeFetchBuffer(url, {
     maxBytes: 12 * 1024 * 1024,
     headers: {
       accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
@@ -498,8 +737,73 @@ async function generatedBytesFromUrl(url, timer) {
     }
   });
   if (!response.ok) throw new Error('Could not download generated closet outfit');
+  const responseMimeType = (response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+  const mimetype = imageMimeTypeFromBytes(bytes) || (responseMimeType.startsWith('image/') ? responseMimeType : '');
+  if (!mimetype) throw new Error('Generated closet outfit download was not an image');
   timer?.mark('generated image downloaded', { kb: Math.round(bytes.length / 1024), mimetype });
   return { bytes, mimetype };
+}
+
+async function imageDataUriFromBuffer(file, label, timer, options = {}) {
+  const bytes = file?.bytes || file?.buffer;
+  if (!Buffer.isBuffer(bytes)) throw new Error(`${label} image is missing`);
+  const metadata = await sharp(bytes, { failOn: 'none' }).metadata();
+  const minWidth = Number(options.minWidth || 0);
+  const minHeight = Number(options.minHeight || 0);
+  const outputWidth = Math.max(Number(metadata.width || 0), minWidth);
+  const outputHeight = Math.max(Number(metadata.height || 0), minHeight);
+  const shouldResize = outputWidth && outputHeight && (outputWidth !== metadata.width || outputHeight !== metadata.height);
+  let pipeline = sharp(bytes, { failOn: 'none' })
+    .rotate()
+    .flatten({ background: '#fffdf8' });
+  if (shouldResize) {
+    pipeline = pipeline.resize({
+      width: outputWidth,
+      height: outputHeight,
+      fit: 'contain',
+      background: '#fffdf8',
+      withoutEnlargement: false
+    });
+  }
+  const output = await pipeline
+    .jpeg({ quality: 94, mozjpeg: true })
+    .toBuffer();
+  timer?.mark(`${label} data uri prepared`, {
+    inputWidth: metadata.width,
+    inputHeight: metadata.height,
+    outputKb: Math.round(output.length / 1024),
+    outputWidth: shouldResize ? outputWidth : metadata.width,
+    outputHeight: shouldResize ? outputHeight : metadata.height
+  });
+  return `data:image/jpeg;base64,${output.toString('base64')}`;
+}
+
+async function imageDataUriFromStoredImage(image, label, timer, options = {}) {
+  const { buffer: bytes } = await readStoredFile(image, label);
+  return imageDataUriFromBuffer({ bytes }, label, timer, options);
+}
+
+async function meanAbsoluteImageDifference(leftBytes, rightBytes) {
+  const width = 128;
+  const height = 192;
+  const [left, right] = await Promise.all([
+    sharp(leftBytes, { failOn: 'none' }).resize(width, height, { fit: 'fill' }).removeAlpha().raw().toBuffer(),
+    sharp(rightBytes, { failOn: 'none' }).resize(width, height, { fit: 'fill' }).removeAlpha().raw().toBuffer()
+  ]);
+  let total = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    total += Math.abs(left[index] - right[index]);
+  }
+  return total / left.length;
+}
+
+async function generatedLooksUnchanged(user, generated, timer) {
+  if (!closetNoOpFallbackEnabled()) return false;
+  const { buffer: personBytes } = await readStoredFile(user.bodyPhoto, 'person');
+  const meanDiff = await meanAbsoluteImageDifference(personBytes, generated.bytes);
+  const unchanged = meanDiff <= closetNoOpDiffThreshold();
+  timer?.mark('generated outfit similarity checked', { meanDiff: Number(meanDiff.toFixed(2)), unchanged });
+  return unchanged;
 }
 
 async function combinedGarmentFromItems(items, timer) {
@@ -537,19 +841,104 @@ async function combinedGarmentFromItems(items, timer) {
   return { bytes: canvas, mimetype: 'image/jpeg', filename: `closet-combo-${Date.now()}.jpg` };
 }
 
-async function callFitRoomTryOn({ user, garment, timer }) {
+async function callFitRoomTryOn({ user, plan, timer }) {
   const person = await filePartFromStoredImage(user.bodyPhoto, 'person', timer);
   const form = new FormData();
   appendFilePart(form, 'model_image', person);
-  appendFilePart(form, 'cloth_image', garment);
-  form.append('cloth_type', 'full_set');
+  if (plan.clothType === 'combo') {
+    const [upperGarment, lowerGarment] = await Promise.all([
+      filePartFromStoredImage(plan.upperItem.image, 'upper closet item', timer),
+      filePartFromStoredImage(plan.lowerItem.image, 'lower closet item', timer)
+    ]);
+    appendFilePart(form, 'cloth_image', upperGarment);
+    appendFilePart(form, 'lower_cloth_image', lowerGarment);
+  } else {
+    const selectedGarment = await filePartFromStoredImage(plan.garmentItem.image, 'closet item', timer);
+    appendFilePart(form, 'cloth_image', selectedGarment);
+  }
+  form.append('cloth_type', plan.clothType);
   if (fitRoomHdMode()) form.append('hd_mode', 'true');
 
+  timer?.mark('fitroom task submit attempt', {
+    clothType: plan.clothType,
+    renderedItemIds: plan.renderedItemIds
+  });
   const submission = await fitRoomJson('/api/tryon/v2/tasks', { method: 'POST', body: form });
   if (!submission.task_id) throw new Error('FitRoom did not return a task id');
   timer?.mark('fitroom task submitted', { taskId: submission.task_id, status: submission.status });
   const result = await waitForFitRoomTask(submission.task_id, timer);
-  return generatedBytesFromUrl(result.download_signed_url, timer);
+  const generated = await generatedBytesFromUrl(result.download_signed_url, timer);
+  return {
+    ...generated,
+    provider: 'fitroom',
+    model: 'fitroom/tryon-v2',
+    quality: fitRoomHdMode() ? 'hd' : 'standard',
+    prompt: `FitRoom virtual try-on (${plan.clothType})`
+  };
+}
+
+async function callFalWanClosetTryOn({ user, plan, garment, timer }) {
+  const minReferenceSize = 384;
+  const [person, garmentReference] = await Promise.all([
+    imageDataUriFromStoredImage(user.bodyPhoto, 'person', timer, { minWidth: minReferenceSize, minHeight: minReferenceSize }),
+    garment?.bytes
+      ? imageDataUriFromBuffer(garment, 'closet item', timer, { minWidth: minReferenceSize, minHeight: minReferenceSize })
+      : imageDataUriFromStoredImage(plan.garmentItem.image, 'closet item', timer, { minWidth: minReferenceSize, minHeight: minReferenceSize })
+  ]);
+  const endpoint = wanImageToImageModel();
+  const prompt = closetWanPrompt(plan);
+  const payload = {
+    prompt,
+    image_urls: [person, garmentReference],
+    negative_prompt: wanNegativePrompt(),
+    image_size: wanImageSize(),
+    num_images: 1,
+    enable_prompt_expansion: false,
+    enable_safety_checker: true
+  };
+
+  timer?.mark('fal wan closet submit attempt', { model: endpoint, clothType: plan.clothType });
+  const submission = await falJson(`https://queue.fal.run/${endpoint}`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  timer?.mark('fal wan closet submitted', { requestId: submission.request_id });
+  const result = await waitForFalResult(submission, timer);
+  const generatedUrl = firstGeneratedImageUrl(result);
+  if (!generatedUrl) throw new Error(`FAL Wan returned no image. Response keys: ${Object.keys(result || {}).join(', ')}`);
+  const generated = await generatedBytesFromUrl(generatedUrl, timer);
+  timer?.mark('fal wan closet generated image downloaded', { outputKb: Math.round(generated.bytes.length / 1024) });
+  return {
+    ...generated,
+    provider: 'fal',
+    model: endpoint,
+    quality: 'wan v2.6 image-to-image',
+    prompt
+  };
+}
+
+async function generateClosetTryOn({ user, plan, garment, timer }) {
+  if (plan.requiresWan) {
+    timer?.mark('complex wardrobe selection using wan', {
+      selectedItemCount: plan.items?.length || 0,
+      fitRoomIgnoredItemCount: plan.ignoredItems?.length || 0
+    });
+    const wanGenerated = await callFalWanClosetTryOn({ user, plan, garment, timer });
+    if (await generatedLooksUnchanged(user, wanGenerated, timer)) {
+      throw new Error('The AI provider returned an unchanged preview. Try uploading clearer garment-only photos with each item laid flat on a plain background.');
+    }
+    return wanGenerated;
+  }
+
+  const fitRoomGenerated = await callFitRoomTryOn({ user, plan, timer });
+  if (!(await generatedLooksUnchanged(user, fitRoomGenerated, timer))) return fitRoomGenerated;
+
+  timer?.mark('fitroom output unchanged, retrying with wan', { clothType: plan.clothType });
+  const wanGenerated = await callFalWanClosetTryOn({ user, plan, garment, timer });
+  if (await generatedLooksUnchanged(user, wanGenerated, timer)) {
+    throw new Error('The AI provider returned an unchanged preview. Try uploading a clearer garment-only photo with the item laid flat on a plain background.');
+  }
+  return wanGenerated;
 }
 
 async function reserveToken(user, timer) {
@@ -865,8 +1254,11 @@ router.post('/outfits/generate', requireUser, closetOutfitLimiter, async (req, r
       return res.status(400).json({ message: 'Select at least one closet item.' });
     }
     ensureTryOnProfileReady(req.user);
-    const items = await ClosetItem.find({ user: req.user._id, _id: { $in: itemIds } });
-    if (items.length !== itemIds.length) return res.status(404).json({ message: 'One or more closet items were not found.' });
+    const foundItems = await ClosetItem.find({ user: req.user._id, _id: { $in: itemIds } });
+    if (foundItems.length !== itemIds.length) return res.status(404).json({ message: 'One or more closet items were not found.' });
+    const itemsById = new Map(foundItems.map((item) => [item._id.toString(), item]));
+    const items = itemIds.map((id) => itemsById.get(id)).filter(Boolean);
+    const fitRoomPlan = selectFitRoomClosetPlan(items);
     const chargedUser = await reserveToken(req.user, timer);
     if (!chargedUser) {
       timer.end({ error: 'insufficient tokens' });
@@ -877,7 +1269,7 @@ router.post('/outfits/generate', requireUser, closetOutfitLimiter, async (req, r
     req.user = chargedUser;
 
     const garment = await combinedGarmentFromItems(items, timer);
-    const generated = await callFitRoomTryOn({ user: req.user, garment, timer });
+    const generated = await generateClosetTryOn({ user: req.user, plan: fitRoomPlan, garment, timer });
     const garmentFile = await saveUploadFile({ buffer: garment.bytes, mimetype: garment.mimetype, size: garment.bytes.length }, 'closet-combo', req.user, 'closet-outfits');
     const imageFile = await saveUploadFile({ buffer: generated.bytes, mimetype: generated.mimetype, size: generated.bytes.length }, 'closet-outfit', req.user, 'closet-outfits');
     const isolation = await isolateSubjectAsset({ rootDir, user: req.user, storedImage: imageFile });
@@ -903,9 +1295,9 @@ router.post('/outfits/generate', requireUser, closetOutfitLimiter, async (req, r
       notes: cleanWord(req.body?.notes, 'Use a seamless neutral grey studio background. No room or lifestyle scene.').slice(0, 500),
       plannedFor: cleanDate(req.body?.plannedFor),
       itemIds: items.map((item) => item._id),
-      provider: 'fitroom',
-      model: 'fitroom/tryon-v2',
-      quality: fitRoomHdMode() ? 'hd' : 'standard',
+      provider: generated.provider || 'fitroom',
+      model: generated.model || 'fitroom/tryon-v2',
+      quality: generated.quality || (fitRoomHdMode() ? 'hd' : 'standard'),
       tokenCost: chargedTokenCost(req.user),
       garment: garmentFile,
       image: displayImageFile,
@@ -937,4 +1329,5 @@ router.patch('/outfits/:id', requireUser, async (req, res) => {
   res.json({ outfit: outfitToClient(outfit, items) });
 });
 
+export { imageMimeTypeFromBytes, selectFitRoomClosetPlan };
 export default router;

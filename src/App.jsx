@@ -3910,13 +3910,19 @@ function ClosetPage({ user, setUser }) {
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [mobileWardrobePicker, setMobileWardrobePicker] = useState(null);
   const generateInFlightRef = useRef(false);
+  const latestOutfitPreviewOpenedRef = useRef(false);
 
   const loadCloset = () => {
     if (!user) return;
     setState((current) => ({ ...current, loading: true, error: '' }));
     api('/closet')
       .then((data) => {
-        setState({ ...normalizeClosetData(data), loading: false, error: '' });
+        const nextState = normalizeClosetData(data);
+        setState({ ...nextState, loading: false, error: '' });
+        if (!latestOutfitPreviewOpenedRef.current && nextState.outfits[0]?.imageUrl) {
+          latestOutfitPreviewOpenedRef.current = true;
+          setStagePreviewMode('outfit');
+        }
       })
       .catch((err) => setState({ items: [], outfits: [], stats: {}, suggestions: [], loading: false, error: err.message }));
   };
@@ -4229,7 +4235,7 @@ function ClosetPage({ user, setUser }) {
       setMessage(`Add a ${label.toLowerCase()} to use it in your look.`);
       return;
     }
-    chooseSlotItem('accessory', slot.item);
+    chooseSlotItem(slotKey, slot.item);
     setMessage(`${slot.item.name} added to the look.`);
   };
 
@@ -4311,7 +4317,8 @@ function ClosetPage({ user, setUser }) {
   const modelPreview = showingGeneratedOutfit ? latestOutfitImage : bodyPhotoPreview;
   const previewTitle = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Model';
   const previewAlt = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
-  const visibleWardrobeStageError = /error|missing|not enough|failed|could not|select closet|generate a look first|no other/i.test(message) ? message : '';
+  const visibleWardrobeStageMessage = message;
+  const wardrobeStageMessageIsError = /error|missing|not enough|failed|could not|cannot|unable|timed out|timeout|select|upload|try again|no other/i.test(message);
   const mobileWardrobeSections = wardrobeSections.filter((section) => ['Tops', 'Bottoms'].includes(section.label));
   const activeMobileWardrobeSection = mobileWardrobeSections.find((section) => section.label === mobileWardrobePicker) || null;
   const wardrobeFallbackForSection = (section) => (
@@ -4468,7 +4475,11 @@ function ClosetPage({ user, setUser }) {
           </div>
 
           {showingGeneratedOutfit && !generating && <AiPreviewDisclaimer className="wardrobe-ai-disclaimer" />}
-          {!generating && visibleWardrobeStageError && <p className="wardrobe-stage-message error-message">{visibleWardrobeStageError}</p>}
+          {!generating && visibleWardrobeStageMessage && (
+            <p className={`wardrobe-stage-message ${wardrobeStageMessageIsError ? 'error-message' : ''}`} role="status">
+              {visibleWardrobeStageMessage}
+            </p>
+          )}
 
           <div className="wardrobe-stage-actions">
             <button className="wardrobe-generate-button" type="button" onClick={() => generateOutfit(selectedIds, { title: 'My wardrobe look' })} disabled={generating || selectedIds.length === 0}>
