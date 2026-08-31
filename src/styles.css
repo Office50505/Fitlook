@@ -36028,6 +36028,58 @@ label,
   }
 }
 
+/* Mobile drawer: keep navigation fixed while the page behind it stays locked. */
+@media (max-width: 1180px) {
+  .mobile-menu-overlay.open {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 880 !important;
+    background: rgba(17, 16, 14, .58) !important;
+  }
+
+  .site-header .mobile-menu {
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: auto !important;
+    z-index: 890 !important;
+    width: min(420px, 92vw) !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+    transform: translate3d(102%, 0, 0) !important;
+  }
+
+  .site-header .mobile-menu.open {
+    transform: translate3d(0, 0, 0) !important;
+  }
+
+  .site-header .mobile-menu-inner {
+    min-height: 100% !important;
+    padding: max(28px, env(safe-area-inset-top)) 24px max(96px, calc(var(--mobile-bottom-nav-height, 68px) + env(safe-area-inset-bottom) + 20px)) !important;
+  }
+
+  .site-header .menu-toggle[aria-expanded="true"] {
+    z-index: 900 !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .site-header .mobile-menu {
+    bottom: calc(var(--mobile-bottom-nav-height, 68px) + env(safe-area-inset-bottom)) !important;
+    height: calc(100dvh - var(--mobile-bottom-nav-height, 68px) - env(safe-area-inset-bottom)) !important;
+    max-height: calc(100dvh - var(--mobile-bottom-nav-height, 68px) - env(safe-area-inset-bottom)) !important;
+  }
+
+  .site-header .mobile-menu-inner {
+    padding-bottom: max(28px, env(safe-area-inset-bottom)) !important;
+  }
+}
+
 @media (max-width: 700px) {
   .product-editorial-summary h1 {
     font-size: clamp(30px, 9vw, 38px) !important;
@@ -36529,4 +36581,70 @@ label,
   min-height: 0 !important;
   object-fit: cover !important;
   object-position: center top !important;
+}
+
+/* Homepage campaign cards: keep AI feature tiles compact like the offer cards above. */
+.atelier-home .atelier-campaign-grid {
+  align-items: stretch !important;
+}
+
+.atelier-home .atelier-campaign-card {
+  height: clamp(142px, 10.8vw, 178px) !important;
+  min-height: 0 !important;
+  max-height: 178px !important;
+  grid-template-columns: minmax(0, .58fr) minmax(104px, .42fr) !important;
+}
+
+.atelier-home .atelier-campaign-card img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  object-fit: cover !important;
+}
+
+.atelier-home .atelier-campaign-card.tone-violet img {
+  object-position: 58% center !important;
+}
+
+.atelier-home .atelier-campaign-card.tone-wardrobe img {
+  object-position: 18% center !important;
+}
+
+.atelier-home .atelier-campaign-card.tone-stylist img {
+  object-position: 70% center !important;
+}
+
+@media (max-width: 900px) {
+  .atelier-home .atelier-campaign-card {
+    height: 150px !important;
+    max-height: 150px !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .atelier-home .atelier-campaign-card {
+    height: 136px !important;
+    max-height: 136px !important;
+    grid-template-columns: minmax(0, .6fr) 112px !important;
+  }
+}
+
+/* AI Stylist: account for the shared navbar while keeping the chat workspace visible. */
+#main-content .style-bot-page.concierge-page {
+  height: calc(100dvh - 83px) !important;
+  min-height: calc(100dvh - 83px) !important;
+}
+
+@media (max-width: 980px) {
+  #main-content .style-bot-page.concierge-page {
+    height: auto !important;
+    min-height: calc(100dvh - 67px) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  #main-content .style-bot-page.concierge-page .concierge-session-rail {
+    top: 66px !important;
+  }
 }

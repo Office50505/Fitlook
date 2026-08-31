@@ -618,13 +618,15 @@ const pageMeta = {
   '/press': ['Press', 'Lookmefy press and media.', 'Company information, product screenshots, and media contact details would be available here.', 'hero2.png'],
   '/terms': ['Terms', 'Terms and conditions.', 'This page outlines where account, token, shopping, and AI try-on usage rules live.', 'hero2.png'],
   '/privacy': ['Privacy', 'Your try-on profile is personal.', 'This page describes how account details, full-body photos, token usage, and shopping activity are handled.', 'hero2.png'],
+  '/copyright': ['Copyright Policy', 'Ownership and permitted use.', 'Copyright ownership, platform content rules, user content licence, and takedown support for Lookmefy.', 'hero2.png'],
   '/accessibility': ['Accessibility', 'Accessibility matters at every step.', 'Accessibility goals cover navigation, forms, image alt text, contrast, and keyboard-friendly flows.', 'hero2.png']
 };
 
 const legalDetails = {
   brand: 'Lookmefy',
   legalEntity: 'Lookmefy',
-  registeredAddress: '164, Pakiza Greens, Khajrana, Indore',
+  copyrightOwner: 'Sharafat Hussain Khan',
+  registeredAddress: '324 Kohinoor colony, Indore',
   supportEmail: 'support@lookmefy.com',
   jurisdiction: 'Indore, Madhya Pradesh, India',
   refundTimeline: '5-7 business days',
@@ -661,6 +663,23 @@ const policyPages = {
       ['Your choices and rights', ['You can update account details in profile settings, delete wishlist/wardrobe items where available, log out, and request account/media deletion.', 'You may contact us to access, correct, withdraw consent where applicable, or raise a privacy grievance. We will verify requests before acting on account or photo data.']],
       ['Security', ['We use technical and organizational measures such as authentication, access controls, upload validation, storage controls, rate limiting, and monitoring. No online service can guarantee absolute security.', 'Keep your password and device secure. Tell us promptly if you suspect unauthorized account access.']],
       ['Contact and support', [`Support and privacy requests can be sent to ${legalDetails.supportEmail}. Use your registered email/phone and include enough detail for us to verify and review the request.`]]
+    ]
+  },
+  '/copyright': {
+    badge: 'Required',
+    title: 'Copyright Policy',
+    intro: `Copyright in ${legalDetails.brand}'s platform content is owned by ${legalDetails.copyrightOwner}. This policy explains ownership, permitted use, user uploads, third-party product content, and copyright support.`,
+    sections: [
+      ['Copyright owner and business details', [`Copyright (c) 2026 ${legalDetails.copyrightOwner}. All rights reserved for original ${legalDetails.brand} website, app, design, text, layouts, policy content, brand presentation, AI try-on experience, wardrobe flows, token/credit screens, and related platform material.`, `${legalDetails.brand} is operated by ${legalDetails.legalEntity}. Registered address: ${legalDetails.registeredAddress}. Support and copyright requests can be sent to ${legalDetails.supportEmail}.`]],
+      ['Protected Lookmefy content', [`Protected content includes ${legalDetails.brand} pages, UI screens, visual design, product discovery flows, profile and wardrobe interfaces, AI try-on prompts and outputs generated through the platform where rights belong to ${legalDetails.brand}, written policies, logos, icons, text, code, databases, compilations, and service documentation.`, `You may use ${legalDetails.brand} only for personal fashion discovery, wardrobe management, AI try-on previews, token purchases, and shopping-link navigation as allowed by our Terms and policies.`]],
+      ['Permitted use', [`You may view, access, and use ${legalDetails.brand} content for normal personal use inside the website or app. You may share standard page links to public pages, product links, support pages, and policy pages.`, 'Any copying, scraping, republication, resale, reverse engineering, automated extraction, brand impersonation, removal of notices, or commercial reuse of Lookmefy content requires prior written permission.']],
+      ['User uploaded content', ['You retain ownership of photos, garment images, wardrobe items, names, product references, and other content you upload, subject to the licence granted in the Terms and Privacy Policy.', `By uploading content, you confirm that you have the rights and permissions needed to upload and process it through ${legalDetails.brand}. Do not upload photos, media, product images, or personal content that infringes another person's rights.`]],
+      ['AI try-on and generated media', ['AI try-on images, videos, wardrobe outputs, and stylist suggestions are visual previews only. Rights and permitted use may depend on your uploaded content, third-party product images, provider terms, and applicable law.', `Generated media may be stored and displayed in your ${legalDetails.brand} account for history, comparison, wardrobe, styling, video creation, support, security, and service operation as described in our Privacy Policy.`]],
+      ['Third-party catalog and marketplace content', [`${legalDetails.brand} may display or link to product images, names, prices, descriptions, brands, Amazon links, seller information, and other third-party catalog data for discovery and shopping convenience.`, 'Third-party product content remains owned by the relevant brand, seller, marketplace, manufacturer, or rights holder. Amazon or the relevant seller controls final product listing content, checkout, shipping, returns, refunds, and warranties.']],
+      ['Payment, token, and policy content', ['Copyright and policy pages support payment-gateway compliance by explaining platform ownership, permitted use, support routes, payment-related content, token usage, and user responsibilities.', 'Token purchases, memberships, refunds, cancellation, privacy, shipping, and data deletion are governed by their respective Lookmefy policy pages and the final payment flow shown before confirmation.']],
+      ['Copyright complaints and takedown requests', [`If you believe content on ${legalDetails.brand} infringes your copyright, email ${legalDetails.supportEmail} with the subject "Copyright complaint". Include your name, contact details, copyrighted work, the exact Lookmefy URL or content location, proof of ownership or authorization, and a statement explaining the alleged infringement.`, 'We may remove, restrict, or investigate reported content after review. We may also ask for additional verification before acting on a request. False or misleading complaints may be rejected and may lead to account action.']],
+      ['Repeat infringement and account action', [`${legalDetails.brand} may suspend or terminate accounts that repeatedly upload infringing, unauthorized, deceptive, unsafe, or abusive content. We may also block content that creates legal, security, privacy, or platform-risk concerns.`]],
+      ['Governing law and contact', [`This policy is governed by the laws of India, and courts at ${legalDetails.jurisdiction} will have jurisdiction, subject to applicable law.`, `For copyright, support, payment-policy, privacy, or grievance questions, contact ${legalDetails.supportEmail}.`]]
     ]
   },
   '/shipping': {
@@ -1409,8 +1428,12 @@ function Header({ user, setUser, authChecked = true }) {
   useEffect(() => {
     if (!menuOpen) return undefined;
     const previousOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousOverscroll = document.documentElement.style.overscrollBehavior;
     const previouslyFocused = document.activeElement;
     document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.overscrollBehavior = 'contain';
     const closeOnEscape = (event) => {
       if (event.key === 'Escape') setMenuOpen(false);
     };
@@ -1421,6 +1444,8 @@ function Header({ user, setUser, authChecked = true }) {
     document.addEventListener('pointerdown', closeOnOutsidePress);
     return () => {
       document.body.style.overflow = previousOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.documentElement.style.overscrollBehavior = previousOverscroll;
       document.removeEventListener('keydown', closeOnEscape);
       document.removeEventListener('pointerdown', closeOnOutsidePress);
       // Return focus to whatever opened the drawer, so keyboard users are not
@@ -1700,7 +1725,7 @@ function Footer() {
           <div><h2>Help</h2><a href="/support">Support</a><a href="/returns">Returns</a><a href="/contact">Contact us</a><a href="/shipping">Shipping</a></div>
           <div><h2><a className="footer-heading-link" href="/download">Download our App</a></h2><p>Get the Lookmefy app for your daily fashion edit.</p><StoreActions context="footer" className="wishlist-app-links" itemClassName="wishlist-app-link" /></div>
         </div>
-        <div className="wishlist-compact-footer-bottom"><span>© 2026 Lookmefy. Curated by intelligence.</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a></div></div>
+        <div className="wishlist-compact-footer-bottom"><span>© 2026 Lookmefy. Curated by intelligence.</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/copyright">Copyright</a></div></div>
       </div>
     </footer>
   );
@@ -2285,22 +2310,16 @@ function AtelierOfferCards({ offers = [] }) {
   );
 }
 
-function buildCampaignCards({ catalogProducts = [], tryOnPickProducts = [], reservedImages = [] }) {
-  const usedImageKeys = new Set(reservedImages.map(productImageKey).filter(Boolean));
-  const tryOnProduct = pickCardProduct(
-    [tryOnPickProducts, catalogProducts.filter((product) => product.tryOnAvailable || product.aiTryOnAvailable), catalogProducts],
-    usedImageKeys
-  );
-
+function buildCampaignCards() {
   return [
-    tryOnProduct && {
+    {
       id: 'campaign-ai-tryon',
       tone: 'violet',
       title: 'AI Try-On',
       copy: 'See it on yourself',
       cta: 'Try now',
       href: '/custom-try-on',
-      image: tryOnProduct.imageUrl
+      image: asset('about/about-tryon.png')
     },
     {
       id: 'campaign-smart-wardrobe',
@@ -6652,6 +6671,7 @@ function ProfilePage({ user, setUser }) {
             <button className="profile-reference-neutral-action" type="button" onClick={() => window.dispatchEvent(new CustomEvent('fitlook:replay-onboarding'))}><span>Replay platform tour</span><b>›</b></button>
             <a href="/terms"><span>Terms and conditions</span><b>›</b></a>
             <a href="/privacy"><span>Privacy policy</span><b>›</b></a>
+            <a href="/copyright"><span>Copyright policy</span><b>›</b></a>
             <a href="/data-deletion"><span>Data deletion</span><b>›</b></a>
             <button type="button" onClick={logout}><span>Log out</span><b>›</b></button>
           </div>
@@ -9721,7 +9741,7 @@ function App() {
   return (
     <>
       {!isStandaloneAuth && !isOpeningPage && <a className="skip-link" href="#main-content">Skip to main content</a>}
-      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Header user={user} setUser={setUser} authChecked={authChecked} />}
+      {!isStandaloneAuth && !isOpeningPage && <Header user={user} setUser={setUser} authChecked={authChecked} />}
       <div id="main-content" className="app-page-transition" tabIndex="-1" key={routeKey}>{page}</div>
       {!isOnline && <div className="network-status" role="status" aria-live="polite">You are offline. Changes will resume when you reconnect.</div>}
       {toast && <Toast toast={toast} onDismiss={dismissToast} />}
