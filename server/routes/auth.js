@@ -31,7 +31,7 @@ import { enqueueJob, safeJobId } from '../utils/jobQueue.js';
 import { signUserMediaToken } from '../utils/mediaTokens.js';
 import { normalizeIndianMobile } from '../utils/phone.js';
 import { hashPassword, verifyPassword } from '../utils/passwordHashing.js';
-import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
+import { createRateLimiter, developmentRateLimitBypass, rateLimitKeys } from '../utils/rateLimit.js';
 import { deleteStoredFile, deleteStoredPrefix, publicUrlForStoredFile, readStoredFile, saveBuffer, useBunny } from '../utils/storage.js';
 import {
   accountAccessError,
@@ -88,6 +88,10 @@ const loginOtpCurrentSessions = createTempSessionStore('otp:login-current', { tt
 const passwordResetOtpCurrentSessions = createTempSessionStore('otp:password-reset-current', { ttlMs: signupOtpTtlMs });
 const requireUserOperationsAdmin = requireAdminSection(ADMIN_SECTIONS.USER_OPERATIONS);
 const requireSystemAdmin = requireAdminSection(ADMIN_SECTIONS.SYSTEM_MANAGEMENT);
+const otpRateLimitBypass = () => developmentRateLimitBypass('DISABLE_AUTH_OTP_RATE_LIMITS');
+const bypassableOtpLimiter = (limiter) => (req, res, next) => (
+  otpRateLimitBypass() ? next() : limiter(req, res, next)
+);
 const authIpLimiter = createRateLimiter({
   name: 'auth:ip',
   windowMs: 15 * 60 * 1000,
@@ -100,29 +104,34 @@ const otpRequestIpLimiter = createRateLimiter({
   windowMs: 10 * 60 * 1000,
   max: Number(process.env.RATE_LIMIT_AUTH_OTP_REQUEST_IP_MAX || 12),
   keyGenerator: rateLimitKeys.clientIp,
-  message: 'Too many OTP requests from this network. Please wait before requesting another code.'
+  message: 'Too many OTP requests from this network. Please wait before requesting another code.',
+  skip: otpRateLimitBypass
 });
 const otpRequestPhoneLimiter = createRateLimiter({
   name: 'auth:otp-request-phone',
   windowMs: 10 * 60 * 1000,
   max: Number(process.env.RATE_LIMIT_AUTH_OTP_REQUEST_PHONE_MAX || 3),
   keyGenerator: rateLimitKeys.bodyPhone,
-  message: 'Too many OTP requests for this phone number. Please wait before requesting another code.'
+  message: 'Too many OTP requests for this phone number. Please wait before requesting another code.',
+  skip: otpRateLimitBypass
 });
 const otpRequestPhoneHourlyLimiter = createRateLimiter({
   name: 'auth:otp-request-phone-hour',
   windowMs: 60 * 60 * 1000,
   max: Number(process.env.RATE_LIMIT_AUTH_OTP_REQUEST_PHONE_HOURLY_MAX || 10),
   keyGenerator: rateLimitKeys.bodyPhone,
-  message: 'OTP requests are temporarily limited for this phone number. Please try again later.'
+  message: 'OTP requests are temporarily limited for this phone number. Please try again later.',
+  skip: otpRateLimitBypass
 });
 const otpVerifyLimiter = createRateLimiter({
   name: 'auth:otp-verify-session',
   windowMs: signupOtpTtlMs,
   max: 5,
   keyGenerator: rateLimitKeys.otpSession,
-  message: 'Too many OTP attempts. Please request a new code and try again.'
+  message: 'Too many OTP attempts. Please request a new code and try again.',
+  skip: otpRateLimitBypass
 });
+const otpAuthIpLimiter = bypassableOtpLimiter(authIpLimiter);
 const loginAttemptLimiter = createRateLimiter({
   name: 'auth:login-identifier',
   windowMs: 15 * 60 * 1000,
@@ -659,7 +668,7 @@ router.post('/signup/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, 
   });
 }));
 
-router.get('/test-otp', authIpLimiter, asyncRoute(async (req, res) => {
+router.get('/test-otp', otpAuthIpLimiter, asyncRoute(async (req, res) => {
   if (!testOtpHelperEnabled()) return res.status(404).json({ message: 'Not found' });
   const purpose = String(req.query?.purpose || '').trim();
   if (!['signup', 'login', 'password-reset'].includes(purpose)) return res.status(400).json({ message: 'Invalid OTP purpose.' });
@@ -671,7 +680,7 @@ router.get('/test-otp', authIpLimiter, asyncRoute(async (req, res) => {
   res.json({ otp });
 }));
 
-router.post('/signup/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
+router.post('/signup/verify-otp', otpAuthIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const otpSession = String(req.body?.otpSession || '');
   const result = await verifyOtpChallenge({
@@ -686,7 +695,7 @@ router.post('/signup/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(as
   res.json({ verified: true, otpSession, phone });
 }));
 
-router.post('/signup/cancel-otp', authIpLimiter, asyncRoute(async (req, res) => {
+router.post('/signup/cancel-otp', otpAuthIpLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const otpSession = String(req.body?.otpSession || '');
   await cancelOtpChallenge({
@@ -828,7 +837,7 @@ router.post('/login/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, o
   });
 }));
 
-router.post('/login/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
+router.post('/login/verify-otp', otpAuthIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const otpSession = String(req.body?.otpSession || '');
   const result = await verifyOtpChallenge({
@@ -867,7 +876,7 @@ router.post('/logout', requireUser, asyncRoute(async (req, res) => {
   res.json({ loggedOut: true, tracked: Boolean(session), logoutAt: session?.logoutAt || null });
 }));
 
-router.post('/login/cancel-otp', authIpLimiter, asyncRoute(async (req, res) => {
+router.post('/login/cancel-otp', otpAuthIpLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const otpSession = String(req.body?.otpSession || '');
   await cancelOtpChallenge({
@@ -912,7 +921,7 @@ router.post('/password-reset/request-otp', otpRequestIpLimiter, otpRequestPhoneL
   });
 }));
 
-router.post('/password-reset/verify-otp', authIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
+router.post('/password-reset/verify-otp', otpAuthIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const otpSession = String(req.body?.otpSession || '');
   const result = await verifyOtpChallenge({
@@ -929,7 +938,7 @@ router.post('/password-reset/verify-otp', authIpLimiter, otpVerifyLimiter, async
   res.json({ verified: true, otpSession, phone });
 }));
 
-router.post('/password-reset/cancel-otp', authIpLimiter, asyncRoute(async (req, res) => {
+router.post('/password-reset/cancel-otp', otpAuthIpLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const otpSession = String(req.body?.otpSession || '');
   await cancelOtpChallenge({
@@ -942,7 +951,7 @@ router.post('/password-reset/cancel-otp', authIpLimiter, asyncRoute(async (req, 
   res.json({ cancelled: true });
 }));
 
-router.post('/password-reset', authIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
+router.post('/password-reset', otpAuthIpLimiter, otpVerifyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const otpSession = String(req.body?.otpSession || '');
   const password = String(req.body?.password || '');

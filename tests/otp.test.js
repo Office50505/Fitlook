@@ -27,6 +27,7 @@ async function withLocalTempSessions(fn) {
   const originalOtpProvider = process.env.OTP_DELIVERY_PROVIDER;
   const originalFixedOtp = process.env.OTP_FIXED_CODE;
   const originalAllowProductionFixedOtp = process.env.ALLOW_FIXED_OTP_IN_PRODUCTION;
+  const originalOtpRateLimitBypass = process.env.DISABLE_AUTH_OTP_RATE_LIMITS;
   process.env.TEMP_SESSION_REQUIRE_REDIS = 'false';
   delete process.env.REDIS_URL;
   process.env.JWT_SECRET = 'otp-test-secret';
@@ -48,6 +49,8 @@ async function withLocalTempSessions(fn) {
     else process.env.OTP_FIXED_CODE = originalFixedOtp;
     if (originalAllowProductionFixedOtp === undefined) delete process.env.ALLOW_FIXED_OTP_IN_PRODUCTION;
     else process.env.ALLOW_FIXED_OTP_IN_PRODUCTION = originalAllowProductionFixedOtp;
+    if (originalOtpRateLimitBypass === undefined) delete process.env.DISABLE_AUTH_OTP_RATE_LIMITS;
+    else process.env.DISABLE_AUTH_OTP_RATE_LIMITS = originalOtpRateLimitBypass;
   }
 }
 
@@ -200,6 +203,22 @@ test('excessive incorrect attempts invalidate the OTP challenge', async () => wi
   assert.equal(second.status, 429);
   assert.equal(correctAfterLock.ok, false);
   assert.equal(await challenge.sessions.get(challenge.otpSession), null);
+}));
+
+test('OTP attempt lockout can be bypassed outside production for testing', async () => withLocalTempSessions(async () => {
+  process.env.NODE_ENV = 'development';
+  process.env.DISABLE_AUTH_OTP_RATE_LIMITS = 'true';
+
+  const challenge = await createChallenge('attempt-limit-bypass', { maxAttempts: 2 });
+  const first = await verify({ ...challenge, otp: '111111' });
+  const second = await verify({ ...challenge, otp: '222222' });
+  const correctAfterLimit = await verify(challenge);
+
+  assert.equal(first.ok, false);
+  assert.equal(first.status, 400);
+  assert.equal(second.ok, false);
+  assert.equal(second.status, 400);
+  assert.equal(correctAfterLimit.ok, true);
 }));
 
 test('frontend and backend sources do not contain the old exposed OTP UI/API keys', async () => {
