@@ -6345,7 +6345,7 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
       ? 'Best value for bulk catalog work and repeated video trials.'
       : plan.tokens >= 100
         ? 'Better value for product batches and style exploration.'
-        : 'One-time refill for extra image try-ons and videos.',
+        : 'Extra credits for image try-ons and videos.',
     cta: user ? 'Buy top-up' : 'Create profile',
     badge: value === bestTopUpValue ? 'Best Value' : '',
     payable: true
@@ -6357,7 +6357,7 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
       id: 'topup_banner',
       label: 'Top-up',
       headline: 'Add more',
-      price: 'From Rs 200',
+      price: 'From Rs 199',
       tokensLabel: 'One-time packs',
       billing: 'No subscription change',
       copy: 'Open the top-up page to choose 50, 75, 110, 135, or 400 extra tokens.',
@@ -6386,14 +6386,13 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
   return (
     <main className="credit-purchase-page">
       <section className="wrap credit-purchase-shell">
+        {isTopUpPage && <a className="credit-back-link" href="/tokens" aria-label="Back to credits" title="Back to credits"><ArrowLeftIcon /></a>}
         <header className="credit-purchase-head">
-          <p>{isTopUpPage ? 'One-time refill' : 'Token access'}</p>
           <h1>{isTopUpPage ? 'Top-ups' : 'Credits'}</h1>
           <span>{isTopUpPage ? 'Choose a one-time token pack when you want extra image try-ons or videos on top of the monthly membership.' : 'Pick the monthly mandate setup or open one-time top-ups. Starter accounts include 8 tokens, images use 1 token, and videos use 3 tokens.'}</span>
         </header>
 
         {message && <p className={`credit-purchase-message ${/failed|not completed|missing|Could not|error/i.test(message) ? 'error-message' : ''}`} role="status">{message}</p>}
-        {isTopUpPage && <a className="credit-back-link" href="/tokens">Back to mandate</a>}
 
         <div className="credit-purchase-layout">
           <div className="credit-purchase-main">
@@ -9867,6 +9866,10 @@ function FullscreenIcon() {
 
 function MenuIcon() {
   return <svg viewBox="0 0 24 24"><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h16" /></svg>;
+}
+
+function ArrowLeftIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></svg>;
 }
 
 function CloseIcon() {

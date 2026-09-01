@@ -20513,16 +20513,34 @@ main > section.wrap {
 }
 
 .credit-back-link {
-  display: inline-flex;
-  width: fit-content;
-  margin-top: 18px;
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  margin: 0 0 18px;
+  border: 1px solid rgba(155, 81, 77, .26);
+  border-radius: 7px;
+  background: rgba(255, 253, 253, .72);
   color: #9b514d;
-  font-family: var(--font-interface);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .04em;
   text-decoration: none;
-  text-transform: uppercase;
+  transition: border-color .2s ease, background-color .2s ease, color .2s ease, transform .2s ease;
+}
+
+.credit-back-link svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.credit-back-link:hover {
+  border-color: #9b514d;
+  background: #9b514d;
+  color: #fff;
+  transform: translateX(-2px);
 }
 
 .credit-purchase-layout {
