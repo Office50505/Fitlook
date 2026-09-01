@@ -5,12 +5,12 @@ const SUBSCRIPTION_PLAN = {
   dueTodayAmount: 100,
   amount: 100,
   currency: 'INR',
-  tokens: 149,
+  tokens: 150,
   billing: 'Monthly',
   cancellation: 'Cancel future monthly billing before the next renewal from your account or by contacting support.',
   mandate: {
     setupAmount: 100,
-    recurringAmount: 50000,
+    recurringAmount: 49900,
     firstDebitDelayHours: 24,
     frequency: 'Monthly'
   }
