@@ -641,11 +641,19 @@ function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
 
+function accountExistsPayload(identifier, message = 'An account already exists. Please sign in.') {
+  return {
+    message,
+    code: 'ACCOUNT_EXISTS',
+    identifier: String(identifier || '').trim()
+  };
+}
+
 router.post('/signup/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, otpRequestPhoneHourlyLimiter, asyncRoute(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   if (!phone) return res.status(400).json({ message: 'Enter a valid mobile number.' });
-  const existing = await User.exists({ phone });
-  if (existing) return res.status(409).json({ message: 'An account already exists for this phone number' });
+  const existing = await User.findOne({ phone }).select('email phone').lean();
+  if (existing) return res.status(409).json(accountExistsPayload(existing.email || existing.phone || phone, 'An account already exists for this phone number. Please sign in.'));
 
   const { otpSession, otp, expiresAt } = await createOtpChallenge({
     sessions: signupOtpSessions,
@@ -737,8 +745,8 @@ router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) =
       { username }
     ]
   });
-  if (existing?.email === email.toLowerCase()) return res.status(409).json({ message: 'An account already exists for this email' });
-  if (existing?.phone === phone) return res.status(409).json({ message: 'An account already exists for this phone number' });
+  if (existing?.email === email.toLowerCase()) return res.status(409).json(accountExistsPayload(existing.email, 'An account already exists for this email. Please sign in.'));
+  if (existing?.phone === phone) return res.status(409).json(accountExistsPayload(existing.email || existing.phone || phone, 'An account already exists for this phone number. Please sign in.'));
   if (existing?.username === username) return res.status(409).json({ message: 'This username is already taken' });
 
   try {
@@ -763,8 +771,8 @@ router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) =
   } catch (error) {
     if (isBodyPhotoPreparationError(error)) return res.status(400).json({ message: error.message });
     if (error.code === 11000 && error.keyPattern?.username) return res.status(409).json({ message: 'This username is already taken' });
-    if (error.code === 11000 && error.keyPattern?.email) return res.status(409).json({ message: 'An account already exists for this email' });
-    if (error.code === 11000 && error.keyPattern?.phone) return res.status(409).json({ message: 'An account already exists for this phone number' });
+    if (error.code === 11000 && error.keyPattern?.email) return res.status(409).json(accountExistsPayload(email, 'An account already exists for this email. Please sign in.'));
+    if (error.code === 11000 && error.keyPattern?.phone) return res.status(409).json(accountExistsPayload(phone, 'An account already exists for this phone number. Please sign in.'));
     throw error;
   }
 }));
@@ -784,7 +792,7 @@ router.post('/login', authIpLimiter, loginAttemptLimiter, asyncRoute(async (req,
   const phone = normalizePhone(req.body?.phone);
   const identifier = String(req.body.email || req.body.username || '').trim().toLowerCase();
   const { password } = req.body;
-  if ((!phone && !identifier) || !password) return res.status(400).json({ message: 'Mobile number and password are required' });
+  if ((!phone && !identifier) || !password) return res.status(400).json({ message: 'Mobile number or email and password are required' });
   const user = await User.findOne({
     $or: [
       ...(phone ? [{ phone }] : []),

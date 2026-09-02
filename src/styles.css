@@ -22264,6 +22264,7 @@ body.onboarding-scroll-locked {
 .generation-history-empty { margin-top: 0; }
 
 .profile-reference-photo-layout { display: grid; grid-template-columns: minmax(100px, .25fr) minmax(0, .75fr); gap: clamp(18px, 3vw, 34px); align-items: center; margin-top: 18px; }
+.profile-reference-photo-preview-stack { display: grid; justify-items: start; gap: 8px; align-self: start; }
 .profile-reference-photo-preview { position: relative; width: min(100%, 140px); aspect-ratio: 4 / 5; overflow: hidden; border-radius: 4px; background: #f3ece9; color: #9b514d; }
 .profile-reference-photo-preview img { width: 100%; height: 100%; object-fit: cover; }
 .profile-reference-photo-preview > span { display: grid; width: 100%; height: 100%; place-items: center; font-family: var(--font-display); font-size: 42px; }
@@ -22285,6 +22286,7 @@ body.onboarding-scroll-locked {
 .profile-reference-save-photo { min-height: 31px; border: 1px solid #211e1c; border-radius: 4px; background: #211e1c; color: #fff; font-family: var(--font-interface); font-size: 8px; font-weight: 700; cursor: pointer; }
 .profile-reference-save-photo.secondary { background: #fffdfc; color: #211e1c; }
 .profile-reference-save-photo:disabled { cursor: wait; opacity: .65; }
+.profile-reference-photo-status { display: grid; gap: 5px; width: min(100%, 180px); }
 .profile-reference-message { margin: 0; color: #5f7767; font-family: var(--font-interface); font-size: 8px; line-height: 1.4; }
 .profile-reference-message.error-message { color: #a53d38; }
 
@@ -22381,6 +22383,7 @@ body.onboarding-scroll-locked {
   .delete-account-actions { display: grid; grid-template-columns: 1fr; }
   .profile-reference-photo-layout { grid-template-columns: 1fr; }
   .profile-reference-photo-preview { width: 128px; }
+  .profile-reference-photo-status { width: 100%; max-width: 220px; }
   .profile-reference-photo-tools { align-items: flex-start; flex-direction: column; }
   .profile-reference-photo-tools > div { justify-content: flex-start; }
   .profile-reference-payment-row { grid-template-columns: 60px minmax(0, 1fr) 18px; }

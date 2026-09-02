@@ -653,3 +653,163 @@ Because this is feature-flagged:
 9. Mode-aware policy pages.
 10. Admin ecommerce orders page.
 11. Full tests and staging validation.
+
+## New Polish Change Plan
+
+These changes are planned only and should be implemented after the current pushed demo checkout work is deployed/verified.
+
+### Checkout Heading Copy
+
+Problem:
+
+- Checkout page currently shows the main heading as `Contact`.
+- The desired storefront feel is closer to a standard ecommerce checkout.
+
+Planned change:
+
+- Change the checkout form main heading from `Contact` to `Checkout`.
+- Keep the contact fields below it:
+  - `Full name`
+  - `Mobile number`
+- Keep the helper copy short, for example:
+  - `For payment and delivery updates`
+- Suggested final hierarchy:
+  - Kicker: `Secure checkout`
+  - H1: `Checkout`
+  - Subcopy: `For payment and delivery updates`
+
+Affected file:
+
+- `src/App.jsx`, `CheckoutPage`.
+
+### Existing User Signup Redirect
+
+Problem:
+
+- If a person tries to sign up with an account that already exists, the flow should not leave them stuck on signup.
+- They should be redirected to login with their identifier prefilled.
+
+Planned behavior:
+
+- When signup detects an existing account:
+  - Stop the signup flow.
+  - Redirect to `/login`.
+  - Pass the existing identifier in the query string.
+  - Preserve any return URL so buying flow continues after login.
+
+Recommended URL shape:
+
+```txt
+/login?identifier=<encoded-email-or-mobile>&return=<encoded-return-path>
+```
+
+Current app note:
+
+- The current auth UI is mobile-first and does not collect checkout email.
+- If signup duplicate detection is based on mobile, prefill the mobile number on login.
+- If an email signup field is introduced later, prefill email instead.
+- The query param can be named generically as `identifier` so login can support either email or mobile without another route change.
+
+Backend/frontend handling:
+
+- Backend signup should return a recognizable duplicate-account error, ideally with:
+
+```json
+{
+  "message": "Account already exists. Please sign in.",
+  "code": "ACCOUNT_EXISTS",
+  "identifier": "<safe identifier>"
+}
+```
+
+- Frontend signup should catch `ACCOUNT_EXISTS`.
+- Login page should read `identifier` and populate the login input.
+- If `return` exists, login should keep using it after successful authentication.
+
+Tests:
+
+- Signup duplicate response uses `ACCOUNT_EXISTS`.
+- Signup UI redirects to login with `identifier`.
+- Login page preloads the identifier.
+- Return URL survives signup-to-login redirect.
+
+### Remove Ratings In Demo Storefront
+
+Problem:
+
+- Product cards/details currently show rating and review count.
+- In demo ecommerce mode this can look like unsupported commerce claims.
+
+Planned behavior:
+
+- Hide rating UI when `demoEcommerceMode === true`.
+- Keep ratings visible in affiliate mode if needed.
+
+Affected surfaces:
+
+- Product cards in catalog/search/category surfaces.
+- Product detail page rating row.
+- Wishlist product card if ratings are added there later.
+- Any related/recommended product modules that render rating snippets.
+
+Implementation approach:
+
+- Use `demoEcommerceMode` already passed into product surfaces.
+- Wrap rating JSX with `!demoEcommerceMode`.
+- Avoid deleting rating data from API responses; this is display-only.
+
+Tests:
+
+- Demo mode product page does not render rating/review text.
+- Affiliate mode still renders rating where available.
+
+### Public Policy And Terms Copy Without "Demo"
+
+Problem:
+
+- In demo ecommerce mode, important public pages currently mention `demo`.
+- Public policy/terms pages should read like ecommerce policies, not like internal test/demo language.
+
+Planned behavior:
+
+- Keep internal metadata as demo/simulated for admin and safety.
+- Remove public-facing mentions of:
+  - `demo checkout`
+  - `demo ecommerce`
+  - `simulated payment`
+  - `No real payment`
+- Replace with production-like wording that still does not overpromise real payment capture.
+
+Suggested public wording pattern:
+
+- Terms:
+  - `Lookmefy can collect product order details and confirm supported India deliveries through the checkout flow.`
+- Payments:
+  - `The Pay now action confirms the order in Lookmefy for this checkout mode.`
+- Privacy:
+  - `We collect checkout contact details, delivery addresses, order totals, and payment status metadata needed to process and support orders.`
+- Shipping:
+  - `Lookmefy currently delivers product orders within India to serviceable pincodes.`
+- Refund/cancellation:
+  - `If an order remains pending because of a technical issue, you can retry checkout or contact support.`
+
+Affected pages:
+
+- `/terms`
+- `/privacy`
+- `/shipping`
+- `/refund`
+- `/cancellation`
+- `/contact`
+- `/support`
+
+Important constraint:
+
+- Do not remove `demo` wording from admin/order internals.
+- Admin order metadata should still show `paymentMode: demo` and `providerState: DEMO_COMPLETED` so the team does not mistake these orders for live payment-provider settlements.
+
+Tests:
+
+- Demo-mode public policy pages do not include the word `demo`.
+- Demo-mode public policy pages do not mention PhonePe for product checkout.
+- Admin/order metadata still records demo mode internally.
