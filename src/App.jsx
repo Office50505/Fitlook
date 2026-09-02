@@ -1418,11 +1418,11 @@ function Header({ user, setUser, authChecked = true }) {
   const navLinks = [
     ['Home', '/home'],
     ['Explore', '/categories'],
-    ['About', '/about'],
-    ['Download', '/download'],
     ['Wardrobe', '/closet'],
     ['Custom Try On', '/custom-try-on'],
-    ['AI Stylist', user ? '/style-bot' : '/signup']
+    ['AI Stylist', user ? '/style-bot' : '/signup'],
+    ['Download', '/download'],
+    ['About', '/about']
   ];
   const exactQueryActiveHref = navLinks.find(([, href]) => {
     if (!href.includes('?')) return false;
