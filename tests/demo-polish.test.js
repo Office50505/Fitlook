@@ -40,6 +40,8 @@ test('demo token purchases cannot fall through to a payment redirect', async () 
 
   assert.match(source, /demoModeLoading/);
   assert.match(source, /demoModeError/);
-  assert.match(source, /Demo mode is on, but the server returned a payment redirect/);
+  assert.match(source, /Checkout mode is active, but the server returned a payment redirect/);
   assert.match(source, /demoModeLoading \? 'Checking mode\.\.\.'/);
+  assert.doesNotMatch(source, /Demo checkout confirms/);
+  assert.doesNotMatch(source, /Live brand and price details/);
 });

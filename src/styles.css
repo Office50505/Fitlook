@@ -26229,6 +26229,32 @@ textarea:focus-visible,
   min-height: 38px;
 }
 
+.nav-profile-avatar {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+}
+
+.nav-profile-avatar.has-image {
+  border: 1px solid rgba(17, 16, 14, .16);
+  background: #f3ece9;
+}
+
+.nav-profile-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.site-header .icon-button .nav-profile-avatar {
+  width: 24px;
+  height: 24px;
+}
+
 .site-header .menu-toggle {
   display: none;
 }

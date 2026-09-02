@@ -1536,13 +1536,14 @@ function useGenerationHistory(user) {
 
 function MobileBottomNav({ user }) {
   const currentPath = normalizePath();
+  const ProfileNavIcon = () => <NavProfileAvatar user={user} />;
   const mobileNavLinks = [
     { label: 'Home', href: '/home', Icon: HomeIcon },
     { label: 'Explore', href: '/categories', Icon: GridIcon },
     { label: 'Try-On', href: '/custom-try-on', Icon: TryOnIcon },
     { label: 'AI Stylist', href: user ? '/style-bot' : '/signup', Icon: SparkleLineIcon },
     { label: 'Wardrobe', href: '/closet', Icon: ClosetIcon },
-    { label: 'Profile', href: user ? '/profile' : '/signup', Icon: UserIcon }
+    { label: 'Profile', href: user ? '/profile' : '/signup', Icon: ProfileNavIcon }
   ];
   const isActiveLink = (href, index) => {
     const hrefPath = href.split('?')[0] || '/';
@@ -1556,6 +1557,15 @@ function MobileBottomNav({ user }) {
         return <a className={active ? 'active' : ''} href={href} aria-current={active ? 'page' : undefined} key={label}><Icon /><span>{label}</span></a>;
       })}
     </nav>
+  );
+}
+
+function NavProfileAvatar({ user }) {
+  const imageUrl = protectedMediaUrl(user?.bodyPhotoUrl || user?.bodyPhotoOriginalUrl || '');
+  return (
+    <span className={`nav-profile-avatar ${imageUrl ? 'has-image' : ''}`}>
+      {imageUrl ? <img src={imageUrl} alt="" /> : <UserIcon />}
+    </span>
   );
 }
 
@@ -1720,7 +1730,7 @@ function Header({ user, setUser, authChecked = true }) {
             <a className="icon-button mobile-search-trigger" href="/search" aria-label="Open search"><SearchIcon /></a>
             <a className={`header-credit-button ${!authChecked ? 'auth-pending' : ''}`} href="/tokens" aria-label={user ? `Buy credits. ${tokenLabel} available` : 'Buy credits'}><SparkleLineIcon /><span>Credits</span>{user && <strong>{user.tokens}</strong>}{!authChecked && <strong className="header-auth-skeleton" aria-hidden="true" />}</a>
             <a className="icon-button header-count-button" href="/wishlist" aria-label={`${wishlistCount} wishlist items`}><HeartIcon />{wishlistCount > 0 && <strong>{wishlistCount}</strong>}</a>
-            {!authChecked ? <span className="icon-button header-auth-loading" role="status" aria-label="Checking account"><UserIcon /></span> : user ? <a className="icon-button" href="/profile" aria-label="Profile"><UserIcon /></a> : <a className="icon-button" href="/signup" aria-label="Account"><UserIcon /></a>}
+            {!authChecked ? <span className="icon-button header-auth-loading" role="status" aria-label="Checking account"><UserIcon /></span> : user ? <a className="icon-button" href="/profile" aria-label="Profile"><NavProfileAvatar user={user} /></a> : <a className="icon-button" href="/signup" aria-label="Account"><UserIcon /></a>}
             {user && <button className="text-button" onClick={logout}>Log out</button>}
             <button className="icon-button menu-toggle" type="button" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-controls="mobile-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
               {menuOpen ? <CloseIcon /> : <MenuIcon />}
@@ -6483,7 +6493,7 @@ function TokenPage({ user, setUser, mode = 'overview', demoEcommerceMode = false
       return;
     }
     setCheckoutLoading(true);
-    setMessage(demoEcommerceMode ? 'Crediting demo credits...' : 'Opening secure PhonePe checkout...');
+    setMessage(demoEcommerceMode ? 'Adding credits...' : 'Opening secure PhonePe checkout...');
     try {
       const idempotencyKey = checkoutIdempotencyRef.current.get(pack.id)
         || (window.crypto?.randomUUID?.() || `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -6502,7 +6512,7 @@ function TokenPage({ user, setUser, mode = 'overview', demoEcommerceMode = false
         return;
       }
       if (demoEcommerceMode) {
-        throw new Error('Demo mode is on, but the server returned a payment redirect. Refresh and try again after deployment.');
+        throw new Error('Checkout mode is active, but the server returned a payment redirect. Refresh and try again after deployment.');
       }
       if (!data.redirectUrl) throw new Error('Checkout did not return a payment link.');
       window.location.assign(data.redirectUrl);
@@ -6625,9 +6635,9 @@ function TokenPage({ user, setUser, mode = 'overview', demoEcommerceMode = false
             </section>
 
             <section className="credit-payment-section" aria-label="Payment method">
-              <div className="credit-section-heading"><h2>Payment Method</h2><span>{demoEcommerceMode ? 'Demo crediting' : 'Secure checkout'}</span></div>
+              <div className="credit-section-heading"><h2>Payment Method</h2><span>{demoEcommerceMode ? 'Instant crediting' : 'Secure checkout'}</span></div>
               <button className="credit-payment-choice active" type="button" aria-pressed="true">
-                <span className="credit-phonepe-mark">{demoEcommerceMode ? 'D' : 'P'}</span><strong>{demoEcommerceMode ? 'Demo credits' : 'PhonePe'}</strong><small>{demoEcommerceMode ? 'Credits are added without opening PhonePe' : 'UPI, cards, and net banking'}</small><b>Selected</b>
+                <span className="credit-phonepe-mark">{demoEcommerceMode ? 'L' : 'P'}</span><strong>{demoEcommerceMode ? 'Lookmefy credits' : 'PhonePe'}</strong><small>{demoEcommerceMode ? 'Credits are added inside Lookmefy' : 'UPI, cards, and net banking'}</small><b>Selected</b>
               </button>
             </section>
           </div>
@@ -6650,7 +6660,7 @@ function TokenPage({ user, setUser, mode = 'overview', demoEcommerceMode = false
             <div className="credit-summary-row"><span>Processing Fee</span><strong>Free</strong></div>
             <div className="credit-summary-total"><span>Due today</span><strong>{selectedPack.price}</strong></div>
             <button type="button" onClick={completeSelection} disabled={checkoutLoading || demoModeLoading}>{demoModeLoading ? 'Checking mode...' : checkoutLoading ? demoEcommerceMode ? 'Crediting...' : 'Opening checkout...' : selectedPack.cta}</button>
-            <small>{isPaidPack ? demoEcommerceMode ? 'Demo mode credits this pack instantly without opening PhonePe.' : (isActive && subscription.currentPeriodEnd && selectedPack.id === 'monthly_150_tokens' ? `Current plan ends ${formatDate(subscription.currentPeriodEnd)}. Credits are added after secure payment verification.` : 'Secured by PhonePe. Credits are added only after payment verification.') : selectedPack.copy}</small>
+            <small>{isPaidPack ? demoEcommerceMode ? 'Credits are added instantly inside Lookmefy.' : (isActive && subscription.currentPeriodEnd && selectedPack.id === 'monthly_150_tokens' ? `Current plan ends ${formatDate(subscription.currentPeriodEnd)}. Credits are added after secure payment verification.` : 'Secured by PhonePe. Credits are added only after payment verification.') : selectedPack.copy}</small>
           </aside>
         </div>
       </section>
@@ -6676,9 +6686,9 @@ function CreditSuccessModal({ order, user, onClose }) {
       <section className="checkout-success-modal credit-success-modal" role="dialog" aria-modal="true" aria-labelledby="credit-success-title">
         <button ref={closeButtonRef} className="checkout-success-close" type="button" onClick={onClose} aria-label="Close credit success"><CloseIcon /></button>
         <div className="checkout-success-mark" aria-hidden="true">✓</div>
-        <p className="kicker">Demo credits credited</p>
+        <p className="kicker">Credits credited</p>
         <h2 id="credit-success-title">Credits added</h2>
-        <p>Your demo credit pack has been added. No real PhonePe payment was collected.</p>
+        <p>Your credit pack has been added to your Lookmefy account.</p>
         <div className="checkout-success-details">
           <div><span>Pack</span><strong>{order?.planName || 'Credits'}</strong></div>
           <div><span>Credits</span><strong>{Number(order?.tokens || 0)}</strong></div>
@@ -7317,8 +7327,8 @@ function CartPage({ user, demoEcommerceMode = false }) {
           <aside className="cart-summary" aria-label="Cart summary">
             <h2>Order summary</h2>
             <div><span>Subtotal</span><strong>{formatMoney(subtotal, items[0]?.currency || 'INR')}</strong></div>
-            <div><span>Delivery</span><strong>{demoEcommerceMode ? 'Free in demo' : 'Calculated at checkout'}</strong></div>
-            <p>{demoEcommerceMode ? 'Demo checkout confirms orders inside Lookmefy without opening PhonePe.' : 'Product checkout needs backend order, address, inventory, and payment confirmation APIs before it can accept payment safely.'}</p>
+            <div><span>Delivery</span><strong>{demoEcommerceMode ? 'Free' : 'Calculated at checkout'}</strong></div>
+            <p>{demoEcommerceMode ? 'Checkout confirms orders inside Lookmefy. Delivery is currently available within India.' : 'Product checkout needs backend order, address, inventory, and payment confirmation APIs before it can accept payment safely.'}</p>
             {demoEcommerceMode ? <a className="cart-checkout-action" href={user ? '/checkout' : `/signup?return=${encodeURIComponent('/checkout')}`}>{user ? 'Checkout' : 'Sign up to checkout'}</a> : <button type="button" disabled aria-disabled="true">Checkout coming soon</button>}
             <a href="/support">Contact support</a>
           </aside>
@@ -7577,11 +7587,11 @@ function CheckoutPage({ user, demoEcommerceMode = false, demoModeLoading = false
           </div>
           <label className="checkout-payment-option">
             <input type="radio" checked readOnly />
-            <span><strong>Demo prepaid checkout</strong><small>This demo confirms the order without opening PhonePe.</small></span>
+            <span><strong>Prepaid online checkout</strong><small>Pay now confirms the order securely inside Lookmefy.</small></span>
           </label>
 
           {error && <p className="form-message error-message" role="alert">{error}</p>}
-          {createdOrder && !successOrder && <p className="form-message">Order created. Confirming demo checkout...</p>}
+          {createdOrder && !successOrder && <p className="form-message">Order created. Confirming checkout...</p>}
           <button className="checkout-pay-button" type="submit" disabled={submitting}>{submitting ? 'Confirming order...' : 'Pay now'}</button>
         </form>
 
@@ -7623,9 +7633,9 @@ function CheckoutSuccessModal({ order, onClose }) {
       <section className="checkout-success-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-success-title">
         <button ref={closeButtonRef} className="checkout-success-close" type="button" onClick={onClose} aria-label="Close checkout success"><CloseIcon /></button>
         <div className="checkout-success-mark" aria-hidden="true">✓</div>
-        <p className="kicker">Demo order placed</p>
+        <p className="kicker">Order placed</p>
         <h2 id="checkout-success-title">Checkout successful</h2>
-        <p>Your demo order has been confirmed. No real PhonePe payment was collected.</p>
+        <p>Your order has been confirmed inside Lookmefy.</p>
         <div className="checkout-success-details">
           <div><span>Order ID</span><strong>{order.merchantOrderId || order.id}</strong></div>
           <div><span>Total</span><strong>{formatMoney(order.total, order.currency)}</strong></div>
@@ -8085,7 +8095,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
             <div className="product-editorial-ship"><span>Shipping</span><strong>Live catalog item</strong></div>
             <div className="product-editorial-benefits">
               <div><strong>AI fit preview</strong><span>Built from your Lookmefy profile</span></div>
-              <div><strong>Verified catalog</strong><span>Live brand and price details</span></div>
+              <div><strong>Verified catalog</strong><span>Brand and price details</span></div>
             </div>
             {tryOnError && <p className="form-message error-message">{tryOnError}</p>}
             {tryOnVideoError && <p className="form-message error-message">{tryOnVideoError}</p>}
@@ -8107,7 +8117,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
               </details>
               <details>
                 <summary>Delivery and returns</summary>
-                <p>{demoEcommerceMode ? 'Demo checkout confirms your order inside Lookmefy without opening PhonePe. Delivery is currently available within India, and order updates are sent to your contact details.' : 'Checkout, delivery, and return terms are managed by Amazon or the linked seller.'}</p>
+                <p>{demoEcommerceMode ? 'Checkout confirms your order inside Lookmefy. Delivery is currently available within India, and order updates are sent to your contact details.' : 'Checkout, delivery, and return terms are managed by Amazon or the linked seller.'}</p>
               </details>
             </div>
           </div>

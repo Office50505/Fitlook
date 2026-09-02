@@ -27,12 +27,14 @@ import {
 const router = express.Router();
 const requireUserOperationsAdmin = requireAdminSection(ADMIN_SECTIONS.USER_OPERATIONS);
 
+const disableDemoCheckoutRateLimit = () => ['1', 'true', 'yes'].includes(String(process.env.DISABLE_DEMO_CHECKOUT_RATE_LIMIT || '').trim().toLowerCase());
 const orderCreateLimiter = createRateLimiter({
   name: 'orders:create',
   windowMs: 10 * 60 * 1000,
   max: 8,
   keyGenerator: rateLimitKeys.userOrIp,
-  message: 'Too many checkout attempts. Please wait a few minutes before trying again.'
+  message: 'Too many checkout attempts. Please wait a few minutes before trying again.',
+  skip: disableDemoCheckoutRateLimit
 });
 const orderStatusLimiter = createRateLimiter({
   name: 'orders:status',

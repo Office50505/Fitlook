@@ -18,12 +18,14 @@ import { phonePeEnabled } from '../utils/envValidation.js';
 import { isProductionEnv, validateConfiguredHttpsUrl } from '../utils/urlValidation.js';
 
 const router = express.Router();
+const disableDemoCheckoutRateLimit = () => ['1', 'true', 'yes'].includes(String(process.env.DISABLE_DEMO_CHECKOUT_RATE_LIMIT || '').trim().toLowerCase());
 const paymentCreateLimiter = createRateLimiter({
   name: 'payments:create',
   windowMs: 10 * 60 * 1000,
   max: 5,
   keyGenerator: rateLimitKeys.user,
-  message: 'Too many checkout attempts. Please wait a few minutes before trying again.'
+  message: 'Too many checkout attempts. Please wait a few minutes before trying again.',
+  skip: disableDemoCheckoutRateLimit
 });
 const paymentStatusLimiter = createRateLimiter({
   name: 'payments:status',
