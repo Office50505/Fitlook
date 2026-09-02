@@ -5,9 +5,10 @@
 Add an admin-controlled demo ecommerce mode that can switch the deployed Lookmefy storefront between:
 
 - Affiliate mode: product CTAs send users to Amazon or another affiliate URL.
-- Demo ecommerce mode: product CTAs send users to an internal checkout form and `Pay now` completes a simulated successful checkout popup without sending the user to PhonePe.
+- Demo ecommerce mode: product CTAs send logged-in users to an internal checkout form and `Pay now` completes a simulated successful checkout popup without sending the user to PhonePe.
+- Demo credit mode: token/credit purchases in demo mode credit the logged-in account immediately and show an in-site success popup instead of redirecting to PhonePe.
 
-This plan was created before implementation. Current implementation status: backend models/routes, admin toggle, storefront checkout/status screens, demo policy overrides, and focused tests have been added. New planning change: demo mode should no longer redirect to PhonePe; it should show an in-site checkout success popup.
+This plan was created before implementation. Current implementation status: backend models/routes, admin toggle, storefront checkout/status screens, demo policy overrides, and focused tests have been added. New planning change: demo mode should no longer redirect product checkout or credit purchase flows to PhonePe; both should show in-site success states.
 
 ## Current State
 
@@ -15,21 +16,23 @@ This plan was created before implementation. Current implementation status: back
 - The admin dashboard is the Vite admin app in `admin/src/AdminApp.jsx`.
 - The backend is Express in `server/index.js`.
 - Product order creation exists for demo checkout.
-- PhonePe integration exists for credit/token purchases through `TokenOrder`, but demo product checkout should not redirect to PhonePe.
+- PhonePe integration exists for credit/token purchases through `TokenOrder`, but demo mode should not redirect credit purchases or product checkout to PhonePe.
 - Cart exists in `src/utils/cart.js`, but it is localStorage-only.
 - Product buttons currently rely on `product.affiliateLink`.
 - Cart checkout is currently disabled with "Checkout coming soon".
 - Legal/policy pages currently describe affiliate marketplace behavior, not direct ecommerce fulfillment.
+- Product demo checkout is currently guest-capable in parts of the UI/backend and should be tightened so Buy Now requires login/signup.
 
 ## Non-Goals For First Version
 
 - Do not replace the existing affiliate flow.
-- Do not remove credit/token payments.
+- Do not remove real credit/token PhonePe payments outside demo mode.
 - Do not merge `TokenOrder` and product ecommerce orders.
 - Do not build cash on delivery.
 - Do not build inventory reservation beyond basic product availability checks.
 - Do not support international checkout.
 - Do not save full address books unless added in a later phase.
+- Do not allow guest product orders in demo mode.
 
 ## Feature Flag Design
 
@@ -53,11 +56,119 @@ When `demoEcommerceMode` is false:
 When `demoEcommerceMode` is true:
 
 - Product cards and product pages use internal ecommerce behavior.
-- CTAs say "Buy" or "Buy now".
+- CTAs say "Buy" or "Buy now" only for logged-in users.
+- Logged-out users should see a signup/login prompt instead of an actionable Buy Now button.
 - Product detail checkout goes to `/checkout?productId=:id`.
 - Cart checkout is enabled.
 - Wishlist "Move to Bag" adds to internal cart.
 - Policy pages use direct ecommerce wording.
+- Credit/token purchase CTAs use simulated demo crediting and do not open PhonePe.
+
+## New Planned Fixes
+
+### Demo Credit Purchases
+
+Problem:
+
+- Token purchase buttons still call `/api/payments/checkout`.
+- `/api/payments/checkout` creates a PhonePe order and returns `redirectUrl`.
+- The frontend then redirects the user to PhonePe.
+- In demo mode, this should not happen.
+
+Desired behavior:
+
+- User must be logged in.
+- User chooses a credit pack or monthly pack.
+- User clicks the existing credit purchase CTA.
+- Backend creates a `TokenOrder` record in completed/demo state.
+- Backend immediately increments the user's token balance.
+- Frontend updates the logged-in user state.
+- Frontend shows a success popup: "Credits credited" with amount, pack name, and new balance.
+- No PhonePe redirect URL should be used in demo mode.
+
+Suggested backend design:
+
+- Import/use storefront setting inside `server/routes/payments.js`.
+- Add a helper such as `demoCreditsEnabled()` or check `getStorefrontSetting().demoEcommerceMode`.
+- Add a dedicated helper like `createDemoCreditOrder({ req, user, plan })`.
+- Reuse existing `TokenOrder` rather than creating a second credit order model.
+- Reuse `grantPaidTokens(order, providerResponse)` to avoid duplicating token-crediting logic.
+- Set provider fields clearly:
+  - `status`: `completed`
+  - `providerState`: `DEMO_COMPLETED`
+  - `providerResponse`: `{ mode: "demo", message: "Demo credits credited without external payment gateway" }`
+  - `creditedAt`: current date
+  - `redirectUrl`: empty
+- Keep idempotency behavior so double-clicks do not credit twice.
+- Return `{ order, user, demo: true }`.
+
+Recommended endpoint options:
+
+Option A, minimal:
+
+```txt
+POST /api/payments/checkout
+```
+
+- If demo mode is ON, complete demo crediting and return no redirect URL.
+- If demo mode is OFF, keep current PhonePe behavior.
+
+Option B, clearer:
+
+```txt
+POST /api/payments/demo-checkout
+```
+
+- Only works when demo mode is ON.
+- Existing `/api/payments/checkout` stays real PhonePe only.
+
+Recommendation: Use Option A for fewer frontend branches, but include an explicit response flag:
+
+```json
+{
+  "demo": true,
+  "order": {},
+  "user": {},
+  "message": "Credits credited"
+}
+```
+
+### Login-Gated Buy Now
+
+Problem:
+
+- In demo ecommerce mode, product detail/cards can route users to `/checkout?productId=:id` even when not logged in.
+- Checkout can collect contact/address, but the new requirement is no Buy Now without login/signup.
+
+Desired behavior:
+
+- Logged-in users: see active `Buy` / `Buy now` CTAs.
+- Logged-out users: do not get an actionable Buy Now CTA.
+- Logged-out users should see `Sign up to buy` or `Create profile to buy`, linking to `/signup?return=/product/:id` where practical.
+- Checkout route should also enforce login:
+  - If `!user`, show an auth-required screen.
+  - Do not render the checkout form.
+  - Do not create product orders.
+- Backend should enforce the same rule:
+  - `POST /api/orders` should require authenticated user in demo mode.
+  - Store `user: req.user._id` on `ProductOrder`.
+  - `GET /api/orders/:id` and `GET /api/orders/:id/payment-status` should only return the order to the owning user or admin.
+
+Affected frontend surfaces:
+
+- Product detail `Buy now`.
+- Product cards in categories/search/recommendations.
+- Wishlist buy/move-to-bag flows.
+- Cart checkout CTA.
+- Checkout route direct access.
+
+Copy guidance:
+
+- Avoid showing a disabled button that looks broken.
+- Prefer a clear auth CTA:
+  - Logged out: `Sign up to buy`
+  - Logged in: `Buy now`
+- Preserve affiliate-mode behavior unless the requirement changes.
 
 ## Backend Models
 

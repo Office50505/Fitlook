@@ -5,6 +5,7 @@ import CustomTryOn from '../models/CustomTryOn.js';
 import TokenOrder from '../models/TokenOrder.js';
 import TryOn from '../models/TryOn.js';
 import User from '../models/User.js';
+import { getStorefrontSetting } from '../models/StorefrontSetting.js';
 import { requireUser } from './auth.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import {
@@ -380,6 +381,70 @@ async function createPhonePePayment({ req, user, plan = SUBSCRIPTION_PLAN }) {
   }
 }
 
+async function createDemoCreditPayment({ req, user, plan = SUBSCRIPTION_PLAN }) {
+  const idempotencyKey = checkoutIdempotencyKey(req);
+  if (idempotencyKey) {
+    const existingOrder = await TokenOrder.findOne({ user: user._id, idempotencyKey });
+    if (existingOrder) {
+      return completeDemoCreditOrder(existingOrder, user);
+    }
+  }
+
+  const merchantOrderId = createMerchantOrderId(user._id).replace(/^FL_/, 'FLDEMO_').slice(0, 63);
+  let order;
+  try {
+    order = await TokenOrder.create({
+      user: user._id,
+      merchantOrderId,
+      planId: plan.id,
+      planName: plan.name,
+      orderType: plan.orderType,
+      amount: amountForPlan(plan),
+      dueTodayAmount: amountForPlan(plan),
+      recurringAmount: recurringAmountForPlan(plan),
+      billingFrequency: billingFrequencyForPlan(plan),
+      currency: plan.currency,
+      tokens: plan.tokens,
+      idempotencyKey,
+      redirectUrl: '',
+      status: 'created',
+      providerState: 'DEMO_CREATED',
+      providerResponse: {
+        mode: 'demo',
+        message: 'Demo credit checkout created without external payment gateway'
+      }
+    });
+  } catch (error) {
+    if (error.code === 11000 && idempotencyKey) {
+      const existingOrder = await TokenOrder.findOne({ user: user._id, idempotencyKey });
+      if (existingOrder) {
+        return completeDemoCreditOrder(existingOrder, user);
+      }
+    }
+    throw error;
+  }
+
+  return completeDemoCreditOrder(order, user);
+}
+
+async function completeDemoCreditOrder(order, fallbackUser) {
+  const alreadyCredited = Boolean(order.creditedAt);
+  const creditedUser = await grantPaidTokens(order, {
+    mode: 'demo',
+    message: 'Demo credits credited without external payment gateway'
+  });
+  const creditedOrder = await TokenOrder.findOneAndUpdate(
+    { _id: order._id },
+    { $set: { providerState: 'DEMO_COMPLETED' } },
+    { new: true }
+  );
+  return {
+    order: creditedOrder || order,
+    user: creditedUser || fallbackUser,
+    alreadyCredited
+  };
+}
+
 async function grantPaidTokens(order, providerResponse) {
   if (order.creditedAt) return User.findById(order.user);
 
@@ -595,6 +660,17 @@ router.post('/checkout', requireUser, paymentCreateLimiter, async (req, res) => 
     const requestedPlanId = String(req.body?.planId || '').trim();
     const plan = requestedPlanId ? planById(requestedPlanId) : SUBSCRIPTION_PLAN;
     if (!plan) return res.status(400).json({ message: 'Selected credit plan is not available.' });
+    const setting = await getStorefrontSetting();
+    if (setting?.demoEcommerceMode) {
+      const result = await createDemoCreditPayment({ req, user: req.user, plan });
+      return res.status(201).json({
+        demo: true,
+        alreadyCredited: result.alreadyCredited,
+        order: result.order.toClient(),
+        user: result.user?.toClient?.() || req.user.toClient(),
+        message: 'Credits credited'
+      });
+    }
     const order = await createPhonePePayment({ req, user: req.user, plan });
     res.status(201).json({ order: order.toClient(), redirectUrl: order.redirectUrl });
   } catch (error) {
@@ -604,6 +680,17 @@ router.post('/checkout', requireUser, paymentCreateLimiter, async (req, res) => 
 
 router.post('/phonepe/subscription', requireUser, paymentCreateLimiter, async (req, res) => {
   try {
+    const setting = await getStorefrontSetting();
+    if (setting?.demoEcommerceMode) {
+      const result = await createDemoCreditPayment({ req, user: req.user, plan: SUBSCRIPTION_PLAN });
+      return res.status(201).json({
+        demo: true,
+        alreadyCredited: result.alreadyCredited,
+        order: result.order.toClient(),
+        user: result.user?.toClient?.() || req.user.toClient(),
+        message: 'Credits credited'
+      });
+    }
     const order = await createPhonePePayment({ req, user: req.user, plan: SUBSCRIPTION_PLAN });
     res.status(201).json({ order: order.toClient(), redirectUrl: order.redirectUrl });
   } catch (error) {
@@ -660,6 +747,7 @@ export {
   callbackAuthorizationHeader,
   checkoutIdempotencyKey,
   configuredRedirectUrl,
+  createDemoCreditPayment,
   createMerchantOrderId,
   findOrderFromCallback,
   grantPaidTokens,

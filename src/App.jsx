@@ -3475,6 +3475,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, d
   const image = hasUsableTryOn ? tryOnImageUrl : productImage;
   const detailHref = `/product/${encodeURIComponent(product.id)}`;
   const buyHref = `/checkout?productId=${encodeURIComponent(product.id)}`;
+  const authBuyHref = `/signup?return=${encodeURIComponent(buyHref)}`;
   const brand = displayBrand(product);
 
   useEffect(() => {
@@ -3558,7 +3559,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, d
             </button>
           )}
           {demoEcommerceMode ? (
-            <a className="shop-action" href={buyHref} onClick={() => recordEvent('buy_now_click', { productId: product.id })}>Buy</a>
+            <a className="shop-action" href={user ? buyHref : authBuyHref} onClick={() => recordEvent(user ? 'buy_now_click' : 'buy_auth_prompt', { productId: product.id })}>{user ? 'Buy' : 'Sign up to buy'}</a>
           ) : (
             product.affiliateLink && <a className="shop-action" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop</a>
           )}
@@ -5809,7 +5810,7 @@ function WishlistPage({ user, demoEcommerceMode = false }) {
           {wishlistState.error && wishlistIds.length > 0 && <StatusPanel text={wishlistState.error} onRetry={wishlistState.retry} />}
           {!isLoadingWishlist && !wishlistState.error && visibleWishlistProducts.length > 0 && (
             <div className={`wishlist-reference-grid ${view === 'list' ? 'is-list' : ''}`}>
-              {visibleWishlistProducts.map((product) => <WishlistProductCard key={wishlistProductId(product)} product={product} demoEcommerceMode={demoEcommerceMode} onRemove={() => removeFromWishlist(product)} />)}
+              {visibleWishlistProducts.map((product) => <WishlistProductCard key={wishlistProductId(product)} product={product} user={user} demoEcommerceMode={demoEcommerceMode} onRemove={() => removeFromWishlist(product)} />)}
             </div>
           )}
           {!isLoadingWishlist && !wishlistState.error && wishlistIds.length === 0 && (
@@ -5842,11 +5843,15 @@ function WishlistPage({ user, demoEcommerceMode = false }) {
   );
 }
 
-function WishlistProductCard({ product, demoEcommerceMode = false, onRemove }) {
+function WishlistProductCard({ product, user, demoEcommerceMode = false, onRemove }) {
   const id = wishlistProductId(product);
   const detailHref = `/product/${encodeURIComponent(id)}`;
-  const shopHref = demoEcommerceMode ? `/checkout?productId=${encodeURIComponent(id)}` : (product.affiliateLink || detailHref);
+  const checkoutHref = `/checkout?productId=${encodeURIComponent(id)}`;
+  const authBuyHref = `/signup?return=${encodeURIComponent(checkoutHref)}`;
+  const shopHref = demoEcommerceMode ? (user ? checkoutHref : authBuyHref) : (product.affiliateLink || detailHref);
   const isExternalShop = Boolean(!demoEcommerceMode && product.affiliateLink);
+  const actionLabel = demoEcommerceMode ? (user ? 'Buy now' : 'Sign up to buy') : isExternalShop ? 'Move to Bag' : 'View Product';
+  const actionEvent = demoEcommerceMode ? (user ? 'buy_now_click' : 'buy_auth_prompt') : (isExternalShop ? 'shop_click' : 'product_click');
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
 
   return (
@@ -5860,7 +5865,7 @@ function WishlistProductCard({ product, demoEcommerceMode = false, onRemove }) {
         <a href={detailHref} onClick={() => recordEvent('product_click', { productId: id })}><h3>{product.name}</h3></a>
         <div><strong>{formatMoney(product.price || 0, product.currency)}</strong>{hasDiscount && <s>{formatMoney(product.compareAtPrice, product.currency)}</s>}</div>
       </div>
-      <a className="wishlist-reference-card-action" href={shopHref} target={isExternalShop ? '_blank' : undefined} rel={isExternalShop ? 'noreferrer' : undefined} onClick={() => recordEvent(demoEcommerceMode ? 'buy_now_click' : isExternalShop ? 'shop_click' : 'product_click', { productId: id })}>{demoEcommerceMode ? 'Buy now' : isExternalShop ? 'Move to Bag' : 'View Product'} <span>→</span></a>
+      <a className="wishlist-reference-card-action" href={shopHref} target={isExternalShop ? '_blank' : undefined} rel={isExternalShop ? 'noreferrer' : undefined} onClick={() => recordEvent(actionEvent, { productId: id })}>{actionLabel} <span>→</span></a>
     </article>
   );
 }
@@ -6393,11 +6398,12 @@ function ImageLightbox({ image, onClose }) {
   return createPortal(lightbox, document.body);
 }
 
-function TokenPage({ user, setUser, mode = 'overview' }) {
+function TokenPage({ user, setUser, mode = 'overview', demoEcommerceMode = false }) {
   const isTopUpPage = mode === 'topup';
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [selectedPackId, setSelectedPackId] = useState(isTopUpPage ? 'topup_50_tokens' : 'monthly_150_tokens');
   const [message, setMessage] = useState('');
+  const [creditedOrder, setCreditedOrder] = useState(null);
   const verifiedOrderRef = useRef('');
   const checkoutIdempotencyRef = useRef(new Map());
   const params = new URLSearchParams(window.location.search);
@@ -6436,7 +6442,7 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
       return;
     }
     setCheckoutLoading(true);
-    setMessage('Opening secure PhonePe checkout...');
+    setMessage(demoEcommerceMode ? 'Crediting demo credits...' : 'Opening secure PhonePe checkout...');
     try {
       const idempotencyKey = checkoutIdempotencyRef.current.get(pack.id)
         || (window.crypto?.randomUUID?.() || `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -6446,6 +6452,15 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
         headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({ planId: pack.planId || pack.id })
       });
+      if (data.demo) {
+        if (data.user) setUser(data.user);
+        setCreditedOrder({ order: data.order, user: data.user || user });
+        setMessage('');
+        setCheckoutLoading(false);
+        announce(`${Number(data.order?.tokens || 0)} credits credited.`);
+        return;
+      }
+      if (!data.redirectUrl) throw new Error('Checkout did not return a payment link.');
       window.location.assign(data.redirectUrl);
     } catch (err) {
       checkoutIdempotencyRef.current.delete(pack.id);
@@ -6566,9 +6581,9 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
             </section>
 
             <section className="credit-payment-section" aria-label="Payment method">
-              <div className="credit-section-heading"><h2>Payment Method</h2><span>Secure checkout</span></div>
+              <div className="credit-section-heading"><h2>Payment Method</h2><span>{demoEcommerceMode ? 'Demo crediting' : 'Secure checkout'}</span></div>
               <button className="credit-payment-choice active" type="button" aria-pressed="true">
-                <span className="credit-phonepe-mark">P</span><strong>PhonePe</strong><small>UPI, cards, and net banking</small><b>Selected</b>
+                <span className="credit-phonepe-mark">{demoEcommerceMode ? 'D' : 'P'}</span><strong>{demoEcommerceMode ? 'Demo credits' : 'PhonePe'}</strong><small>{demoEcommerceMode ? 'Credits are added without opening PhonePe' : 'UPI, cards, and net banking'}</small><b>Selected</b>
               </button>
             </section>
           </div>
@@ -6590,12 +6605,48 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
             )}
             <div className="credit-summary-row"><span>Processing Fee</span><strong>Free</strong></div>
             <div className="credit-summary-total"><span>Due today</span><strong>{selectedPack.price}</strong></div>
-            <button type="button" onClick={completeSelection} disabled={checkoutLoading}>{checkoutLoading ? 'Opening checkout...' : selectedPack.cta}</button>
-            <small>{isPaidPack ? (isActive && subscription.currentPeriodEnd && selectedPack.id === 'monthly_150_tokens' ? `Current plan ends ${formatDate(subscription.currentPeriodEnd)}. Credits are added after secure payment verification.` : 'Secured by PhonePe. Credits are added only after payment verification.') : selectedPack.copy}</small>
+            <button type="button" onClick={completeSelection} disabled={checkoutLoading}>{checkoutLoading ? demoEcommerceMode ? 'Crediting...' : 'Opening checkout...' : selectedPack.cta}</button>
+            <small>{isPaidPack ? demoEcommerceMode ? 'Demo mode credits this pack instantly without opening PhonePe.' : (isActive && subscription.currentPeriodEnd && selectedPack.id === 'monthly_150_tokens' ? `Current plan ends ${formatDate(subscription.currentPeriodEnd)}. Credits are added after secure payment verification.` : 'Secured by PhonePe. Credits are added only after payment verification.') : selectedPack.copy}</small>
           </aside>
         </div>
       </section>
+      {creditedOrder && <CreditSuccessModal order={creditedOrder.order} user={creditedOrder.user} onClose={() => setCreditedOrder(null)} />}
     </main>
+  );
+}
+
+function CreditSuccessModal({ order, user, onClose }) {
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+    const onKey = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="checkout-success-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="checkout-success-modal credit-success-modal" role="dialog" aria-modal="true" aria-labelledby="credit-success-title">
+        <button ref={closeButtonRef} className="checkout-success-close" type="button" onClick={onClose} aria-label="Close credit success"><CloseIcon /></button>
+        <div className="checkout-success-mark" aria-hidden="true">✓</div>
+        <p className="kicker">Demo credits credited</p>
+        <h2 id="credit-success-title">Credits added</h2>
+        <p>Your demo credit pack has been added. No real PhonePe payment was collected.</p>
+        <div className="checkout-success-details">
+          <div><span>Pack</span><strong>{order?.planName || 'Credits'}</strong></div>
+          <div><span>Credits</span><strong>{Number(order?.tokens || 0)}</strong></div>
+          <div><span>Amount</span><strong>{formatMoney(Number(order?.dueTodayAmount || order?.amount || 0) / 100, order?.currency || 'INR')}</strong></div>
+          <div><span>New balance</span><strong>{Number(user?.tokens || 0)}</strong></div>
+        </div>
+        <div className="checkout-success-actions">
+          <a className="button" href="/custom-try-on">Use credits</a>
+          <a className="button secondary" href="/tokens">Back to credits</a>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -7122,7 +7173,7 @@ function FilterPanel({ facets, values, className = '' }) {
   );
 }
 
-function CartPage({ demoEcommerceMode = false }) {
+function CartPage({ user, demoEcommerceMode = false }) {
   const [items, setItems] = useState(() => readCartItems());
   const subtotal = cartSubtotal(items);
 
@@ -7216,8 +7267,8 @@ function CartPage({ demoEcommerceMode = false }) {
             <h2>Order summary</h2>
             <div><span>Subtotal</span><strong>{formatMoney(subtotal, items[0]?.currency || 'INR')}</strong></div>
             <div><span>Delivery</span><strong>{demoEcommerceMode ? 'Free in demo' : 'Calculated at checkout'}</strong></div>
-            <p>{demoEcommerceMode ? 'Checkout is enabled in demo mode with secure prepaid PhonePe payment.' : 'Product checkout needs backend order, address, inventory, and payment confirmation APIs before it can accept payment safely.'}</p>
-            {demoEcommerceMode ? <a className="cart-checkout-action" href="/checkout">Checkout</a> : <button type="button" disabled aria-disabled="true">Checkout coming soon</button>}
+            <p>{demoEcommerceMode ? 'Demo checkout confirms orders inside Lookmefy without opening PhonePe.' : 'Product checkout needs backend order, address, inventory, and payment confirmation APIs before it can accept payment safely.'}</p>
+            {demoEcommerceMode ? <a className="cart-checkout-action" href={user ? '/checkout' : `/signup?return=${encodeURIComponent('/checkout')}`}>{user ? 'Checkout' : 'Sign up to checkout'}</a> : <button type="button" disabled aria-disabled="true">Checkout coming soon</button>}
             <a href="/support">Contact support</a>
           </aside>
         </div>
@@ -7398,6 +7449,19 @@ function CheckoutPage({ user, demoEcommerceMode = false, demoModeLoading = false
     );
   }
 
+  if (!user) {
+    return (
+      <main className="checkout-page">
+        <section className="wrap checkout-empty-state">
+          <p className="kicker">Checkout</p>
+          <h1>Sign up to buy.</h1>
+          <p>Create a Lookmefy account before placing a demo product order.</p>
+          <a className="button" href={`/signup?return=${encodeURIComponent(window.location.pathname + window.location.search)}`}>Create profile</a>
+        </section>
+      </main>
+    );
+  }
+
   if (directProductId && productLoading) {
     return <ProductDetailSkeleton />;
   }
@@ -7526,11 +7590,11 @@ function CheckoutSuccessModal({ order, onClose }) {
   );
 }
 
-function OrderStatusPage({ id }) {
+function OrderStatusPage({ id, user }) {
   const [state, setState] = useState({ order: null, loading: true, error: '' });
 
   useEffect(() => {
-    if (!id) return undefined;
+    if (!id || !user) return undefined;
     let alive = true;
     let timer = null;
     const load = () => {
@@ -7550,11 +7614,24 @@ function OrderStatusPage({ id }) {
       alive = false;
       if (timer) window.clearTimeout(timer);
     };
-  }, [id]);
+  }, [id, user]);
 
   const order = state.order;
   const paid = order?.paymentStatus === 'paid';
   const failed = ['failed', 'cancelled'].includes(order?.paymentStatus);
+
+  if (!user) {
+    return (
+      <main className="checkout-page order-status-page">
+        <section className="wrap checkout-empty-state order-status-shell">
+          <p className="kicker">Order status</p>
+          <h1>Sign in to view this order.</h1>
+          <p>Order details are linked to the account that placed the checkout.</p>
+          <a className="button" href={`/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}`}>Sign in</a>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="checkout-page order-status-page">
@@ -7725,6 +7802,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
   const productTags = (product.tags || []).filter(Boolean).slice(0, 10);
   const editorialImage = relatedProducts.find((item) => item.imageUrl)?.imageUrl || productImage;
   const buyHref = `/checkout?productId=${encodeURIComponent(product.id)}`;
+  const authBuyHref = `/signup?return=${encodeURIComponent(buyHref)}`;
   const galleryItems = [
     {
       key: 'product',
@@ -7946,7 +8024,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
                 </button>
               ) : <a className="product-editorial-video" href="/signup">Generate video</a>}
               {demoEcommerceMode ? (
-                <a className="product-editorial-shop" href={buyHref} onClick={() => recordEvent('buy_now_click', { productId: product.id })}>Buy now</a>
+                <a className="product-editorial-shop" href={user ? buyHref : authBuyHref} onClick={() => recordEvent(user ? 'buy_now_click' : 'buy_auth_prompt', { productId: product.id })}>{user ? 'Buy now' : 'Sign up to buy'}</a>
               ) : (
                 product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop now</a>
               )}
@@ -7978,7 +8056,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
               </details>
               <details>
                 <summary>Delivery and returns</summary>
-                <p>{demoEcommerceMode ? 'Prepaid checkout is handled through PhonePe. Delivery is currently available within India, and order updates are sent to your contact details.' : 'Checkout, delivery, and return terms are managed by Amazon or the linked seller.'}</p>
+                <p>{demoEcommerceMode ? 'Demo checkout confirms your order inside Lookmefy without opening PhonePe. Delivery is currently available within India, and order updates are sent to your contact details.' : 'Checkout, delivery, and return terms are managed by Amazon or the linked seller.'}</p>
               </details>
             </div>
           </div>
@@ -10189,16 +10267,16 @@ function App() {
     if (path === '/closet/combo') return <ClosetComboPage user={user} setUser={setUser} />;
     if (path === '/closet/items') return <ClosetItemsPage user={user} setUser={setUser} />;
     if (path === '/wishlist') return <WishlistPage user={user} demoEcommerceMode={demoEcommerceMode} />;
-    if (path === '/cart') return <CartPage demoEcommerceMode={demoEcommerceMode} />;
+    if (path === '/cart') return <CartPage user={user} demoEcommerceMode={demoEcommerceMode} />;
     if (path === '/checkout') return <CheckoutPage user={user} demoEcommerceMode={demoEcommerceMode} demoModeLoading={storefrontConfig.loading} />;
     if (path === '/custom-try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/style-bot') return <StyleBotPage user={user} setUser={setUser} />;
-    if (path === '/tokens') return <TokenPage user={user} setUser={setUser} mode="overview" />;
-    if (path === '/tokens/top-up') return <TokenPage key={routeKey} user={user} setUser={setUser} mode="topup" />;
+    if (path === '/tokens') return <TokenPage user={user} setUser={setUser} mode="overview" demoEcommerceMode={demoEcommerceMode} />;
+    if (path === '/tokens/top-up') return <TokenPage key={routeKey} user={user} setUser={setUser} mode="topup" demoEcommerceMode={demoEcommerceMode} />;
     if (path === '/profile') return <ProfilePage user={user} setUser={setUser} />;
     if (path === '/generation-history') return <GenerationHistoryPage user={user} />;
     if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} demoEcommerceMode={demoEcommerceMode} />;
-    if (orderStatusMatch) return <OrderStatusPage id={decodeURIComponent(orderStatusMatch[1])} />;
+    if (orderStatusMatch) return <OrderStatusPage id={decodeURIComponent(orderStatusMatch[1])} user={user} />;
     if (['/signup', '/login', '/forgot-password'].includes(path) && user) return <SearchPage user={user} setUser={setUser} demoEcommerceMode={demoEcommerceMode} />;
     if (path === '/signup') return <AuthPage mode="signup" setUser={setUser} />;
     if (path === '/login') return <AuthPage mode="login" setUser={setUser} />;

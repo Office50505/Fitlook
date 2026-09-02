@@ -6,6 +6,7 @@ import {
   calculatePhonePeCallbackAuthorization,
   checkoutIdempotencyKey,
   configuredRedirectUrl,
+  createDemoCreditPayment,
   orderIdFromCallback,
   reconcileOrder,
   recurringAmountForPlan,
@@ -84,6 +85,90 @@ test('checkout idempotency key accepts only bounded opaque keys', () => {
   assert.equal(checkoutIdempotencyKey(requestStub({ headers: { 'idempotency-key': 'checkout:abc-123456789' } })), 'checkout:abc-123456789');
   assert.throws(() => checkoutIdempotencyKey(requestStub({ headers: { 'idempotency-key': 'short' } })), /Invalid checkout idempotency key/);
   assert.throws(() => checkoutIdempotencyKey(requestStub({ headers: { 'idempotency-key': 'bad key with spaces' } })), /Invalid checkout idempotency key/);
+});
+
+test('demo credit checkout credits the user once and does not require a redirect URL', async () => {
+  const original = {
+    tokenFindOne: TokenOrder.findOne,
+    tokenCreate: TokenOrder.create,
+    tokenFindOneAndUpdate: TokenOrder.findOneAndUpdate,
+    userFindById: User.findById,
+    userFindOneAndUpdate: User.findOneAndUpdate
+  };
+  const plan = TOP_UP_PLANS[0];
+  const user = {
+    _id: 'user-demo-123456789',
+    tokens: 8,
+    toClient() {
+      return { id: this._id, tokens: this.tokens };
+    }
+  };
+  let order = null;
+  let createCount = 0;
+  let creditedTokens = 0;
+  try {
+    TokenOrder.findOne = async (filter) => {
+      if (filter.idempotencyKey && order?.idempotencyKey === filter.idempotencyKey) return order;
+      return null;
+    };
+    TokenOrder.create = async (doc) => {
+      createCount += 1;
+      order = {
+        _id: 'demo-order-1',
+        ...doc,
+        creditedAt: null
+      };
+      return order;
+    };
+    TokenOrder.findOneAndUpdate = async (filter, update) => {
+      if (filter.creditedAt === null && order.creditedAt) return null;
+      order = {
+        ...order,
+        ...update.$set
+      };
+      return order;
+    };
+    User.findById = async () => ({
+      _id: user._id,
+      tokens: user.tokens + creditedTokens,
+      toClient() {
+        return { id: this._id, tokens: this.tokens };
+      }
+    });
+    User.findOneAndUpdate = async (_filter, update) => {
+      creditedTokens += Number(update.$inc?.tokens || 0);
+      return {
+        _id: user._id,
+        tokens: user.tokens + creditedTokens,
+        toClient() {
+          return { id: this._id, tokens: this.tokens };
+        }
+      };
+    };
+
+    const req = requestStub({ headers: { 'idempotency-key': 'demo-credit-checkout-1' } });
+    const first = await createDemoCreditPayment({ req, user, plan });
+    assert.equal(first.order.status, 'completed');
+    assert.equal(first.order.providerState, 'DEMO_COMPLETED');
+    assert.equal(first.order.redirectUrl, '');
+    assert.equal(first.order.merchantOrderId.startsWith('FLDEMO_'), true);
+    assert.equal(first.order.merchantOrderId.length <= 63, true);
+    assert.equal(first.user.tokens, user.tokens + plan.tokens);
+    assert.equal(first.alreadyCredited, false);
+    assert.equal(creditedTokens, plan.tokens);
+
+    const duplicate = await createDemoCreditPayment({ req, user, plan });
+    assert.equal(duplicate.alreadyCredited, true);
+    assert.equal(createCount, 1);
+    assert.equal(creditedTokens, plan.tokens);
+    assert.equal(duplicate.user.tokens, user.tokens + plan.tokens);
+  } finally {
+    TokenOrder.findOne = original.tokenFindOne;
+    TokenOrder.create = original.tokenCreate;
+    TokenOrder.findOneAndUpdate = original.tokenFindOneAndUpdate;
+    User.findById = original.userFindById;
+    User.findOneAndUpdate = original.userFindOneAndUpdate;
+  }
 });
 
 test('PhonePe state mapping handles success, failure, cancellation, timeout, and pending states', () => {

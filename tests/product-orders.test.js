@@ -3,7 +3,7 @@ import test from 'node:test';
 import mongoose from 'mongoose';
 import ProductOrder from '../server/models/ProductOrder.js';
 import { lookupPincode, normalizeIndiaState, normalizePincode } from '../server/utils/indiaPincode.js';
-import { orderAddress, orderContact, phonePeProductStatus } from '../server/routes/orders.js';
+import { markDemoOrderSuccessful, orderAddress, orderContact, phonePeProductStatus } from '../server/routes/orders.js';
 
 test('India pincode utilities normalize known and prefix-inferred pincodes', () => {
   assert.equal(normalizePincode('400 001'), '400001');
@@ -96,6 +96,45 @@ test('ProductOrder validates required checkout fields and serializes client payl
 
   const invalid = new ProductOrder({ items: [], subtotal: 0, total: 0 });
   assert.match(String(invalid.validateSync()), /contact.fullName/);
+});
+
+test('demo product checkout completion marks paid without an external redirect', async () => {
+  const original = {
+    findOneAndUpdate: ProductOrder.findOneAndUpdate,
+    findById: ProductOrder.findById
+  };
+  try {
+    ProductOrder.findOneAndUpdate = async (_filter, update) => ({
+      _id: new mongoose.Types.ObjectId(),
+      merchantOrderId: 'LFPO_DEMO',
+      paymentMode: update.$set.paymentMode,
+      paymentStatus: update.$set.paymentStatus,
+      providerState: update.$set.providerState,
+      providerResponse: update.$set.providerResponse,
+      paidAt: update.$set.paidAt,
+      redirectUrl: undefined,
+      phonePeOrderId: undefined
+    });
+    ProductOrder.findById = async () => null;
+
+    const order = await markDemoOrderSuccessful({
+      _id: new mongoose.Types.ObjectId(),
+      paymentMode: 'demo',
+      paymentStatus: 'created',
+      redirectUrl: 'https://phonepe.example/checkout',
+      phonePeOrderId: 'OMO_TEST'
+    });
+
+    assert.equal(order.paymentMode, 'demo');
+    assert.equal(order.paymentStatus, 'paid');
+    assert.equal(order.providerState, 'DEMO_COMPLETED');
+    assert.equal(order.providerResponse.mode, 'demo');
+    assert.equal(order.redirectUrl, undefined);
+    assert.equal(order.phonePeOrderId, undefined);
+  } finally {
+    ProductOrder.findOneAndUpdate = original.findOneAndUpdate;
+    ProductOrder.findById = original.findById;
+  }
 });
 
 test('product PhonePe state mapping keeps paid, pending, and failed states separate', () => {

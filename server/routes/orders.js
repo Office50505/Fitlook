@@ -11,6 +11,7 @@ import { normalizeIndianMobile } from '../utils/phone.js';
 import { availableStatusClause } from '../utils/productAvailability.js';
 import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { validateConfiguredHttpsUrl } from '../utils/urlValidation.js';
+import { requireUser } from './auth.js';
 import {
   callbackAuthorizationHeader,
   checkoutIdempotencyKey,
@@ -47,6 +48,10 @@ function ensureDemoMode(setting) {
     error.statusCode = 404;
     throw error;
   }
+}
+
+function orderOwnerFilter(req) {
+  return { _id: req.params.id, user: req.user._id };
 }
 
 function cleanText(value = '', limit = 160) {
@@ -239,13 +244,14 @@ router.get('/pincode/:pincode', orderStatusLimiter, async (req, res) => {
   res.json(pin);
 });
 
-router.post('/', orderCreateLimiter, async (req, res) => {
+router.post('/', requireUser, orderCreateLimiter, async (req, res) => {
   try {
     ensureDemoMode(await getStorefrontSetting());
     const items = await orderItems(req.body?.items);
     const subtotal = Math.round(items.reduce((sum, item) => sum + item.lineTotal, 0) * 100) / 100;
     const deliveryFee = 0;
     const order = await ProductOrder.create({
+      user: req.user._id,
       items,
       contact: orderContact(req.body?.contact),
       address: orderAddress(req.body?.address),
@@ -261,32 +267,32 @@ router.post('/', orderCreateLimiter, async (req, res) => {
   }
 });
 
-router.get('/:id', orderStatusLimiter, async (req, res) => {
+router.get('/:id', requireUser, orderStatusLimiter, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Order not found' });
-  const order = await ProductOrder.findById(req.params.id);
+  const order = await ProductOrder.findOne(orderOwnerFilter(req));
   if (!order) return res.status(404).json({ message: 'Order not found' });
   res.json({ order: order.toClient() });
 });
 
-router.post('/:id/payment', orderCreateLimiter, async (req, res) => {
+router.post('/:id/payment', requireUser, orderCreateLimiter, async (req, res) => {
   try {
     ensureDemoMode(await getStorefrontSetting());
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Order not found' });
-    const order = await ProductOrder.findById(req.params.id);
+    const order = await ProductOrder.findOne(orderOwnerFilter(req));
     if (!order) return res.status(404).json({ message: 'Order not found' });
     if (order.paymentStatus === 'paid') return res.json({ order: order.toClient(), redirectUrl: order.redirectUrl || '' });
-    const paidOrder = await createProductPayment(req, order);
-    res.status(201).json({ order: paidOrder.toClient(), redirectUrl: paidOrder.redirectUrl });
+    const paidOrder = await markDemoOrderSuccessful(order);
+    res.status(201).json({ order: paidOrder.toClient(), redirectUrl: '' });
   } catch (error) {
-    res.status(error.statusCode || 400).json({ message: readablePhonePeError(error, 'Could not start PhonePe checkout') });
+    res.status(error.statusCode || 400).json({ message: error.message || 'Could not complete demo checkout' });
   }
 });
 
-router.post('/:id/demo-success', orderCreateLimiter, async (req, res) => {
+router.post('/:id/demo-success', requireUser, orderCreateLimiter, async (req, res) => {
   try {
     ensureDemoMode(await getStorefrontSetting());
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Order not found' });
-    const order = await ProductOrder.findById(req.params.id);
+    const order = await ProductOrder.findOne(orderOwnerFilter(req));
     if (!order) return res.status(404).json({ message: 'Order not found' });
     const paidOrder = await markDemoOrderSuccessful(order);
     res.json({ order: paidOrder.toClient() });
@@ -295,10 +301,10 @@ router.post('/:id/demo-success', orderCreateLimiter, async (req, res) => {
   }
 });
 
-router.get('/:id/payment-status', orderStatusLimiter, async (req, res) => {
+router.get('/:id/payment-status', requireUser, orderStatusLimiter, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Order not found' });
-    const order = await ProductOrder.findById(req.params.id);
+    const order = await ProductOrder.findOne(orderOwnerFilter(req));
     if (!order) return res.status(404).json({ message: 'Order not found' });
     const next = order.merchantOrderId && order.paymentStatus !== 'created'
       ? await reconcileProductOrder(order)
