@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import OptimizedImage from './components/common/OptimizedImage.jsx';
 import ShaderBackground from './components/common/ShaderBackground.jsx';
-import { cartItemCount, cartSubtotal, readCartItems, removeCartItem, updateCartQuantity } from './utils/cart.js';
+import { cartItemCount, cartSubtotal, readCartItems, removeCartItem, saveCartItems, updateCartQuantity } from './utils/cart.js';
 import { trackClientEvent } from './utils/analytics.js';
 import { DEFAULT_MODEL_PLACEMENT, calculateModelPlacement, normalizedPlacement } from './utils/modelPlacement.js';
 import { updateProductSeo, updateRouteSeo } from './utils/seo.js';
@@ -31,6 +31,44 @@ const PLAY_STORE_URL = safeExternalStoreUrl(import.meta.env.VITE_PLAY_STORE_URL)
 const productListCache = new Map();
 const productDetailLocalCache = new Map();
 const EMPTY_PRODUCT_FACETS = { brands: [], categories: [], categoryCounts: [] };
+const INDIA_STATES = [
+  'Andaman and Nicobar Islands',
+  'Andhra Pradesh',
+  'Arunachal Pradesh',
+  'Assam',
+  'Bihar',
+  'Chandigarh',
+  'Chhattisgarh',
+  'Dadra and Nagar Haveli and Daman and Diu',
+  'Delhi',
+  'Goa',
+  'Gujarat',
+  'Haryana',
+  'Himachal Pradesh',
+  'Jammu and Kashmir',
+  'Jharkhand',
+  'Karnataka',
+  'Kerala',
+  'Ladakh',
+  'Lakshadweep',
+  'Madhya Pradesh',
+  'Maharashtra',
+  'Manipur',
+  'Meghalaya',
+  'Mizoram',
+  'Nagaland',
+  'Odisha',
+  'Puducherry',
+  'Punjab',
+  'Rajasthan',
+  'Sikkim',
+  'Tamil Nadu',
+  'Telangana',
+  'Tripura',
+  'Uttar Pradesh',
+  'Uttarakhand',
+  'West Bengal'
+];
 
 function safeExternalStoreUrl(value = '') {
   const candidate = String(value || '').trim();
@@ -775,6 +813,83 @@ const policyPages = {
   }
 };
 
+const demoPolicyPages = {
+  '/terms': {
+    title: 'Terms and Conditions',
+    intro: `These Terms govern ${legalDetails.brand} ecommerce demo checkout, account features, AI try-on previews, token purchases, and product orders placed directly on Lookmefy.`,
+    sections: [
+      ['Who operates Lookmefy', [`${legalDetails.brand} is operated by ${legalDetails.legalEntity}. Registered address: ${legalDetails.registeredAddress}.`, 'When demo ecommerce mode is enabled, Lookmefy can collect product order details and show a simulated checkout confirmation for supported India deliveries.']],
+      ['Product orders', ['Product prices, availability, images, descriptions, and eligible variants are shown in the catalog and rechecked before order creation.', 'An order is confirmed only after payment status is successfully verified. We may cancel or refund orders affected by pricing errors, stock issues, serviceability limits, fraud checks, or technical failure.']],
+      ['Payments', ['Demo product checkout does not collect real payment or open PhonePe. The Pay now action confirms a simulated paid order inside Lookmefy.', 'Lookmefy stores order identifiers, demo payment status, contact details, delivery address, and support records needed to demonstrate fulfilment workflows.']],
+      ['Delivery, cancellation, returns, and refunds', ['Delivery is currently available within India for serviceable pincodes. Delivery timelines, support handling, cancellation eligibility, return eligibility, and refund timelines are described in the linked policy pages.', `Approved refunds are initiated within ${legalDetails.refundTimeline}, subject to payment provider and bank timelines.`]],
+      ['AI try-on and tokens', ['AI try-on previews remain visual guides only. They do not guarantee exact fit, size, colour, fabric, or final product appearance.', 'Token purchases, memberships, and AI generation requests continue to follow the token and AI policy sections shown in the app.']],
+      ['Liability and governing law', [`To the maximum extent permitted by law, ${legalDetails.brand} is provided on an as-is and as-available basis.`, `These Terms are governed by the laws of India, and courts at ${legalDetails.jurisdiction} will have jurisdiction, subject to applicable law.`]]
+    ]
+  },
+  '/privacy': {
+    title: 'Privacy Policy',
+    intro: `This Privacy Policy explains how ${legalDetails.brand} handles account data, checkout contact details, delivery addresses, demo payment events, uploaded photos, generated try-ons, and usage activity.`,
+    sections: [
+      ['Data we collect', ['For ecommerce checkout, we collect full name, mobile number, delivery address, pincode, cart items, product snapshots, order totals, and payment status metadata.', 'For AI and account features, we collect the profile, media, generation, wishlist, wardrobe, token, and usage data described in the standard Privacy Policy.']],
+      ['How we use data', ['We use checkout data to create orders, validate serviceable pincodes, confirm demo payment status, provide delivery updates, prevent abuse, and support customer requests.', 'We may use limited operational data to improve reliability, security, catalog quality, and fulfilment workflows.']],
+      ['Payment providers and service providers', ['Demo product checkout does not send the shopper to PhonePe or collect payment method details. Lookmefy stores order references and simulated transaction state for demonstration.', 'We may share necessary checkout and support data with hosting, storage, analytics, logistics, notification, and support providers.']],
+      ['Retention and deletion', ['Order and payment records may be retained for legal, tax, accounting, fraud prevention, dispute resolution, security, and support requirements.', 'You can request access, correction, consent withdrawal where applicable, or deletion of eligible account and media data by contacting support.']],
+      ['Contact and grievance support', [`Support and privacy requests can be sent to ${legalDetails.supportEmail}. Include the order ID, checkout mobile number, registered account detail if any, and enough detail for us to verify the request.`]]
+    ]
+  },
+  '/shipping': {
+    title: 'Shipping Policy',
+    intro: `${legalDetails.brand} currently delivers demo ecommerce product orders within India to serviceable pincodes.`,
+    sections: [
+      ['Delivery area', ['Checkout accepts India delivery addresses only. Pincode lookup may auto-fill city/state details when available and will block unsupported pincodes.', 'Some pincodes may be unsupported because of courier coverage, inventory location, operational limits, or temporary service restrictions.']],
+      ['Shipping charges and timelines', ['Demo mode currently shows free shipping unless a future shipping rule is added. Estimated timelines will be shared through order support or delivery updates.', 'Delivery may be delayed by address errors, customer unavailability, courier constraints, weather, public holidays, strikes, or other events outside direct control.']],
+      ['Delivery updates', ['Order and delivery updates use the full name and mobile number entered at checkout.', 'If your address or contact information is wrong, contact support quickly with the order ID. Changes may not be possible after packing or dispatch.']]
+    ]
+  },
+  '/returns': {
+    title: 'Return and Refund Policy',
+    intro: 'This policy covers product orders placed directly through Lookmefy demo ecommerce checkout, plus token and AI-generation refunds.',
+    sections: [
+      ['Product returns', ['Return eligibility depends on product category, condition, tags, packaging, hygiene restrictions, damage checks, pickup feasibility, and the return window shown or communicated for the order.', 'Items used, washed, altered, missing original tags/packaging, damaged after delivery, hygiene-sensitive, personalized, or marked final sale may be refused.']],
+      ['Refunds', [`Approved product refunds are initiated within ${legalDetails.refundTimeline} after return approval or successful cancellation, subject to PhonePe, payment network, and bank timelines.`, 'Refunds normally return to the original payment method unless another legally valid remedy is agreed.']],
+      ['Damaged, wrong, or missing items', ['Contact support with order ID, photos, packaging images, and an unboxing/delivery issue description as soon as possible.', 'We may request additional verification before approving replacement, return, or refund.']],
+      ['Token and AI generation refunds', ['Tokens used for completed AI outputs are generally non-refundable. If tokens are deducted for a failed generation with no usable output, token restoration may apply after review.']]
+    ]
+  },
+  '/cancellation': {
+    title: 'Cancellation Policy',
+    intro: 'This policy explains cancellation for Lookmefy product orders, token purchases, membership billing, and AI generation requests.',
+    sections: [
+      ['Product order cancellation', ['A product order can be cancelled before it is packed or dispatched, subject to payment verification, inventory status, fraud checks, and fulfilment stage.', 'After dispatch, cancellation may not be available and the return process may apply instead.']],
+      ['Failed or pending payments', ['Demo checkout should confirm immediately inside Lookmefy. If an order remains pending because of a technical issue, you can retry checkout from the order status or product page.', 'For real PhonePe token purchases, contact support with the transaction reference if payment succeeds but account crediting is delayed.']],
+      ['AI generation and token cancellation', ['AI generation requests start quickly and may not be cancellable once submitted. Token purchase and membership cancellation continue to follow the token policy terms.']]
+    ]
+  },
+  '/contact': {
+    title: 'Contact and Grievance Support',
+    intro: 'Use this page for product orders, delivery updates, PhonePe payment issues, account support, AI generation, and privacy requests.',
+    sections: [
+      ['Customer support', [`Email: ${legalDetails.supportEmail}. Include your full name, checkout mobile number, order ID or transaction reference, screenshots if helpful, and a short issue description.`]],
+      ['Order support', ['For delivery, cancellation, return, refund, wrong item, damaged item, or payment confirmation issues, include the Lookmefy order ID and checkout contact details used on the order.']],
+      ['Privacy and grievance requests', [`For privacy, data deletion, policy, or grievance questions, contact ${legalDetails.supportEmail}. We may verify your identity before acting on account, media, payment, or order data.`]]
+    ]
+  },
+  '/support': {
+    title: 'Support Center',
+    intro: 'Find help for product orders, PhonePe payments, delivery, returns, account access, AI try-on, tokens, and privacy requests.',
+    sections: [
+      ['Fastest way to get help', [`Email ${legalDetails.supportEmail} with your order ID, registered contact details, transaction reference if relevant, screenshots, and the issue type.`]],
+      ['Checkout and payment help', ['Demo product checkout confirms inside Lookmefy without collecting real payment. If the success popup does not appear, retry from checkout or the order status page.', 'For real token payments, support can verify PhonePe transaction metadata when needed.']],
+      ['Delivery, cancellation, and returns', ['Delivery is currently within India for supported pincodes. Cancellation and return support depends on the order status and product condition.']],
+      ['AI and token help', ['For failed generations or token issues, include the generation type, product link if any, and account email or mobile number.']]
+    ]
+  }
+};
+
+function policyForPath(path, demoEcommerceMode = false) {
+  return demoEcommerceMode ? (demoPolicyPages[path] || policyPages[path]) : policyPages[path];
+}
+
 function normalizePath() {
   const path = window.location.pathname.replace(/\.html$/, '').replace(/\/$/, '');
   return path || '/';
@@ -1085,6 +1200,26 @@ function useMediaQuery(query) {
   return matches;
 }
 
+function useStorefrontConfig() {
+  const [state, setState] = useState({ demoEcommerceMode: false, loading: true, error: '' });
+
+  useEffect(() => {
+    let alive = true;
+    api('/storefront/config', { retry: 1 })
+      .then((data) => {
+        if (alive) setState({ demoEcommerceMode: Boolean(data?.demoEcommerceMode), loading: false, error: '' });
+      })
+      .catch((error) => {
+        if (alive) setState({ demoEcommerceMode: false, loading: false, error: error.message || 'Storefront settings unavailable' });
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return state;
+}
+
 function useProducts(params) {
   const paramKey = JSON.stringify(params || {});
   const query = useMemo(() => {
@@ -1182,6 +1317,10 @@ function useProduct(id) {
   const [state, setState] = useState({ product: null, loading: true, error: '' });
 
   useEffect(() => {
+    if (!id) {
+      setState({ product: null, loading: false, error: '' });
+      return undefined;
+    }
     let alive = true;
     const controller = new AbortController();
     setState({ product: null, loading: true, error: '' });
@@ -3222,7 +3361,7 @@ const departmentPriceFilters = [
   { value: '2500-plus', label: '2,500+', test: (price) => price >= 2500 }
 ];
 
-function CategoryDepartmentPage({ category, user }) {
+function CategoryDepartmentPage({ category, user, demoEcommerceMode = false }) {
   const initialGender = new URLSearchParams(window.location.search).get('gender') || '';
   const [gender, setGender] = useState(initialGender);
   const [brandFilter, setBrandFilter] = useState('all');
@@ -3316,13 +3455,13 @@ function CategoryDepartmentPage({ category, user }) {
         {state.loading && <ProductGridSkeleton count={8} />}
         {state.error && <StatusPanel text={state.error} onRetry={state.retry} />}
         {!state.loading && !state.error && visibleProducts.length === 0 && <EmptyProducts search={title} />}
-        {!state.loading && !state.error && visibleProducts.length > 0 && <div className="product-grid department-product-grid">{visibleProducts.map((product) => <ProductCard key={product.id} product={product} user={user} />)}</div>}
+        {!state.loading && !state.error && visibleProducts.length > 0 && <div className="product-grid department-product-grid">{visibleProducts.map((product) => <ProductCard key={product.id} product={product} user={user} demoEcommerceMode={demoEcommerceMode} />)}</div>}
       </section>
     </main>
   );
 }
 
-function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, tryOnLoading = false, tryOnVideoLoading = false, tryOnError = '', tryOnVideoError = '', onTryOn, onTryOnVideo }) {
+function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, demoEcommerceMode = false, tryOnLoading = false, tryOnVideoLoading = false, tryOnError = '', tryOnVideoError = '', onTryOn, onTryOnVideo }) {
   const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const [isWishlisted, setIsWishlisted] = useState(() => readWishlistProductIds().includes(String(product.id)));
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
@@ -3335,6 +3474,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
   const hasTryOnVideo = Boolean(tryOnVideoUrl) && hasUsableTryOn;
   const image = hasUsableTryOn ? tryOnImageUrl : productImage;
   const detailHref = `/product/${encodeURIComponent(product.id)}`;
+  const buyHref = `/checkout?productId=${encodeURIComponent(product.id)}`;
   const brand = displayBrand(product);
 
   useEffect(() => {
@@ -3417,7 +3557,11 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
               {tryOnVideoLoading ? 'Video...' : tryOn?.videoUrl ? 'New Video' : 'Video Try-On'}
             </button>
           )}
-          {product.affiliateLink && <a className="shop-action" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop</a>}
+          {demoEcommerceMode ? (
+            <a className="shop-action" href={buyHref} onClick={() => recordEvent('buy_now_click', { productId: product.id })}>Buy</a>
+          ) : (
+            product.affiliateLink && <a className="shop-action" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop</a>
+          )}
           {tryOnError && <p>{tryOnError}</p>}
           {tryOnVideoError && <p>{tryOnVideoError}</p>}
         </div>
@@ -5163,7 +5307,7 @@ function ProductDetailSkeleton() {
   );
 }
 
-function SearchPage({ user, setUser, tryOnMode = false }) {
+function SearchPage({ user, setUser, tryOnMode = false, demoEcommerceMode = false }) {
   const params = new URLSearchParams(window.location.search);
   const q = normalizeSearchQuery(params.get('q') || '');
   const tag = params.get('tag') || '';
@@ -5313,7 +5457,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
           {!state.loading && !state.error && state.products.length === 0 && <EmptyProducts search={title} />}
           {!state.loading && !state.error && state.products.length > 0 && (
             <div className="product-grid">
-              {visibleProducts.map((product, index) => <ProductCard key={product.id} product={product} user={user} tryOn={tryOns[product.id]} canTryOn={allowTryOnTrial && index < 4} tryOnLoading={Boolean(tryOnLoading[product.id])} tryOnVideoLoading={Boolean(tryOnVideoLoading[product.id])} tryOnError={tryOnErrors[product.id]} tryOnVideoError={tryOnVideoErrors[product.id]} onTryOn={generateTryOn} onTryOnVideo={generateTryOnVideo} />)}
+              {visibleProducts.map((product, index) => <ProductCard key={product.id} product={product} user={user} tryOn={tryOns[product.id]} canTryOn={allowTryOnTrial && index < 4} demoEcommerceMode={demoEcommerceMode} tryOnLoading={Boolean(tryOnLoading[product.id])} tryOnVideoLoading={Boolean(tryOnVideoLoading[product.id])} tryOnError={tryOnErrors[product.id]} tryOnVideoError={tryOnVideoErrors[product.id]} onTryOn={generateTryOn} onTryOnVideo={generateTryOnVideo} />)}
               {lockedProducts.length > 0 && (
                 <div className="locked-row">
                   {lockedProducts.map((product) => <ProductCard key={`locked-${product.id}`} product={product} locked />)}
@@ -5509,7 +5653,7 @@ function readWishlistCollections() {
   }
 }
 
-function WishlistPage({ user }) {
+function WishlistPage({ user, demoEcommerceMode = false }) {
   const [wishlistIds, setWishlistIds] = useState(() => readWishlistProductIds());
   const [savedCollections, setSavedCollections] = useState(() => readWishlistCollections());
   const [activeCollection, setActiveCollection] = useState('all');
@@ -5665,7 +5809,7 @@ function WishlistPage({ user }) {
           {wishlistState.error && wishlistIds.length > 0 && <StatusPanel text={wishlistState.error} onRetry={wishlistState.retry} />}
           {!isLoadingWishlist && !wishlistState.error && visibleWishlistProducts.length > 0 && (
             <div className={`wishlist-reference-grid ${view === 'list' ? 'is-list' : ''}`}>
-              {visibleWishlistProducts.map((product) => <WishlistProductCard key={wishlistProductId(product)} product={product} onRemove={() => removeFromWishlist(product)} />)}
+              {visibleWishlistProducts.map((product) => <WishlistProductCard key={wishlistProductId(product)} product={product} demoEcommerceMode={demoEcommerceMode} onRemove={() => removeFromWishlist(product)} />)}
             </div>
           )}
           {!isLoadingWishlist && !wishlistState.error && wishlistIds.length === 0 && (
@@ -5698,11 +5842,11 @@ function WishlistPage({ user }) {
   );
 }
 
-function WishlistProductCard({ product, onRemove }) {
+function WishlistProductCard({ product, demoEcommerceMode = false, onRemove }) {
   const id = wishlistProductId(product);
   const detailHref = `/product/${encodeURIComponent(id)}`;
-  const shopHref = product.affiliateLink || detailHref;
-  const isExternalShop = Boolean(product.affiliateLink);
+  const shopHref = demoEcommerceMode ? `/checkout?productId=${encodeURIComponent(id)}` : (product.affiliateLink || detailHref);
+  const isExternalShop = Boolean(!demoEcommerceMode && product.affiliateLink);
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
 
   return (
@@ -5716,7 +5860,7 @@ function WishlistProductCard({ product, onRemove }) {
         <a href={detailHref} onClick={() => recordEvent('product_click', { productId: id })}><h3>{product.name}</h3></a>
         <div><strong>{formatMoney(product.price || 0, product.currency)}</strong>{hasDiscount && <s>{formatMoney(product.compareAtPrice, product.currency)}</s>}</div>
       </div>
-      <a className="wishlist-reference-card-action" href={shopHref} target={isExternalShop ? '_blank' : undefined} rel={isExternalShop ? 'noreferrer' : undefined} onClick={() => recordEvent(isExternalShop ? 'shop_click' : 'product_click', { productId: id })}>{isExternalShop ? 'Move to Bag' : 'View Product'} <span>→</span></a>
+      <a className="wishlist-reference-card-action" href={shopHref} target={isExternalShop ? '_blank' : undefined} rel={isExternalShop ? 'noreferrer' : undefined} onClick={() => recordEvent(demoEcommerceMode ? 'buy_now_click' : isExternalShop ? 'shop_click' : 'product_click', { productId: id })}>{demoEcommerceMode ? 'Buy now' : isExternalShop ? 'Move to Bag' : 'View Product'} <span>→</span></a>
     </article>
   );
 }
@@ -6978,7 +7122,7 @@ function FilterPanel({ facets, values, className = '' }) {
   );
 }
 
-function CartPage() {
+function CartPage({ demoEcommerceMode = false }) {
   const [items, setItems] = useState(() => readCartItems());
   const subtotal = cartSubtotal(items);
 
@@ -7071,12 +7215,369 @@ function CartPage() {
           <aside className="cart-summary" aria-label="Cart summary">
             <h2>Order summary</h2>
             <div><span>Subtotal</span><strong>{formatMoney(subtotal, items[0]?.currency || 'INR')}</strong></div>
-            <div><span>Delivery</span><strong>Calculated at checkout</strong></div>
-            <p>Product checkout needs backend order, address, inventory, and payment confirmation APIs before it can accept payment safely.</p>
-            <button type="button" disabled aria-disabled="true">Checkout coming soon</button>
+            <div><span>Delivery</span><strong>{demoEcommerceMode ? 'Free in demo' : 'Calculated at checkout'}</strong></div>
+            <p>{demoEcommerceMode ? 'Checkout is enabled in demo mode with secure prepaid PhonePe payment.' : 'Product checkout needs backend order, address, inventory, and payment confirmation APIs before it can accept payment safely.'}</p>
+            {demoEcommerceMode ? <a className="cart-checkout-action" href="/checkout">Checkout</a> : <button type="button" disabled aria-disabled="true">Checkout coming soon</button>}
             <a href="/support">Contact support</a>
           </aside>
         </div>
+      </section>
+    </main>
+  );
+}
+
+function checkoutContactFromUser(user) {
+  return {
+    fullName: user?.name || '',
+    mobile: user?.phone || user?.mobile || ''
+  };
+}
+
+function checkoutItemFromProduct(product) {
+  if (!product?.id) return null;
+  return {
+    productId: product.id,
+    name: product.name,
+    brand: product.brand,
+    imageUrl: product.imageUrl,
+    price: product.price,
+    compareAtPrice: product.compareAtPrice,
+    currency: product.currency || 'INR',
+    variant: 'Standard',
+    quantity: 1
+  };
+}
+
+function CheckoutPage({ user, demoEcommerceMode = false, demoModeLoading = false }) {
+  const params = new URLSearchParams(window.location.search);
+  const directProductId = params.get('productId') || '';
+  const { product, loading: productLoading, error: productError } = useProduct(directProductId);
+  const [cartItems, setCartItems] = useState(() => readCartItems());
+  const [form, setForm] = useState(() => ({
+    ...checkoutContactFromUser(user),
+    houseStreet: '',
+    area: '',
+    landmark: '',
+    city: '',
+    state: '',
+    pincode: ''
+  }));
+  const [pincodeStatus, setPincodeStatus] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [createdOrder, setCreatedOrder] = useState(null);
+  const [successOrder, setSuccessOrder] = useState(null);
+  const directItem = checkoutItemFromProduct(product);
+  const items = directItem ? [directItem] : cartItems;
+  const subtotal = cartSubtotal(items);
+  const total = subtotal;
+  const currency = items[0]?.currency || 'INR';
+
+  useEffect(() => {
+    const sync = (event) => setCartItems(event.detail?.items || readCartItems());
+    window.addEventListener('fitlook:cart-change', sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('fitlook:cart-change', sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    const contact = checkoutContactFromUser(user);
+    setForm((current) => ({
+      ...current,
+      fullName: current.fullName || contact.fullName,
+      mobile: current.mobile || contact.mobile
+    }));
+  }, [user?.id]);
+
+  useEffect(() => {
+    const pincode = form.pincode.replace(/\D/g, '').slice(0, 6);
+    if (pincode !== form.pincode) {
+      setForm((current) => ({ ...current, pincode }));
+      return undefined;
+    }
+    if (pincode.length !== 6) {
+      setPincodeStatus('');
+      return undefined;
+    }
+    let alive = true;
+    setPincodeStatus('Checking pincode...');
+    api(`/orders/pincode/${pincode}`, { retry: 0 })
+      .then((data) => {
+        if (!alive) return;
+        if (!data?.serviceable) {
+          setPincodeStatus('This pincode is not serviceable yet.');
+          return;
+        }
+        setForm((current) => ({
+          ...current,
+          city: data.city || current.city,
+          state: data.state || current.state
+        }));
+        setPincodeStatus(data.city ? `Delivering to ${data.city}, ${data.state}.` : `Delivering in ${data.state}. Add your city to continue.`);
+      })
+      .catch((err) => {
+        if (alive) setPincodeStatus(err.message || 'Could not check this pincode.');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [form.pincode]);
+
+  const updateField = (field) => (event) => {
+    const value = field === 'pincode' ? event.target.value.replace(/\D/g, '').slice(0, 6) : event.target.value;
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const startPayment = async (event) => {
+    event.preventDefault();
+    if (submitting || !items.length) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const idempotencyKey = `product-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const orderResponse = await api('/orders', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({
+          items: items.map((item) => ({ productId: item.productId || item.id, quantity: item.quantity, variant: item.variant || 'Standard' })),
+          contact: {
+            fullName: form.fullName,
+            mobile: form.mobile
+          },
+          address: {
+            houseStreet: form.houseStreet,
+            area: form.area,
+            landmark: form.landmark,
+            city: form.city,
+            state: form.state,
+            pincode: form.pincode
+          }
+        })
+      });
+      const order = orderResponse.order;
+      setCreatedOrder(order);
+      const demoPayment = await api(`/orders/${encodeURIComponent(order.id)}/demo-success`, { method: 'POST' });
+      const completedOrder = demoPayment.order || order;
+      setCreatedOrder(completedOrder);
+      if (!directItem) saveCartItems([]);
+      recordEvent('product_checkout_completed', { metadata: { orderId: completedOrder.id, itemCount: items.length, mode: 'demo' } });
+      setSuccessOrder(completedOrder);
+      announce('Checkout successful.');
+    } catch (err) {
+      setError(err.message || 'Could not complete checkout.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (demoModeLoading) {
+    return (
+      <main className="checkout-page">
+        <section className="wrap checkout-empty-state">
+          <p className="kicker">Checkout</p>
+          <h1>Checking checkout mode...</h1>
+          <p>Preparing the storefront settings for this session.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!demoEcommerceMode) {
+    return (
+      <main className="checkout-page">
+        <section className="wrap checkout-empty-state">
+          <p className="kicker">Checkout</p>
+          <h1>Product checkout is not enabled.</h1>
+          <p>Shop links currently open the linked seller. Demo ecommerce mode can be enabled from admin settings.</p>
+          <a className="button" href="/categories">Back to catalog</a>
+        </section>
+      </main>
+    );
+  }
+
+  if (directProductId && productLoading) {
+    return <ProductDetailSkeleton />;
+  }
+
+  if (directProductId && (productError || !product)) {
+    return (
+      <main className="checkout-page">
+        <section className="wrap checkout-empty-state">
+          <p className="kicker">Checkout</p>
+          <h1>This product could not be loaded.</h1>
+          <p>{productError || 'Open the catalog and choose another item.'}</p>
+          <a className="button" href="/categories">Back to catalog</a>
+        </section>
+      </main>
+    );
+  }
+
+  if (!items.length) {
+    return (
+      <main className="checkout-page">
+        <section className="wrap checkout-empty-state">
+          <p className="kicker">Checkout</p>
+          <h1>Your bag is empty.</h1>
+          <p>Add a product before starting prepaid checkout.</p>
+          <a className="button" href="/categories">Explore fashion</a>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="checkout-page">
+      <section className="wrap checkout-shell" aria-labelledby="checkout-title">
+        <form className="checkout-form" onSubmit={startPayment}>
+          <div className="checkout-section-head">
+            <p className="kicker">Secure checkout</p>
+            <h1 id="checkout-title">Contact</h1>
+            <p>For payment and delivery updates</p>
+          </div>
+          <div className="checkout-field-grid">
+            <label><span>Full name</span><input value={form.fullName} onChange={updateField('fullName')} autoComplete="name" required /></label>
+            <label><span>Mobile number</span><input value={form.mobile} onChange={updateField('mobile')} inputMode="tel" autoComplete="tel" required /></label>
+          </div>
+
+          <div className="checkout-section-head compact">
+            <h2>Delivery address</h2>
+            <p>Currently delivering within India</p>
+          </div>
+          <div className="checkout-field-grid">
+            <label className="wide"><span>House / flat and street</span><input value={form.houseStreet} onChange={updateField('houseStreet')} autoComplete="address-line1" required /></label>
+            <label><span>Area / locality (optional)</span><input value={form.area} onChange={updateField('area')} autoComplete="address-line2" /></label>
+            <label><span>Landmark (optional)</span><input value={form.landmark} onChange={updateField('landmark')} /></label>
+            <label><span>City</span><input value={form.city} onChange={updateField('city')} autoComplete="address-level2" required /></label>
+            <label><span>State</span><select value={form.state} onChange={updateField('state')} autoComplete="address-level1" required><option value="">Choose state</option>{INDIA_STATES.map((state) => <option value={state} key={state}>{state}</option>)}</select></label>
+            <label><span>Pincode</span><input value={form.pincode} onChange={updateField('pincode')} inputMode="numeric" pattern="[0-9]{6}" maxLength="6" autoComplete="postal-code" placeholder="Enter a 6-digit pincode" required /></label>
+          </div>
+          {pincodeStatus && <p className={`checkout-pincode-status ${/not|could/i.test(pincodeStatus) ? 'error-message' : ''}`.trim()}>{pincodeStatus}</p>}
+
+          <div className="checkout-section-head compact">
+            <h2>Payment</h2>
+            <p>Prepaid and secure</p>
+          </div>
+          <label className="checkout-payment-option">
+            <input type="radio" checked readOnly />
+            <span><strong>Demo prepaid checkout</strong><small>This demo confirms the order without opening PhonePe.</small></span>
+          </label>
+
+          {error && <p className="form-message error-message" role="alert">{error}</p>}
+          {createdOrder && !successOrder && <p className="form-message">Order created. Confirming demo checkout...</p>}
+          <button className="checkout-pay-button" type="submit" disabled={submitting}>{submitting ? 'Confirming order...' : 'Pay now'}</button>
+        </form>
+
+        <aside className="checkout-summary" aria-label="Order summary">
+          <h2>Order summary</h2>
+          <div className="checkout-summary-items">
+            {items.map((item) => (
+              <article className="checkout-summary-item" key={`${item.productId || item.id}-${item.variant}`}>
+                <img src={item.imageUrl || asset('hero2.png')} alt="" />
+                <div><strong>{item.name}</strong><span>{item.brand || 'Lookmefy'} · Qty {item.quantity}</span></div>
+                <b>{formatMoney((Number(item.price) || 0) * (Number(item.quantity) || 1), item.currency)}</b>
+              </article>
+            ))}
+          </div>
+          <div className="checkout-total-row"><span>Subtotal</span><strong>{formatMoney(subtotal, currency)}</strong></div>
+          <div className="checkout-total-row"><span>Shipping</span><strong>Free</strong></div>
+          <div className="checkout-total-row total"><span>Total</span><strong>{formatMoney(total, currency)}</strong></div>
+        </aside>
+      </section>
+      {successOrder && <CheckoutSuccessModal order={successOrder} onClose={() => setSuccessOrder(null)} />}
+    </main>
+  );
+}
+
+function CheckoutSuccessModal({ order, onClose }) {
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+    const onKey = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="checkout-success-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="checkout-success-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-success-title">
+        <button ref={closeButtonRef} className="checkout-success-close" type="button" onClick={onClose} aria-label="Close checkout success"><CloseIcon /></button>
+        <div className="checkout-success-mark" aria-hidden="true">✓</div>
+        <p className="kicker">Demo order placed</p>
+        <h2 id="checkout-success-title">Checkout successful</h2>
+        <p>Your demo order has been confirmed. No real PhonePe payment was collected.</p>
+        <div className="checkout-success-details">
+          <div><span>Order ID</span><strong>{order.merchantOrderId || order.id}</strong></div>
+          <div><span>Total</span><strong>{formatMoney(order.total, order.currency)}</strong></div>
+          <div><span>Mobile</span><strong>{order.contact?.mobile || 'Not provided'}</strong></div>
+          <div><span>Status</span><strong>{order.paymentStatus}</strong></div>
+        </div>
+        <div className="checkout-success-actions">
+          <a className="button" href={`/order/${encodeURIComponent(order.id)}/status`}>View order</a>
+          <a className="button secondary" href="/categories">Continue shopping</a>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OrderStatusPage({ id }) {
+  const [state, setState] = useState({ order: null, loading: true, error: '' });
+
+  useEffect(() => {
+    if (!id) return undefined;
+    let alive = true;
+    let timer = null;
+    const load = () => {
+      api(`/orders/${encodeURIComponent(id)}/payment-status`, { retry: 0 })
+        .then((data) => {
+          if (!alive) return;
+          const order = data.order || null;
+          setState({ order, loading: false, error: '' });
+          if (order?.paymentStatus === 'pending') timer = window.setTimeout(load, 5000);
+        })
+        .catch((err) => {
+          if (alive) setState({ order: null, loading: false, error: err.message || 'Could not load order status.' });
+        });
+    };
+    load();
+    return () => {
+      alive = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [id]);
+
+  const order = state.order;
+  const paid = order?.paymentStatus === 'paid';
+  const failed = ['failed', 'cancelled'].includes(order?.paymentStatus);
+
+  return (
+    <main className="checkout-page order-status-page">
+      <section className="wrap checkout-empty-state order-status-shell">
+        <p className="kicker">Order status</p>
+        {state.loading && <h1>Checking payment...</h1>}
+        {state.error && <><h1>We could not load this order.</h1><p>{state.error}</p></>}
+        {order && (
+          <>
+            <h1>{paid ? 'Payment received.' : failed ? 'Payment was not completed.' : 'Payment is pending.'}</h1>
+            <p>{paid ? 'Your order is confirmed and delivery updates will be sent to your contact details.' : failed ? 'You can return to checkout and try payment again.' : 'PhonePe is still processing this payment. This page will refresh automatically.'}</p>
+            <div className="order-status-details">
+              <div><span>Order</span><strong>{order.merchantOrderId || order.id}</strong></div>
+              <div><span>Payment</span><strong>{order.paymentStatus}</strong></div>
+              <div><span>Fulfillment</span><strong>{order.fulfillmentStatus}</strong></div>
+              <div><span>Total</span><strong>{formatMoney(order.total, order.currency)}</strong></div>
+            </div>
+            <div className="empty-products-actions">
+              {failed && <a className="button" href={`/checkout${order.items?.[0]?.productId ? `?productId=${encodeURIComponent(order.items[0].productId)}` : ''}`}>Try again</a>}
+              <a className="button secondary" href="/categories">Continue shopping</a>
+            </div>
+          </>
+        )}
       </section>
     </main>
   );
@@ -7109,7 +7610,7 @@ function AutoPlayingTryOnVideo({ src, poster }) {
   );
 }
 
-function ProductPage({ id, user, setUser }) {
+function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
   const { product, loading, error } = useProduct(id);
   const related = useSimilarProducts(id, 4);
   const [tryOn, setTryOn] = useState(null);
@@ -7223,6 +7724,7 @@ function ProductPage({ id, user, setUser }) {
   ].filter(([, value]) => value);
   const productTags = (product.tags || []).filter(Boolean).slice(0, 10);
   const editorialImage = relatedProducts.find((item) => item.imageUrl)?.imageUrl || productImage;
+  const buyHref = `/checkout?productId=${encodeURIComponent(product.id)}`;
   const galleryItems = [
     {
       key: 'product',
@@ -7443,7 +7945,11 @@ function ProductPage({ id, user, setUser }) {
                   {tryOnVideoLoading ? 'Making video...' : hasTryOnVideo ? 'Refresh video' : 'Generate video'}
                 </button>
               ) : <a className="product-editorial-video" href="/signup">Generate video</a>}
-              {product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop now</a>}
+              {demoEcommerceMode ? (
+                <a className="product-editorial-shop" href={buyHref} onClick={() => recordEvent('buy_now_click', { productId: product.id })}>Buy now</a>
+              ) : (
+                product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop now</a>
+              )}
             </div>
             {(tryOnLoading || tryOnVideoLoading) && <p className="form-message" role="status">{tryOnSlow ? 'This is taking a little longer than usual.' : 'Preparing your try-on...'}</p>}
             {tryOnCreditNotice && <p className="form-message">{tryOnCreditNotice}</p>}
@@ -7472,7 +7978,7 @@ function ProductPage({ id, user, setUser }) {
               </details>
               <details>
                 <summary>Delivery and returns</summary>
-                <p>Checkout, delivery, and return terms are managed by Amazon or the linked seller.</p>
+                <p>{demoEcommerceMode ? 'Prepaid checkout is handled through PhonePe. Delivery is currently available within India, and order updates are sent to your contact details.' : 'Checkout, delivery, and return terms are managed by Amazon or the linked seller.'}</p>
               </details>
             </div>
           </div>
@@ -8209,8 +8715,8 @@ function DownloadAppPage() {
   );
 }
 
-function InfoPage({ meta, children, user, ctaLabel, ctaHref }) {
-  const policy = policyPages[normalizePath()];
+function InfoPage({ meta, children, user, ctaLabel, ctaHref, demoEcommerceMode = false }) {
+  const policy = policyForPath(normalizePath(), demoEcommerceMode);
   if (policy && !children) return <PolicyContent policy={policy} />;
 
   const [kicker, title, lead, image] = meta;
@@ -9376,14 +9882,8 @@ function AuthPage({ mode, setUser }) {
                   <span>Full name</span>
                   <input name="name" required autoFocus={shouldAutoFocusAuthField} value={nameValue} autoComplete="name" placeholder="Enter your name" onChange={(event) => setNameValue(event.target.value)} />
                 </label>
-                <label className="signup-field">
-                  <span>Create password</span>
-                  <input name="password" type="password" required minLength="12" maxLength="72" value={signupPassword} autoComplete="new-password" placeholder="At least 12 characters" onChange={(event) => setSignupPassword(event.target.value)} />
-                </label>
-                <label className="signup-field">
-                  <span>Confirm password</span>
-                  <input name="confirmPassword" type="password" required minLength="12" maxLength="72" value={signupConfirmPassword} autoComplete="new-password" placeholder="Repeat your password" onChange={(event) => setSignupConfirmPassword(event.target.value)} />
-                </label>
+                <AuthInputField className="signup-field" label="Create password" name="password" type="password" required minLength="12" maxLength="72" value={signupPassword} autoComplete="new-password" placeholder="At least 12 characters" onChange={(event) => setSignupPassword(event.target.value)} />
+                <AuthInputField className="signup-field" label="Confirm password" name="confirmPassword" type="password" required minLength="12" maxLength="72" value={signupConfirmPassword} autoComplete="new-password" placeholder="Repeat your password" onChange={(event) => setSignupConfirmPassword(event.target.value)} />
               </div>
 
               <fieldset className="signup-gender-group">
@@ -9474,6 +9974,8 @@ function App() {
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [toast, setToast] = useState(null);
   const [replayTourOpen, setReplayTourOpen] = useState(false);
+  const storefrontConfig = useStorefrontConfig();
+  const demoEcommerceMode = Boolean(storefrontConfig.demoEcommerceMode);
   const scrollPositions = useRef(new Map());
   const toastTimer = useRef(null);
 
@@ -9673,37 +10175,40 @@ function App() {
 
   const page = useMemo(() => {
     const productMatch = path.match(/^\/product\/([^/]+)$/);
+    const orderStatusMatch = path.match(/^\/order\/([^/]+)\/status$/);
     const categoryMatch = path.match(/^\/categories\/([^/]+)$/);
     if (requiresAuthentication(path) && !user) return <ProtectedRouteGate path={path} authChecked={authChecked} />;
     if (path === '/') return <Home user={user} />;
     if (path === '/home') return <AtelierHome user={user} />;
-    if (path === '/categories' || path === '/explore') return <CategoriesPage key={routeKey} user={user} />;
-    if (categoryMatch) return <CategoryDepartmentPage category={decodeURIComponent(categoryMatch[1])} user={user} />;
+    if (path === '/categories' || path === '/explore') return <CategoriesPage key={routeKey} user={user} demoEcommerceMode={demoEcommerceMode} />;
+    if (categoryMatch) return <CategoryDepartmentPage category={decodeURIComponent(categoryMatch[1])} user={user} demoEcommerceMode={demoEcommerceMode} />;
     if (path === '/search') return <SearchLandingPage key={routeKey} />;
     if (path === '/try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/closet') return <ClosetPage user={user} setUser={setUser} />;
     if (path === '/closet/add') return <ClosetAddPage user={user} setUser={setUser} />;
     if (path === '/closet/combo') return <ClosetComboPage user={user} setUser={setUser} />;
     if (path === '/closet/items') return <ClosetItemsPage user={user} setUser={setUser} />;
-    if (path === '/wishlist') return <WishlistPage user={user} />;
-    if (path === '/cart') return <CartPage />;
+    if (path === '/wishlist') return <WishlistPage user={user} demoEcommerceMode={demoEcommerceMode} />;
+    if (path === '/cart') return <CartPage demoEcommerceMode={demoEcommerceMode} />;
+    if (path === '/checkout') return <CheckoutPage user={user} demoEcommerceMode={demoEcommerceMode} demoModeLoading={storefrontConfig.loading} />;
     if (path === '/custom-try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/style-bot') return <StyleBotPage user={user} setUser={setUser} />;
     if (path === '/tokens') return <TokenPage user={user} setUser={setUser} mode="overview" />;
     if (path === '/tokens/top-up') return <TokenPage key={routeKey} user={user} setUser={setUser} mode="topup" />;
     if (path === '/profile') return <ProfilePage user={user} setUser={setUser} />;
     if (path === '/generation-history') return <GenerationHistoryPage user={user} />;
-    if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} />;
-    if (['/signup', '/login', '/forgot-password'].includes(path) && user) return <SearchPage user={user} setUser={setUser} />;
+    if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} demoEcommerceMode={demoEcommerceMode} />;
+    if (orderStatusMatch) return <OrderStatusPage id={decodeURIComponent(orderStatusMatch[1])} />;
+    if (['/signup', '/login', '/forgot-password'].includes(path) && user) return <SearchPage user={user} setUser={setUser} demoEcommerceMode={demoEcommerceMode} />;
     if (path === '/signup') return <AuthPage mode="signup" setUser={setUser} />;
     if (path === '/login') return <AuthPage mode="login" setUser={setUser} />;
     if (path === '/forgot-password') return <ForgotPasswordPage />;
     if (path === '/how-it-works') return <HowItWorks user={user} />;
     if (path === '/about') return <AboutPage user={user} />;
     if (path === '/download') return <DownloadAppPage />;
-    if (pageMeta[path]) return <InfoPage meta={pageMeta[path]} user={user} />;
+    if (pageMeta[path]) return <InfoPage meta={pageMeta[path]} user={user} demoEcommerceMode={demoEcommerceMode} />;
     return <NotFoundPage />;
-  }, [authChecked, path, routeKey, user]);
+  }, [authChecked, demoEcommerceMode, path, routeKey, storefrontConfig.loading, user]);
 
   useEffect(() => {
     const revealSelectors = [

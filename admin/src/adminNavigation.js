@@ -8,7 +8,7 @@ const ADMIN_SECTIONS = [
       { id: 'users', label: 'Users', icon: 'users', kicker: 'Customers', lead: 'Find users, review activity, and manage account access and credits.' },
       { id: 'analytics', label: 'Analytics', icon: 'analytics', kicker: 'Reports', lead: 'Understand user behavior, recommendations, searches, and product performance.' },
       { id: 'storage', label: 'Media Library', icon: 'storage', kicker: 'Media', lead: 'Review profile, try-on, closet, and catalog files saved by Lookmefy.' },
-      { id: 'orders', label: 'Orders', icon: 'orders', kicker: 'Payments', lead: 'Review recent credit orders and payment outcomes.' }
+      { id: 'orders', label: 'Orders', icon: 'orders', kicker: 'Payments', lead: 'Review recent credit and product orders with payment outcomes.' }
     ]
   },
   {
@@ -24,7 +24,7 @@ const ADMIN_SECTIONS = [
       { id: 'android-report', label: 'Android Report', icon: 'android', kicker: 'Mobile', lead: 'Review Android web telemetry and native reporting connection status.' },
       { id: 'audit-log', label: 'Audit Log', icon: 'audit', kicker: 'Governance', lead: 'Review administrative changes and the account responsible for each action.' },
       { id: 'roles', label: 'Roles', icon: 'roles', kicker: 'Access', lead: 'Review admin access requests and manage roles, permissions, and account status.', requiresRoleManagement: true },
-      { id: 'settings', label: 'Settings', icon: 'settings', kicker: 'Setup', lead: 'Manage the current admin session and dashboard preferences.' }
+      { id: 'settings', label: 'Settings', icon: 'settings', kicker: 'Setup', lead: 'Manage storefront mode, the current admin session, and dashboard preferences.' }
     ]
   },
   {
