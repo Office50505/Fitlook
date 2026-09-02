@@ -35,13 +35,14 @@ test('signup duplicate responses redirect through login with a prefilled identif
   assert.match(appSource, /Mobile number or email/);
 });
 
-test('demo token purchases cannot fall through to a payment redirect', async () => {
+test('token purchases open Razorpay instead of using the demo checkout shortcut', async () => {
   const source = await fs.readFile('src/App.jsx', 'utf8');
 
-  assert.match(source, /demoModeLoading/);
-  assert.match(source, /demoModeError/);
-  assert.match(source, /Checkout mode is active, but the server returned a payment redirect/);
-  assert.match(source, /demoModeLoading \? 'Checking mode\.\.\.'/);
+  assert.match(source, /if \(data\.razorpay\)/);
+  assert.match(source, /loadRazorpayCheckout/);
+  assert.match(source, /Opening secure Razorpay checkout/);
+  assert.doesNotMatch(source, /if \(data\.demo\)/);
+  assert.doesNotMatch(source, /Adding credits/);
   assert.doesNotMatch(source, /Demo checkout confirms/);
   assert.doesNotMatch(source, /Live brand and price details/);
 });

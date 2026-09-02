@@ -168,6 +168,7 @@ app.get('/api/health/ready', async (_req, res) => {
     otpProvider: config.otpProvider,
     otpProviderType: config.otpProviderType,
     phonePe: config.phonePe,
+    razorpay: config.razorpay,
     shuttingDown,
     ...service
   });

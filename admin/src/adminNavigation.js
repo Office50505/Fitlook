@@ -39,7 +39,7 @@ const ADMIN_SECTIONS = [
       { id: 'cost-mongodb', label: 'MongoDB Atlas', icon: 'database', kicker: 'Database Cost', lead: 'Review database size, operational usage, and Atlas billing coverage.', provider: 'mongodb' },
       { id: 'cost-otp', label: 'OTP', icon: 'otp', kicker: 'Messaging Cost', lead: 'Review OTP deliveries, failures, estimated spend, and wallet coverage.', provider: 'otp' },
       { id: 'cost-aws', label: 'AWS', icon: 'cloud', kicker: 'Infrastructure Cost', lead: 'Review infrastructure spend, budget status, and Cost Explorer connection.', provider: 'aws' },
-      { id: 'cost-phonepe', label: 'PhonePe Fees', icon: 'orders', kicker: 'Payment Cost', lead: 'Review completed payment volume and settlement fee coverage.', provider: 'phonepe' }
+      { id: 'cost-razorpay', label: 'Razorpay Fees', icon: 'orders', kicker: 'Payment Cost', lead: 'Review completed payment volume and settlement fee coverage.', provider: 'razorpay' }
     ]
   }
 ];

@@ -1,815 +1,1124 @@
-# Demo Ecommerce Mode Plan
+# Unified Backend Plan
 
 ## Goal
 
-Add an admin-controlled demo ecommerce mode that can switch the deployed Lookmefy storefront between:
+Create one backend that manages the full Lookmefy platform:
 
-- Affiliate mode: product CTAs send users to Amazon or another affiliate URL.
-- Demo ecommerce mode: product CTAs send logged-in users to an internal checkout form and `Pay now` completes a simulated successful checkout popup without sending the user to PhonePe.
-- Demo credit mode: token/credit purchases in demo mode credit the logged-in account immediately and show an in-site success popup instead of redirecting to PhonePe.
+- Public web storefront
+- Admin dashboard
+- Mobile app backend for iOS and Android
+- Product catalog, affiliate mode, and ecommerce demo mode
+- Product checkout and product orders
+- Credits, subscriptions, top-ups, and payment provider flows
+- AI try-on, video generation, job queues, and media storage
+- Wardrobe, closet, recommendations, AI stylist, and user profile
+- Observability, rate limits, security, admin controls, and deployment operations
 
-This plan was created before implementation. Current implementation status: backend models/routes, admin toggle, storefront checkout/status screens, demo policy overrides, and focused tests have been added. New planning change: demo mode should no longer redirect product checkout or credit purchase flows to PhonePe; both should show in-site success states.
-
-## Current State
-
-- The customer storefront is the root Vite React app in `src/App.jsx`.
-- The admin dashboard is the Vite admin app in `admin/src/AdminApp.jsx`.
-- The backend is Express in `server/index.js`.
-- Product order creation exists for demo checkout.
-- PhonePe integration exists for credit/token purchases through `TokenOrder`, but demo mode should not redirect credit purchases or product checkout to PhonePe.
-- Cart exists in `src/utils/cart.js`, but it is localStorage-only.
-- Product buttons currently rely on `product.affiliateLink`.
-- Cart checkout is currently disabled with "Checkout coming soon".
-- Legal/policy pages currently describe affiliate marketplace behavior, not direct ecommerce fulfillment.
-- Product demo checkout is currently guest-capable in parts of the UI/backend and should be tightened so Buy Now requires login/signup.
-
-## Non-Goals For First Version
-
-- Do not replace the existing affiliate flow.
-- Do not remove real credit/token PhonePe payments outside demo mode.
-- Do not merge `TokenOrder` and product ecommerce orders.
-- Do not build cash on delivery.
-- Do not build inventory reservation beyond basic product availability checks.
-- Do not support international checkout.
-- Do not save full address books unless added in a later phase.
-- Do not allow guest product orders in demo mode.
-
-## Feature Flag Design
-
-Create a backend-controlled storefront setting:
-
-```js
-{
-  demoEcommerceMode: true,
-  updatedBy: adminId,
-  updatedAt: date
-}
-```
-
-When `demoEcommerceMode` is false:
-
-- Product cards and product pages keep affiliate behavior.
-- CTAs say "Shop" or "Shop now".
-- External affiliate links remain active.
-- Policy pages use affiliate/discovery wording.
-
-When `demoEcommerceMode` is true:
-
-- Product cards and product pages use internal ecommerce behavior.
-- CTAs say "Buy" or "Buy now" only for logged-in users.
-- Logged-out users should see a signup/login prompt instead of an actionable Buy Now button.
-- Product detail checkout goes to `/checkout?productId=:id`.
-- Cart checkout is enabled.
-- Wishlist "Move to Bag" adds to internal cart.
-- Policy pages use direct ecommerce wording.
-- Credit/token purchase CTAs use simulated demo crediting and do not open PhonePe.
-
-## New Planned Fixes
-
-### Demo Credit Purchases
-
-Problem:
-
-- Token purchase buttons still call `/api/payments/checkout`.
-- `/api/payments/checkout` creates a PhonePe order and returns `redirectUrl`.
-- The frontend then redirects the user to PhonePe.
-- In demo mode, this should not happen.
-
-Desired behavior:
-
-- User must be logged in.
-- User chooses a credit pack or monthly pack.
-- User clicks the existing credit purchase CTA.
-- Backend creates a `TokenOrder` record in completed/demo state.
-- Backend immediately increments the user's token balance.
-- Frontend updates the logged-in user state.
-- Frontend shows a success popup: "Credits credited" with amount, pack name, and new balance.
-- No PhonePe redirect URL should be used in demo mode.
-
-Suggested backend design:
-
-- Import/use storefront setting inside `server/routes/payments.js`.
-- Add a helper such as `demoCreditsEnabled()` or check `getStorefrontSetting().demoEcommerceMode`.
-- Add a dedicated helper like `createDemoCreditOrder({ req, user, plan })`.
-- Reuse existing `TokenOrder` rather than creating a second credit order model.
-- Reuse `grantPaidTokens(order, providerResponse)` to avoid duplicating token-crediting logic.
-- Set provider fields clearly:
-  - `status`: `completed`
-  - `providerState`: `DEMO_COMPLETED`
-  - `providerResponse`: `{ mode: "demo", message: "Demo credits credited without external payment gateway" }`
-  - `creditedAt`: current date
-  - `redirectUrl`: empty
-- Keep idempotency behavior so double-clicks do not credit twice.
-- Return `{ order, user, demo: true }`.
-
-Recommended endpoint options:
-
-Option A, minimal:
+The unified backend should become the single API surface for:
 
 ```txt
+https://api.lookmefy.in/api
+```
+
+No implementation should start until this plan is reviewed.
+
+## Repository Findings
+
+### Main Web Backend
+
+Location:
+
+```txt
+server/
+```
+
+This is the stronger base for the unified backend because it already has:
+
+- Express API mounted under `/api`
+- Admin routes and admin authentication
+- RBAC-style admin permissions
+- Storefront settings and demo ecommerce toggle
+- Product order model and checkout flow
+- Product catalog routes
+- Recommendation event routes
+- Try-on routes and queue integration
+- Security headers and request hardening
+- Metrics, audit logs, system incident models
+- Redis and BullMQ style job queue support
+- Bunny storage integration
+- Razorpay payment integration for token orders
+
+### Mobile App Backend
+
+Location:
+
+```txt
+fit-look-APP/server/
+```
+
+This backend contains app-specific logic that must be merged into the main backend:
+
+- Mobile auth behavior
+- OTP verification flow
+- Apple in-app purchase transaction handling
+- Apple App Store server notification handling
+- Mobile subscription state fields
+- Mobile token/top-up flows
+- App-oriented closet and wardrobe flows
+- App-oriented try-on and custom try-on flows
+- App media access behavior
+- Mobile job model and job status behavior
+
+Important files found:
+
+```txt
+fit-look-APP/server/index.js
+fit-look-APP/server/routes/auth.js
+fit-look-APP/server/routes/closet.js
+fit-look-APP/server/routes/jobs.js
+fit-look-APP/server/routes/payments.js
+fit-look-APP/server/routes/products.js
+fit-look-APP/server/routes/recommendations.js
+fit-look-APP/server/routes/tryons.js
+fit-look-APP/server/models/AppleTransaction.js
+fit-look-APP/server/models/CreditEvent.js
+fit-look-APP/server/models/Job.js
+fit-look-APP/server/utils/appleStoreKit.js
+fit-look-APP/server/utils/mediaAccess.js
+```
+
+### Mobile Client API
+
+Location:
+
+```txt
+fit-look-APP/mobile/
+```
+
+The mobile app already expects the production API base to be:
+
+```txt
+https://api.lookmefy.in/api
+```
+
+That means the target architecture should keep the same base URL and support mobile-compatible routes while gradually replacing the separate app backend.
+
+## Target Architecture
+
+```mermaid
+flowchart TB
+  subgraph Clients
+    Web[Web Storefront]
+    Admin[Admin Dashboard]
+    IOS[iOS App]
+    Android[Android App]
+  end
+
+  subgraph Edge
+    DNS[api.lookmefy.in]
+    LB[Load Balancer / Reverse Proxy]
+  end
+
+  subgraph UnifiedBackend[Unified Lookmefy Backend]
+    API[Express API /api]
+    Auth[Identity and Sessions]
+    Storefront[Storefront Config and Demo Mode]
+    Catalog[Catalog and Search]
+    ProductOrders[Product Orders]
+    Payments[Payments and Subscriptions]
+    Credits[Credit Ledger]
+    TryOn[Try-On and Generation]
+    Closet[Wardrobe and Closet]
+    Reco[Recommendations and AI Stylist]
+    Media[Media Access and Storage]
+    AdminOps[Admin and Operations]
+    Jobs[Workers and Job Queue]
+  end
+
+  subgraph Data
+    Mongo[(MongoDB)]
+    Redis[(Redis)]
+    Bunny[(Bunny Storage/CDN)]
+  end
+
+  subgraph ExternalProviders
+    Razorpay[Razorpay]
+    Apple[Apple App Store]
+    GooglePlay[Google Play Billing - Future]
+    AI[AI Providers]
+    OTP[OTP Provider]
+    Serp[Search Providers]
+  end
+
+  Web --> DNS
+  Admin --> DNS
+  IOS --> DNS
+  Android --> DNS
+  DNS --> LB
+  LB --> API
+
+  API --> Auth
+  API --> Storefront
+  API --> Catalog
+  API --> ProductOrders
+  API --> Payments
+  API --> Credits
+  API --> TryOn
+  API --> Closet
+  API --> Reco
+  API --> Media
+  API --> AdminOps
+
+  TryOn --> Jobs
+  Closet --> Jobs
+  Reco --> Jobs
+  Jobs --> Redis
+
+  Auth --> Mongo
+  Storefront --> Mongo
+  Catalog --> Mongo
+  ProductOrders --> Mongo
+  Payments --> Mongo
+  Credits --> Mongo
+  TryOn --> Mongo
+  Closet --> Mongo
+  AdminOps --> Mongo
+
+  Media --> Bunny
+  Payments --> Razorpay
+  Payments --> Apple
+  Payments --> GooglePlay
+  TryOn --> AI
+  Auth --> OTP
+  Catalog --> Serp
+```
+
+## Request Flow
+
+```mermaid
+sequenceDiagram
+  participant Client as Web / Admin / iOS / Android
+  participant API as Unified API
+  participant Auth as Auth Service
+  participant Domain as Domain Service
+  participant DB as MongoDB
+  participant Queue as Redis Queue
+  participant Provider as External Provider
+
+  Client->>API: Request /api/...
+  API->>Auth: Verify JWT/session/admin role
+  Auth->>DB: Load user/admin/session
+  API->>Domain: Run domain use case
+  Domain->>DB: Read/write source of truth
+  Domain->>Queue: Enqueue async work when needed
+  Domain->>Provider: Call payment, AI, OTP, or search provider
+  Domain-->>API: Normalized response
+  API-->>Client: Stable web/mobile/admin response
+```
+
+## Main Design Principle
+
+The unified backend should be a modular monolith first, not microservices.
+
+Reason:
+
+- Current codebase is already Express and Mongo based.
+- Admin, web, and app flows share users, products, credits, try-ons, and payments.
+- A single backend reduces deployment confusion, duplicate routes, and inconsistent models.
+- Workers can still run as separate processes using the same codebase.
+
+Recommended runtime roles:
+
+```txt
+APP_ROLE=api       -> serves HTTP routes
+APP_ROLE=worker    -> processes queues
+APP_ROLE=combined  -> local development only
+```
+
+## Domain Ownership
+
+### 1. Identity And Accounts
+
+Unified responsibility:
+
+- Email/password login
+- OTP login or verification
+- Mobile auth
+- Admin auth
+- JWT/session issuing
+- Password reset
+- User profile
+- Avatar/photo profile
+- Account deletion
+- Rate limits and abuse prevention
+
+Models to consolidate:
+
+```txt
+User
+UserSession
+AdminUser
+AdminAuditLog
+```
+
+Required merge work:
+
+- Keep the stronger password and session fields from the main backend.
+- Bring over app fields such as phone verification, avatar crop, mobile subscription provider details, and app preferences if still needed.
+- Avoid two separate definitions of `User`.
+
+### 2. Storefront And Feature Flags
+
+Unified responsibility:
+
+- Demo ecommerce mode
+- Affiliate mode
+- Checkout display behavior
+- Public policy wording mode
+- Web feature flags
+- App feature flags
+- Platform-specific config
+
+Model:
+
+```txt
+StorefrontSetting
+```
+
+Target endpoints:
+
+```txt
+GET   /api/storefront/config
+PATCH /api/admin/storefront/config
+GET   /api/config/app
+GET   /api/config/web
+```
+
+### 3. Catalog And Product Search
+
+Unified responsibility:
+
+- Product listing
+- Product details
+- Product recommendations
+- Affiliate link handling
+- Demo ecommerce product behavior
+- Search provider integrations
+- Category and gender filters
+- Admin product management
+
+Models:
+
+```txt
+Product
+RecommendationEvent
+```
+
+Required merge work:
+
+- Compare root `Product` model and app `Product` model.
+- Keep fields needed by web and admin.
+- Preserve any mobile app fields consumed by `fit-look-APP/mobile`.
+- Do not expose admin-only product data to public clients.
+
+### 4. Product Orders
+
+Unified responsibility:
+
+- Product checkout
+- India delivery address validation
+- Pincode lookup and state/city autofill
+- Demo checkout success behavior
+- Product order status
+- Admin product order management
+- Future real ecommerce payment provider settlement
+
+Model:
+
+```txt
+ProductOrder
+```
+
+Flow:
+
+```mermaid
+sequenceDiagram
+  participant Web as Web Storefront
+  participant API as Unified API
+  participant Config as Storefront Config
+  participant Orders as Product Order Service
+  participant DB as MongoDB
+
+  Web->>API: GET /api/storefront/config
+  API-->>Web: demoEcommerceMode
+  Web->>API: POST /api/orders
+  API->>Config: Check demo ecommerce mode
+  Config-->>API: Enabled
+  API->>Orders: Validate address and product
+  Orders->>DB: Create confirmed product order
+  API-->>Web: Checkout success response
+  Web-->>Web: Show success popup
+```
+
+Important behavior:
+
+- Product Buy Now requires login.
+- In demo ecommerce mode, checkout confirms inside Lookmefy and does not redirect to a payment gateway.
+- Public UI should not mention "demo".
+- Internal admin metadata can still store demo/provider state clearly.
+
+### 5. Credits, Tokens, Payments, And Subscriptions
+
+Unified responsibility:
+
+- Credit packs
+- Monthly subscriptions
+- Top-ups
+- Razorpay web checkout flows
+- Apple in-app purchase flows for iOS
+- Future Google Play Billing for Android
+- Credit granting
+- Credit history
+- Subscription state
+- Payment webhooks/callbacks
+- Idempotent crediting
+
+Models to consolidate:
+
+```txt
+TokenOrder
+CreditLedger or CreditEvent
+AppleTransaction
+```
+
+Recommended model direction:
+
+- Keep `TokenOrder` for provider orders and subscription purchases.
+- Add or promote `CreditEvent` into a first-class `CreditLedger`.
+- Keep `AppleTransaction` for iOS purchase verification and audit.
+- Ensure every token balance change has a ledger row.
+
+Payment architecture:
+
+```mermaid
+flowchart LR
+  Client[Web / iOS / Android] --> API[Payments API]
+  API --> Plans[Plan Resolver]
+  API --> Ledger[Credit Ledger]
+  API --> Orders[TokenOrder]
+
+  API -->|Web checkout| Razorpay[Razorpay]
+  API -->|iOS IAP| Apple[Apple StoreKit]
+  API -->|Future Android IAP| Google[Google Play Billing]
+  API -->|Demo mode| Demo[Internal Success]
+
+  Razorpay --> Callback[Payment Callback]
+  Apple --> Notifications[Apple Notifications]
+  Google --> Notifications
+  Callback --> Ledger
+  Notifications --> Ledger
+```
+
+Important behavior:
+
+- Storefront demo mode controls product checkout only; token buying should still open Razorpay test or live checkout.
+- Token credits should be added only after Razorpay signature/payment verification.
+- Outside demo mode, Razorpay test or live checkout opens for web top-ups and credits only after verification.
+- iOS should use Apple IAP where required by App Store rules.
+- Android payment choice should be checked against Play Store policy; Google Play Billing may be needed for digital credits depending on distribution rules.
+
+Mobile payment endpoints to preserve:
+
+```txt
+GET  /api/payments/plans
+GET  /api/payments/apple/config
+POST /api/payments/apple/transactions
+POST /api/payments/apple/restore
+GET  /api/payments/apple/status
+POST /api/payments/apple/notifications
 POST /api/payments/checkout
+POST /api/payments/razorpay/verify
+GET  /api/payments/orders/:merchantOrderId/status
+GET  /api/payments/subscriptions/current/status
+POST /api/payments/subscriptions/current/cancel
+POST /api/payments/subscriptions/:merchantSubscriptionId/renewals
+POST /api/payments/razorpay/webhook
 ```
 
-- If demo mode is ON, complete demo crediting and return no redirect URL.
-- If demo mode is OFF, keep current PhonePe behavior.
+### 6. AI Try-On, Video, And Jobs
 
-Option B, clearer:
+Unified responsibility:
+
+- Image try-on
+- Video generation
+- Custom try-ons
+- Full-body profile generation
+- External product try-ons
+- Job status
+- Retry behavior
+- Queue mode selection
+- Provider routing
+
+Models:
 
 ```txt
-POST /api/payments/demo-checkout
+TryOn
+CustomTryOn
+Job
+GenerationMetric
 ```
 
-- Only works when demo mode is ON.
-- Existing `/api/payments/checkout` stays real PhonePe only.
+Required merge work:
 
-Recommendation: Use Option A for fewer frontend branches, but include an explicit response flag:
+- Root backend already has job queue infrastructure.
+- App backend has a `Job` model and mobile job expectations.
+- Decide whether job state lives in Mongo, Redis, or both.
+- Preserve mobile app route compatibility for job polling.
 
-```json
-{
-  "demo": true,
-  "order": {},
-  "user": {},
-  "message": "Credits credited"
-}
+Target flow:
+
+```mermaid
+sequenceDiagram
+  participant Client as Web / Mobile
+  participant API as Unified API
+  participant Credits as Credit Service
+  participant Queue as Job Queue
+  participant Worker as Worker
+  participant AI as AI Provider
+  participant Media as Bunny Storage
+  participant DB as MongoDB
+
+  Client->>API: POST /api/tryons
+  API->>Credits: Reserve or consume credits
+  API->>DB: Create TryOn + Job
+  API->>Queue: Enqueue generation
+  API-->>Client: Job accepted
+  Worker->>AI: Generate image/video
+  Worker->>Media: Store result
+  Worker->>DB: Mark complete
+  Client->>API: GET /api/jobs/:id
+  API-->>Client: Complete result
 ```
 
-### Login-Gated Buy Now
+### 7. Wardrobe And Closet
 
-Problem:
+Unified responsibility:
 
-- In demo ecommerce mode, product detail/cards can route users to `/checkout?productId=:id` even when not logged in.
-- Checkout can collect contact/address, but the new requirement is no Buy Now without login/signup.
+- Closet items
+- Closet image analysis
+- Outfit generation
+- Closet suggestions
+- Closet chat
+- Saved wardrobe looks
+- User-owned media permissions
 
-Desired behavior:
+Models:
 
-- Logged-in users: see active `Buy` / `Buy now` CTAs.
-- Logged-out users: do not get an actionable Buy Now CTA.
-- Logged-out users should see `Sign up to buy` or `Create profile to buy`, linking to `/signup?return=/product/:id` where practical.
-- Checkout route should also enforce login:
-  - If `!user`, show an auth-required screen.
-  - Do not render the checkout form.
-  - Do not create product orders.
-- Backend should enforce the same rule:
-  - `POST /api/orders` should require authenticated user in demo mode.
-  - Store `user: req.user._id` on `ProductOrder`.
-  - `GET /api/orders/:id` and `GET /api/orders/:id/payment-status` should only return the order to the owning user or admin.
+```txt
+ClosetItem
+ClosetOutfit
+User
+```
 
-Affected frontend surfaces:
+Endpoints to preserve:
 
-- Product detail `Buy now`.
-- Product cards in categories/search/recommendations.
-- Wishlist buy/move-to-bag flows.
-- Cart checkout CTA.
-- Checkout route direct access.
+```txt
+GET    /api/closet
+POST   /api/closet/items/analyze
+POST   /api/closet/items
+POST   /api/closet/outfits/generate
+POST   /api/closet/suggest
+POST   /api/closet/chat
+```
 
-Copy guidance:
+### 8. Recommendations And AI Stylist
 
-- Avoid showing a disabled button that looks broken.
-- Prefer a clear auth CTA:
-  - Logged out: `Sign up to buy`
-  - Logged in: `Buy now`
-- Preserve affiliate-mode behavior unless the requirement changes.
+Unified responsibility:
 
-## Backend Models
+- Recent searches
+- Recommendation events
+- Studio chat
+- Product suggestions
+- Try-on suggestions
+- Admin analytics around recommendations
 
-### StorefrontSetting
+Endpoints to preserve:
 
-Purpose: Stores global storefront mode flags.
+```txt
+GET  /api/recommendations/recent-searches
+POST /api/recommendations/events
+POST /api/recommendations/studio-chat
+```
 
-Fields:
+### 9. Media
 
-- `demoEcommerceMode`: Boolean, default false
-- `updatedBy`: AdminUser ObjectId
-- `updatedAt`: Date
-- timestamps
+Unified responsibility:
 
-Index:
+- User avatar images
+- Body photos
+- Try-on source images
+- Generated outputs
+- Closet item images
+- Signed or protected media access
+- CDN URL normalization
 
-- Single-record pattern, either fixed key or singleton document.
+Required merge work:
+
+- Root backend has Bunny storage integration.
+- App backend has mobile-specific `mediaAccess` logic.
+- Unified backend should centralize access checks so web and mobile get the same security behavior.
+
+Target route pattern:
+
+```txt
+GET /api/media/:kind/:id
+```
+
+Backward-compatible alias if mobile already calls:
+
+```txt
+GET /api/auth/media/:kind/:id
+```
+
+### 10. Admin And Operations
+
+Unified responsibility:
+
+- Admin login
+- Product management
+- Storefront mode toggle
+- Product order review
+- Credit order review
+- User support tools
+- Audit logs
+- Metrics
+- Incidents
+- System health
+- Queue status
+- Provider status
+
+Models:
+
+```txt
+AdminUser
+AdminAuditLog
+RequestMetric
+GenerationMetric
+OtpDeliveryMetric
+SystemIncident
+```
+
+Admin should control all platform surfaces:
+
+```txt
+Web storefront
+Admin dashboard
+iOS app
+Android app
+AI generation settings
+Payment mode settings
+Feature flags
+```
+
+## API Layout
+
+Recommended final route structure:
+
+```txt
+/api/auth
+/api/admin
+/api/config
+/api/storefront
+/api/products
+/api/orders
+/api/payments
+/api/credits
+/api/tryons
+/api/jobs
+/api/closet
+/api/recommendations
+/api/media
+/api/images
+/api/health
+/api/metrics
+```
+
+Compatibility rule:
+
+- Keep old mobile routes working until all released mobile builds are migrated.
+- New route names can be cleaner, but old app routes need aliases or stable behavior.
+- Deprecate old routes only after mobile app versions using them are no longer supported.
+
+## Data Model Consolidation
+
+### User
+
+Unify fields from both backends:
+
+```txt
+identity:
+  email
+  passwordHash
+  phone
+  phoneVerifiedAt
+  authVersion
+  accountStatus
+
+profile:
+  name
+  username
+  avatarPhoto
+  avatarCrop
+  bodyPhoto
+  onboardingSeenAt
+
+credits:
+  tokenBalance
+  totalTokensPurchased
+  totalTokensUsed
+
+subscription:
+  provider
+  status
+  planId
+  currentPeriodStart
+  currentPeriodEnd
+  appleOriginalTransactionId
+  phonePeSubscriptionId
+  cancelAtPeriodEnd
+
+preferences:
+  platform
+  notification settings
+  app flags
+```
+
+### TokenOrder
+
+Use for paid or demo credit purchases:
+
+```txt
+user
+planId
+purchaseType
+orderType
+provider
+providerOrderId
+providerSubscriptionId
+amount
+currency
+credits
+status
+providerState
+creditedAt
+idempotencyKey
+rawProviderResponse
+```
+
+### CreditLedger
+
+Use for every balance mutation:
+
+```txt
+user
+sourceType
+sourceId
+delta
+balanceAfter
+reason
+metadata
+createdAt
+```
+
+This avoids future confusion about whether credits were granted by Razorpay, Apple, admin, promo, refund, or demo mode.
 
 ### ProductOrder
 
-Purpose: Stores real product checkout orders separately from credit/token orders.
-
-Fields:
-
-- `user`: optional User ObjectId
-- `items`: array of purchased product snapshots
-- `contact`: full name and mobile number; do not show or require email in the demo checkout UI
-- `address`: house/street, area, landmark, city, state, pincode, country
-- `subtotal`: Number
-- `deliveryFee`: Number
-- `total`: Number
-- `currency`: default `INR`
-- `paymentStatus`: `created`, `pending`, `paid`, `failed`, `cancelled`, `refunded`
-- `paymentMode`: recommended addition with values like `demo` or `phonepe`
-- `fulfillmentStatus`: `new`, `confirmed`, `packed`, `shipped`, `delivered`, `cancelled`
-- `merchantOrderId`: unique internal PhonePe merchant order id
-- `phonePeOrderId`: provider order id
-- `idempotencyKey`: optional browser idempotency key
-- `providerState`: PhonePe state for real payment mode, or `DEMO_COMPLETED` for simulated demo checkout
-- `redirectUrl`: PhonePe redirect URL only for real payment mode
-- `paidAt`: Date
-- `providerResponse`: Mixed
-- timestamps
-
-Important rule:
-
-- Product prices must be read from MongoDB on the backend when creating an order.
-- Never trust subtotal, total, product name, or price from the browser.
-
-## API Plan
-
-### Storefront Config
+Use for ecommerce product checkout:
 
 ```txt
-GET /api/storefront/config
+user
+items
+contactName
+contactPhone
+address
+pincode
+city
+state
+shippingStatus
+paymentMode
+paymentStatus
+orderStatus
+internalNotes
+createdAt
+updatedAt
 ```
 
-Returns:
+### AppleTransaction
 
-```json
-{
-  "demoEcommerceMode": true
-}
-```
-
-Used by frontend on app startup and policy pages.
-
-### Admin Settings
+Keep as a provider audit model:
 
 ```txt
-GET /api/admin/storefront-settings
-PATCH /api/admin/storefront-settings/demo-mode
+user
+productId
+transactionId
+originalTransactionId
+appAccountToken
+environment
+status
+creditsGranted
+purchaseDate
+expiresDate
+signedTransactionInfo
+rawPayload
 ```
 
-Patch body:
+## Deployment Architecture
 
-```json
-{
-  "enabled": true
-}
+```mermaid
+flowchart TB
+  subgraph Public
+    WebSite[lookmefy.in]
+    AdminSite[Admin UI]
+    MobileApps[iOS / Android Apps]
+  end
+
+  subgraph APIEdge
+    APIDNS[api.lookmefy.in]
+    ALB[Application Load Balancer]
+  end
+
+  subgraph Compute
+    API1[API Instance 1]
+    API2[API Instance 2]
+    Worker1[Worker Instance]
+  end
+
+  subgraph State
+    Mongo[(MongoDB Atlas)]
+    Redis[(Redis)]
+    Storage[(Bunny Storage/CDN)]
+  end
+
+  WebSite --> APIDNS
+  AdminSite --> APIDNS
+  MobileApps --> APIDNS
+  APIDNS --> ALB
+  ALB --> API1
+  ALB --> API2
+  API1 --> Mongo
+  API2 --> Mongo
+  API1 --> Redis
+  API2 --> Redis
+  Worker1 --> Redis
+  Worker1 --> Mongo
+  API1 --> Storage
+  API2 --> Storage
+  Worker1 --> Storage
 ```
 
-Required admin access:
+Important deployment rule:
 
-- Prefer `system-management` or `user-operations`.
-- If the toggle affects production checkout, `system-management` is safer.
+- Every healthy target behind the load balancer must run the same deployed commit.
+- If one instance has older code, users will randomly get 404s depending on which target receives traffic.
+- The unified backend should include a `/api/health/version` endpoint that returns commit SHA, app role, and instance name.
 
-### Pincode Lookup
+## Environment Groups
+
+Do not keep one huge mixed `.env` forever. Split variables by responsibility:
 
 ```txt
-GET /api/orders/pincode/:pincode
+Core:
+  NODE_ENV
+  PORT
+  CLIENT_ORIGIN
+  ADMIN_ORIGIN
+  ALLOWED_ORIGINS
+
+Database:
+  MONGODB_URI
+  MONGODB_DB
+  REDIS_URL
+  REDIS_KEY_PREFIX
+
+Security:
+  JWT_SECRET
+  PASSWORD_* settings
+  rate limit settings
+
+Storage:
+  STORAGE_PROVIDER
+  BUNNY_* settings
+
+Payments:
+  PHONEPE_* settings
+  APPLE_* settings
+  GOOGLE_PLAY_* settings
+
+AI:
+  AI_PROVIDER
+  PRUNA_* settings
+  FAL_* settings
+  FITROOM_* settings
+
+Messaging:
+  OTP_DELIVERY_PROVIDER
+  MSG91_* settings
+
+Operations:
+  METRICS_* settings
+  AWS_COST_* settings
+  NGINX_STATUS_URL
+  INSTANCE_NAME
+  APP_ROLE
 ```
 
-Rules:
-
-- Pincode must be exactly 6 digits.
-- Delivery is India-only.
-- Backend should return city, district, state, and serviceability.
-- Cache pincode responses if an external provider is used.
-
-Example response:
-
-```json
-{
-  "pincode": "400001",
-  "serviceable": true,
-  "city": "Mumbai",
-  "district": "Mumbai",
-  "state": "Maharashtra",
-  "country": "India"
-}
-```
-
-Provider options:
-
-- First choice: local India pincode dataset imported into MongoDB or JSON.
-- Second choice: backend-only external pincode API with Redis/local cache.
-
-### Product Orders
-
-```txt
-POST /api/orders
-GET /api/orders/:id
-POST /api/orders/:id/payment
-POST /api/orders/:id/demo-success
-GET /api/orders/:id/payment-status
-```
+No secrets should be committed to GitHub.
 
-`POST /api/orders` request:
+## Migration Plan
 
-```json
-{
-  "items": [
-    {
-      "productId": "mongo-product-id",
-      "quantity": 1,
-      "variant": "M / Black"
-    }
-  ],
-  "contact": {
-    "fullName": "Customer Name",
-    "mobile": "9876543210",
-    "email": "optional@example.com"
-  },
-  "address": {
-    "houseStreet": "House / flat and street",
-    "area": "Area or locality",
-    "landmark": "Optional landmark",
-    "city": "Mumbai",
-    "state": "Maharashtra",
-    "pincode": "400001"
-  }
-}
-```
-
-`POST /api/orders/:id/payment`:
+### Phase 0: Freeze And Inventory
 
-- Keep this for future real product payments only.
-- Do not call it from demo checkout.
-- Creates a PhonePe checkout session for the product order when real product payments are enabled.
-- Sets payment status to `pending`.
-- Returns PhonePe redirect URL.
-
-`POST /api/orders/:id/demo-success`:
-
-- Only works when `demoEcommerceMode` is true.
-- Does not call PhonePe.
-- Marks the product order as `paid`.
-- Sets `paymentMode` to `demo`.
-- Sets `providerState` to `DEMO_COMPLETED`.
-- Sets `paidAt`.
-- Returns the completed order.
-- Must be idempotent: calling it again for the same order should return the same successful order without duplicating anything.
-
-`GET /api/orders/:id/payment-status`:
-
-- Reconciles with PhonePe.
-- Marks order `paid` only after backend status verification.
-- Must be idempotent.
-
-### PhonePe Callback
-
-Current token checkout callback should be extended carefully.
-
-Options:
-
-1. Add a separate product callback route:
-
-```txt
-POST /api/payments/phonepe/product-callback
-```
-
-2. Or make the existing callback route detect whether the merchant order id belongs to `TokenOrder` or `ProductOrder`.
-
-Recommended first version:
-
-- Separate route is clearer and safer.
-- Shared PhonePe client helpers can still be reused.
-
-## Checkout UI Plan
-
-Add new route:
-
-```txt
-/checkout
-```
-
-Supported entry points:
-
-- `/checkout?productId=:id`
-- `/checkout` using local cart items
-
-Page layout:
-
-- Left column: contact, delivery address, payment
-- Right column: order summary
-- Mobile: summary collapses below or above form
+- Freeze route additions in the separate app backend.
+- Inventory every mobile API call from `fit-look-APP/mobile`.
+- Inventory every admin and web API call from root frontend and admin frontend.
+- Create a route compatibility checklist.
+- Decide which models from app backend are canonical, merged, or retired.
 
-Fields:
-
-Contact:
+### Phase 1: Route Compatibility In Main Backend
 
-- Full name
-- Mobile number
-Delivery address:
+- Add missing app-compatible endpoints to the main backend.
+- Keep response shapes mobile-compatible.
+- Add aliases where route names differ.
+- Add tests for every mobile route expected by released apps.
 
-- House / flat and street
-- Area / locality optional
-- Landmark optional
-- City
-- State dropdown
-- Pincode
+### Phase 2: Model Merge
 
-Payment:
+- Merge `User` fields carefully.
+- Bring `AppleTransaction`, `CreditEvent`, and `Job` equivalents into main backend.
+- Add migrations/backfills if existing Mongo documents need new fields.
+- Avoid dropping fields until production traffic confirms they are unused.
 
-- Demo prepaid checkout
-- Copy must explain that this demo confirms the order inside Lookmefy without opening PhonePe
-- Pay now button
+### Phase 3: Payments Merge
 
-Pay now behavior:
+- Move Apple StoreKit verification into main backend.
+- Normalize Razorpay top-up, subscription, verification, and webhook handling.
+- Add a single credit ledger path for all providers.
+- Ensure demo mode bypasses provider redirect while still logging internal order records.
 
-- Create the product order with `POST /api/orders`.
-- Call `POST /api/orders/:id/demo-success`.
-- Do not redirect to PhonePe.
-- Show an in-site success popup/modal.
-- Popup should include order id, amount, customer mobile number, and a continue shopping button.
-- Optionally include a view order/status button.
+### Phase 4: Try-On And Jobs Merge
 
-Pincode behavior:
+- Decide one job state model.
+- Keep API instances stateless.
+- Run long AI tasks in workers.
+- Make job polling consistent for web and mobile.
 
-- Accept only digits.
-- Trigger lookup once 6 digits are entered.
-- Auto-fill city and state from backend response.
-- Show serviceability error if not deliverable.
-- Keep state dropdown available, but prefer pincode-derived value.
+### Phase 5: Media Merge
 
-India states/UT dropdown:
+- Centralize media access rules.
+- Normalize Bunny/CDN URL generation.
+- Preserve old `/auth/media/:kind/:id` route as an alias if mobile builds need it.
 
-- Andaman and Nicobar Islands
-- Andhra Pradesh
-- Arunachal Pradesh
-- Assam
-- Bihar
-- Chandigarh
-- Chhattisgarh
-- Dadra and Nagar Haveli and Daman and Diu
-- Delhi
-- Goa
-- Gujarat
-- Haryana
-- Himachal Pradesh
-- Jammu and Kashmir
-- Jharkhand
-- Karnataka
-- Kerala
-- Ladakh
-- Lakshadweep
-- Madhya Pradesh
-- Maharashtra
-- Manipur
-- Meghalaya
-- Mizoram
-- Nagaland
-- Odisha
-- Puducherry
-- Punjab
-- Rajasthan
-- Sikkim
-- Tamil Nadu
-- Telangana
-- Tripura
-- Uttar Pradesh
-- Uttarakhand
-- West Bengal
+### Phase 6: Client Cutover
 
-## Frontend Behavior Changes
+- Point web, admin, iOS, and Android to the same API host.
+- Release mobile builds only after route compatibility tests pass.
+- Keep feature flags server-side so app releases are not needed for every backend behavior change.
 
-Create a frontend hook/helper:
+### Phase 7: Retire App Backend
 
-```js
-useStorefrontConfig()
-```
-
-It calls `/api/storefront/config` and exposes `demoEcommerceMode`.
-
-Product page:
-
-- Affiliate mode: show `Shop now` link to `affiliateLink`.
-- Demo mode: show `Buy now` button/link to `/checkout?productId=:id`.
-
-Product cards:
-
-- Affiliate mode: `Shop` opens affiliate link.
-- Demo mode: `Buy` goes to checkout.
-
-Cart:
-
-- Affiliate mode: keep checkout disabled or discovery-oriented.
-- Demo mode: enable checkout.
-
-Wishlist:
-
-- Affiliate mode: existing external behavior.
-- Demo mode: `Buy now` goes to checkout.
-
-Policy pages:
-
-- Read storefront config.
-- Render affiliate policy copy or demo ecommerce policy copy.
-
-## Legal And Policy Pages
-
-Pages that need mode-aware content:
-
-- Terms and Conditions
-- Privacy Policy
-- Shipping Policy
-- Cancellation Policy
-- Refund Policy
-- Contact and Support
-- About or How It Works, if they mention Amazon checkout
-
-Affiliate mode wording:
-
-- Lookmefy is a product discovery and affiliate platform.
-- Checkout, delivery, cancellation, returns, refunds, and warranty happen through Amazon or the seller.
-
-Demo ecommerce mode wording:
-
-- Lookmefy collects product orders through internal checkout.
-- Checkout success is simulated for demo mode and does not process a real PhonePe payment.
-- Delivery is currently within India.
-- Customer contact and address are collected for delivery and payment updates.
-- Cancellation/refund rules should match actual fulfillment rules.
-
-Important:
-
-- If real money is charged and products are really fulfilled, policies must be production-grade.
-- If it is only a demonstration, checkout and policy text must clearly say demo/test where required.
-
-## Admin UI Plan
-
-Add setting control:
-
-- Location: Admin Settings or System Management.
-- Toggle label: Demo ecommerce mode.
-- Description: Switch public product CTAs from affiliate links to internal checkout.
-- Show current status.
-- Require confirmation before turning ON in production.
-
-Add ecommerce orders page:
-
-- List product orders.
-- Search by order id, phone, and name.
-- Filter by payment status.
-- Filter by fulfillment status.
-- View order detail.
-- Update fulfillment status.
-- See demo payment state and amount.
-
-Potential admin route placement:
-
-- User Operations: Orders for day-to-day order handling.
-- System Management: Toggle for mode control.
-
-## Demo Payment Design
-
-Demo product checkout should not use PhonePe. Keep PhonePe HTTP/client helpers available for future real product payment mode, but do not call them from demo mode.
-
-Rules:
-
-- Browser sends only product IDs, quantities, variants, contact, and address.
-- Backend computes all prices.
-- Backend creates `ProductOrder`.
-- Backend marks demo product order as paid through a dedicated demo-success endpoint.
-- Payment success must be clearly marked as simulated/demo in stored metadata.
-- Duplicate demo-success calls must not mark paid twice or mutate totals.
-- Token payments stay real PhonePe payments and remain independent.
-
-Future real product payment mode:
-
-- Re-enable the existing `POST /api/orders/:id/payment` route from the UI only when product payments should be real.
-- PhonePe amount uses `ProductOrder.total`.
-- Payment success requires backend reconciliation with PhonePe.
-- Callback only triggers reconciliation.
-
-## Security Requirements
-
-- Validate all ObjectIds.
-- Validate quantity range.
-- Validate product `isActive` and availability.
-- Validate pincode exactly 6 digits.
-- Validate India state against allowlist.
-- Normalize phone number.
-- Rate-limit order creation and payment creation.
-- Use idempotency key for payment creation.
-- Do not log full address/payment provider payloads.
-- Keep PhonePe secrets server-side only.
-- Do not trust frontend totals.
-- Rotate any secrets that were pasted into chat, screenshots, tickets, or shared documents.
+- Stop deploying `fit-look-APP/server`.
+- Keep `fit-look-APP/mobile` as the mobile client.
+- Archive old app backend routes once no production client depends on them.
 
 ## Testing Plan
 
-Unit tests:
+### Backend Tests
 
-- Storefront config defaults to affiliate mode.
-- Admin toggle requires proper permission.
-- Pincode rejects invalid values.
-- Pincode returns city/state for valid serviceable pincode.
-- Product order rejects tampered totals.
-- Product order rejects inactive products.
-- Product order computes subtotal and total server-side.
-- Demo success endpoint marks order paid without PhonePe.
-- Demo success endpoint is idempotent.
-- Real PhonePe product payment tests can stay as future-mode coverage.
-- Product order payment status does not credit AI tokens.
+- Auth: signup, login, OTP, password reset, account deletion
+- Admin: login, permissions, storefront toggle, product/order management
+- Storefront: config, demo mode, affiliate mode
+- Product checkout: logged-in required, address validation, pincode autofill, order success
+- Credit checkout: Razorpay checkout path, signature verification, idempotency
+- Apple IAP: transaction verification, restore, status, server notifications
+- Product catalog: list, detail, filters, search
+- Try-on: create job, poll job, credit consumption, failure refund if applicable
+- Closet: item create, analyze, outfit generation, chat
+- Recommendations: events, recent searches, studio chat
+- Media: owner access, unauthorized access, CDN URL handling
 
-Frontend tests:
+### Integration Tests
 
-- Affiliate mode product CTA opens affiliate link.
-- Demo mode product CTA goes to checkout.
-- Cart checkout is disabled in affiliate mode.
-- Cart checkout is enabled in demo mode.
-- Checkout validates required fields.
-- Pincode autofills city/state.
-- Pay now shows checkout successful popup in demo mode.
-- Policy page copy switches with mode.
+- Web Buy Now in demo mode creates a product order and shows success.
+- Web Buy Now while logged out redirects or prompts login/signup.
+- Token top-up opens Razorpay even when product demo ecommerce mode is enabled.
+- Token top-up verifies the Razorpay checkout signature server-side before crediting.
+- iOS purchase verification grants credits once.
+- Duplicate payment callbacks do not grant credits twice.
+- Admin can see product orders and credit orders.
+- Load balancer targets all return same `/api/health/version`.
 
-Browser tests:
+### Mobile Compatibility Tests
 
-- Use a dedicated test MongoDB URI.
-- Do not run browser tests against production `.env`.
+- Run contract tests against all routes used in `fit-look-APP/mobile`.
+- Test with iOS simulator.
+- Test with Android emulator.
+- Confirm old app builds still work if aliases are required.
 
-## Deployment Plan
+## Operational Plan
 
-1. Add backend models and routes.
-2. Add admin toggle but keep default OFF.
-3. Deploy with mode OFF.
-4. Verify existing affiliate site is unchanged.
-5. Turn mode ON in staging or controlled production test.
-6. Verify checkout success popup, order status, admin order view, and policy text.
-7. Turn mode OFF if any issue appears.
+### Health Endpoints
 
-## Rollback Plan
-
-Because this is feature-flagged:
-
-- Immediate rollback is toggling `demoEcommerceMode` OFF in admin.
-- Code rollback should only be needed if the new endpoints affect existing flows.
-- Existing affiliate links and token payments should remain independent.
-
-## Suggested Implementation Order
-
-1. `StorefrontSetting` model and `/api/storefront/config`.
-2. Admin toggle endpoint and admin UI.
-3. `ProductOrder` model.
-4. Pincode lookup endpoint.
-5. Product order create/read endpoints.
-6. Demo success endpoint.
-7. Checkout page.
-8. Product/cart/wishlist CTA switching.
-9. Mode-aware policy pages.
-10. Admin ecommerce orders page.
-11. Full tests and staging validation.
-
-## New Polish Change Plan
-
-These changes are planned only and should be implemented after the current pushed demo checkout work is deployed/verified.
-
-### Checkout Heading Copy
-
-Problem:
-
-- Checkout page currently shows the main heading as `Contact`.
-- The desired storefront feel is closer to a standard ecommerce checkout.
-
-Planned change:
-
-- Change the checkout form main heading from `Contact` to `Checkout`.
-- Keep the contact fields below it:
-  - `Full name`
-  - `Mobile number`
-- Keep the helper copy short, for example:
-  - `For payment and delivery updates`
-- Suggested final hierarchy:
-  - Kicker: `Secure checkout`
-  - H1: `Checkout`
-  - Subcopy: `For payment and delivery updates`
-
-Affected file:
-
-- `src/App.jsx`, `CheckoutPage`.
-
-### Existing User Signup Redirect
-
-Problem:
-
-- If a person tries to sign up with an account that already exists, the flow should not leave them stuck on signup.
-- They should be redirected to login with their identifier prefilled.
-
-Planned behavior:
-
-- When signup detects an existing account:
-  - Stop the signup flow.
-  - Redirect to `/login`.
-  - Pass the existing identifier in the query string.
-  - Preserve any return URL so buying flow continues after login.
-
-Recommended URL shape:
+Recommended:
 
 ```txt
-/login?identifier=<encoded-email-or-mobile>&return=<encoded-return-path>
+GET /api/health
+GET /api/health/version
+GET /api/health/providers
+GET /api/admin/ops/queues
 ```
 
-Current app note:
-
-- The current auth UI is mobile-first and does not collect checkout email.
-- If signup duplicate detection is based on mobile, prefill the mobile number on login.
-- If an email signup field is introduced later, prefill email instead.
-- The query param can be named generically as `identifier` so login can support either email or mobile without another route change.
-
-Backend/frontend handling:
-
-- Backend signup should return a recognizable duplicate-account error, ideally with:
+`/api/health/version` should return:
 
 ```json
 {
-  "message": "Account already exists. Please sign in.",
-  "code": "ACCOUNT_EXISTS",
-  "identifier": "<safe identifier>"
+  "ok": true,
+  "commit": "git-sha",
+  "instanceName": "fitlook-api-1",
+  "appRole": "api",
+  "startedAt": "timestamp"
 }
 ```
 
-- Frontend signup should catch `ACCOUNT_EXISTS`.
-- Login page should read `identifier` and populate the login input.
-- If `return` exists, login should keep using it after successful authentication.
+### Deployment Rules
 
-Tests:
+- Deploy the same commit to every API instance.
+- Restart every API service after pulling.
+- Verify local instance health on port 5050.
+- Verify public API health through `https://api.lookmefy.in`.
+- Only then update web/admin/mobile clients if needed.
 
-- Signup duplicate response uses `ACCOUNT_EXISTS`.
-- Signup UI redirects to login with `identifier`.
-- Login page preloads the identifier.
-- Return URL survives signup-to-login redirect.
+### Load Balancer Rule
 
-### Remove Ratings In Demo Storefront
+One API target group can contain multiple backend instances. That is fine.
 
-Problem:
+The problem happens when:
 
-- Product cards/details currently show rating and review count.
-- In demo ecommerce mode this can look like unsupported commerce claims.
+- Target A has new code.
+- Target B has old code.
+- The load balancer randomly sends requests to both.
 
-Planned behavior:
+The fix is not separate target groups for versions. The fix is a consistent deploy process and a version health endpoint.
 
-- Hide rating UI when `demoEcommerceMode === true`.
-- Keep ratings visible in affiliate mode if needed.
+## Admin Control Plane
 
-Affected surfaces:
+Admin should eventually manage:
 
-- Product cards in catalog/search/category surfaces.
-- Product detail page rating row.
-- Wishlist product card if ratings are added there later.
-- Any related/recommended product modules that render rating snippets.
+- Demo ecommerce mode
+- Product order status
+- Credit packs and token pricing
+- Payment mode settings
+- App config flags
+- AI provider selection
+- Queue status
+- Failed generation retries
+- User credit adjustments
+- User account support
+- Policy copy mode
+- Mobile minimum supported version
+- Maintenance banners
 
-Implementation approach:
+## Security Requirements
 
-- Use `demoEcommerceMode` already passed into product surfaces.
-- Wrap rating JSX with `!demoEcommerceMode`.
-- Avoid deleting rating data from API responses; this is display-only.
+- Never expose provider secrets to frontend or mobile apps.
+- Keep Apple, Razorpay, AI, storage, and OTP secrets server-side only.
+- Use idempotency keys for payment and credit grant flows.
+- Log provider callbacks but redact sensitive payload fields.
+- Use admin audit logs for all admin-side state changes.
+- Keep rate limits configurable but do not remove them globally.
+- Require auth for Buy Now in ecommerce mode.
+- Require auth for token purchases.
+- Validate ownership for media and generated assets.
 
-Tests:
+## Key Decisions Needed
 
-- Demo mode product page does not render rating/review text.
-- Affiliate mode still renders rating where available.
+### 1. Canonical Backend
 
-### Public Policy And Terms Copy Without "Demo"
+Recommendation:
 
-Problem:
+```txt
+Use root server/ as the canonical unified backend.
+Port required app backend features from fit-look-APP/server into it.
+```
 
-- In demo ecommerce mode, important public pages currently mention `demo`.
-- Public policy/terms pages should read like ecommerce policies, not like internal test/demo language.
+### 2. Credit Ledger
 
-Planned behavior:
+Recommendation:
 
-- Keep internal metadata as demo/simulated for admin and safety.
-- Remove public-facing mentions of:
-  - `demo checkout`
-  - `demo ecommerce`
-  - `simulated payment`
-  - `No real payment`
-- Replace with production-like wording that still does not overpromise real payment capture.
+```txt
+Make CreditEvent/CreditLedger mandatory for every credit balance mutation.
+```
 
-Suggested public wording pattern:
+### 3. iOS Payments
 
-- Terms:
-  - `Lookmefy can collect product order details and confirm supported India deliveries through the checkout flow.`
-- Payments:
-  - `The Pay now action confirms the order in Lookmefy for this checkout mode.`
-- Privacy:
-  - `We collect checkout contact details, delivery addresses, order totals, and payment status metadata needed to process and support orders.`
-- Shipping:
-  - `Lookmefy currently delivers product orders within India to serviceable pincodes.`
-- Refund/cancellation:
-  - `If an order remains pending because of a technical issue, you can retry checkout or contact support.`
+Recommendation:
 
-Affected pages:
+```txt
+Keep Apple IAP for iOS digital credits and subscriptions.
+```
 
-- `/terms`
-- `/privacy`
-- `/shipping`
-- `/refund`
-- `/cancellation`
-- `/contact`
-- `/support`
+### 4. Android Payments
 
-Important constraint:
+Recommendation:
 
-- Do not remove `demo` wording from admin/order internals.
-- Admin order metadata should still show `paymentMode: demo` and `providerState: DEMO_COMPLETED` so the team does not mistake these orders for live payment-provider settlements.
+```txt
+Review Play Store policy before finalizing Android digital credit payments.
+Keep backend ready for Google Play Billing even if Razorpay remains active first.
+```
 
-Tests:
+### 5. Product Checkout
 
-- Demo-mode public policy pages do not include the word `demo`.
-- Demo-mode public policy pages do not mention PhonePe for product checkout.
-- Admin/order metadata still records demo mode internally.
+Recommendation:
+
+```txt
+Keep product checkout separate from token checkout.
+Product orders use ProductOrder.
+Credit purchases use TokenOrder plus CreditLedger.
+```
+
+### 6. Job System
+
+Recommendation:
+
+```txt
+Use Redis/BullMQ for execution and Mongo for durable user-visible job records.
+```
+
+## Suggested Implementation Order
+
+1. Add route inventory and compatibility tests.
+2. Merge model fields without changing behavior.
+3. Port Apple payment routes into root backend.
+4. Normalize credit ledger.
+5. Port missing mobile auth and media behavior.
+6. Port missing mobile closet and try-on behavior.
+7. Add `/api/health/version`.
+8. Deploy same commit to every backend target.
+9. Point mobile app to unified backend and run simulator tests.
+10. Retire separate app backend deployment.
+
+## Definition Of Done
+
+The unified backend is complete when:
+
+- Web storefront uses the unified API.
+- Admin dashboard uses the unified API.
+- iOS app uses the unified API.
+- Android app uses the unified API.
+- No production client depends on `fit-look-APP/server`.
+- All payment providers grant credits through one ledger path.
+- Product orders and credit orders are clearly separated.
+- Admin can manage web, app, product, payment, and operations behavior.
+- Load-balanced API instances all return the same version.
+- Route compatibility tests pass for web, admin, iOS, and Android.
+- Secrets remain outside GitHub.

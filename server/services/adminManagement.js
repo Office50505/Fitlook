@@ -28,7 +28,7 @@ const COST_PROVIDERS = [
   { id: 'mongodb', label: 'MongoDB Atlas', category: 'Database', currency: 'USD' },
   { id: 'otp', label: 'OTP', category: 'Messaging', currency: 'USD' },
   { id: 'aws', label: 'AWS', category: 'Infrastructure', currency: 'USD' },
-  { id: 'phonepe', label: 'PhonePe Fees', category: 'Payments', currency: 'INR' }
+  { id: 'razorpay', label: 'Razorpay Fees', category: 'Payments', currency: 'INR' }
 ];
 
 function rounded(value, digits = 2) {
@@ -194,7 +194,7 @@ async function systemSummary() {
     serviceStatus({ id: 'pruna', label: 'Pruna image API', status: !prunaHealth.configured ? 'not_configured' : prunaHealth.healthy === true ? 'healthy' : prunaHealth.healthy === false ? 'down' : 'configured', detail: prunaHealth.detail, group: 'provider' }),
     serviceStatus({ id: 'pixverse', label: 'FAL / PixVerse video API', status: !falHealth.configured ? 'not_configured' : falHealth.healthy ? 'healthy' : 'down', detail: falHealth.detail, group: 'provider' }),
     serviceStatus({ id: 'otp', label: 'OTP delivery', status: readiness.otpProvider === 'configured' ? 'configured' : 'not_configured', detail: `${readiness.otpProviderType} provider is ${readiness.otpProvider.replace('_', ' ')}.`, group: 'provider' }),
-    serviceStatus({ id: 'phonepe', label: 'PhonePe', status: readiness.phonePe === 'configured' ? 'configured' : 'not_configured', detail: `Payment configuration is ${readiness.phonePe.replace('_', ' ')}.`, group: 'provider' })
+    serviceStatus({ id: 'razorpay', label: 'Razorpay', status: readiness.razorpay === 'configured' ? 'configured' : 'not_configured', detail: `Payment configuration is ${readiness.razorpay.replace('_', ' ')}.`, group: 'provider' })
   ];
   await Promise.all(services.map(reconcileServiceIncident));
   const activeIncidents = await SystemIncident.find({ status: { $ne: 'resolved' } }).sort({ lastSeenAt: -1 }).limit(20).lean();
@@ -525,17 +525,17 @@ async function awsCostDetail() {
   return detail;
 }
 
-async function phonePeCostDetail() {
-  const detail = baseProvider('phonepe');
+async function razorpayCostDetail() {
+  const detail = baseProvider('razorpay');
   const period = currentMonthPeriod();
   const [totals = {}] = await TokenOrder.aggregate([
     { $match: { status: 'completed', createdAt: { $gte: period.from, $lt: period.to } } },
     { $group: { _id: null, payments: { $sum: 1 }, grossInr: { $sum: '$amount' } } }
   ]);
-  const feePercent = envNumber('PHONEPE_FEE_PERCENT');
-  const fixedFee = envNumber('PHONEPE_FEE_FIXED_INR') || 0;
+  const feePercent = envNumber('RAZORPAY_FEE_PERCENT');
+  const fixedFee = envNumber('RAZORPAY_FEE_FIXED_INR') || 0;
   const estimatedFee = feePercent === null ? null : rounded((Number(totals.grossInr || 0) * feePercent / 100) + (Number(totals.payments || 0) * fixedFee), 2);
-  detail.connection = configurationReadiness().phonePe === 'configured' ? 'usage_connected' : 'not_configured';
+  detail.connection = configurationReadiness().razorpay === 'configured' ? 'usage_connected' : 'not_configured';
   detail.spend = estimatedFee;
   detail.source = estimatedFee === null ? 'unavailable' : 'estimated';
   detail.sourceLabel = estimatedFee === null ? 'Payment totals are tracked; settlement fees are not connected' : 'Estimated from completed payments and configured fee rate';
@@ -544,7 +544,7 @@ async function phonePeCostDetail() {
     { label: 'Gross payments', value: Number(totals.grossInr || 0), format: 'money' },
     { label: 'Settlement balance', value: null, format: 'money' }
   ];
-  detail.requirements = ['PhonePe settlement or reconciliation report access', 'PHONEPE_FEE_PERCENT for estimates'];
+  detail.requirements = ['Razorpay settlement or reconciliation report access', 'RAZORPAY_FEE_PERCENT for estimates'];
   return detail;
 }
 
@@ -557,7 +557,7 @@ async function providerCostDetail(id, generationData = null) {
   if (id === 'mongodb') return mongodbCostDetail();
   if (id === 'otp') return otpCostDetail();
   if (id === 'aws') return awsCostDetail();
-  if (id === 'phonepe') return phonePeCostDetail();
+  if (id === 'razorpay') return razorpayCostDetail();
   return baseProvider(id);
 }
 

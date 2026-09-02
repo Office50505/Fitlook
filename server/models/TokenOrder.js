@@ -4,7 +4,11 @@ const tokenOrderSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     merchantOrderId: { type: String, trim: true, required: true, unique: true },
+    provider: { type: String, trim: true, lowercase: true, default: 'phonepe', index: true },
     phonePeOrderId: { type: String, trim: true },
+    razorpayOrderId: { type: String, trim: true, index: true },
+    razorpayPaymentId: { type: String, trim: true },
+    razorpaySignature: { type: String, trim: true },
     planId: { type: String, trim: true, required: true },
     planName: { type: String, trim: true, required: true },
     orderType: {
@@ -52,7 +56,10 @@ tokenOrderSchema.methods.toClient = function toClient() {
   return {
     id: this._id.toString(),
     merchantOrderId: this.merchantOrderId,
+    provider: this.provider || 'phonepe',
     phonePeOrderId: this.phonePeOrderId,
+    razorpayOrderId: this.razorpayOrderId || '',
+    razorpayPaymentId: this.razorpayPaymentId || '',
     planId: this.planId,
     planName: this.planName,
     orderType: this.orderType,

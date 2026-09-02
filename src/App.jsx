@@ -1180,6 +1180,33 @@ async function generateQueuedTryOn(path, options = {}) {
   return resolveQueuedJobResponse(data, { timeout: options.timeout || AI_IMAGE_TIMEOUT_MS });
 }
 
+let razorpayCheckoutLoader = null;
+
+function loadRazorpayCheckout() {
+  if (typeof window === 'undefined') return Promise.reject(new Error('Razorpay checkout is only available in the browser.'));
+  if (window.Razorpay) return Promise.resolve(window.Razorpay);
+  if (razorpayCheckoutLoader) return razorpayCheckoutLoader;
+  razorpayCheckoutLoader = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.Razorpay) resolve(window.Razorpay);
+      else reject(new Error('Razorpay checkout could not be loaded.'));
+    };
+    script.onerror = () => reject(new Error('Razorpay checkout could not be loaded. Check your connection and try again.'));
+    document.head.appendChild(script);
+  }).catch((error) => {
+    razorpayCheckoutLoader = null;
+    throw error;
+  });
+  return razorpayCheckoutLoader;
+}
+
+function razorpayFailureMessage(response) {
+  return response?.error?.description || response?.error?.reason || 'Payment was not completed. You can try again when ready.';
+}
+
 function recordEvent(type, payload = {}) {
   trackClientEvent(type, payload);
   if (!readAuthToken()) return;
@@ -6441,7 +6468,7 @@ function ImageLightbox({ image, onClose }) {
   return createPortal(lightbox, document.body);
 }
 
-function TokenPage({ user, setUser, mode = 'overview', demoEcommerceMode = false, demoModeLoading = false, demoModeError = '' }) {
+function TokenPage({ user, setUser, mode = 'overview' }) {
   const isTopUpPage = mode === 'topup';
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [selectedPackId, setSelectedPackId] = useState(isTopUpPage ? 'topup_50_tokens' : 'monthly_150_tokens');
@@ -6458,7 +6485,7 @@ function TokenPage({ user, setUser, mode = 'overview', demoEcommerceMode = false
     if (!user || !returnedOrderId || verifiedOrderRef.current === returnedOrderId) return;
     verifiedOrderRef.current = returnedOrderId;
     let alive = true;
-    setMessage('Verifying payment with PhonePe...');
+    setMessage('Verifying payment with Razorpay...');
     api(`/payments/orders/${encodeURIComponent(returnedOrderId)}/status`)
       .then((data) => {
         if (!alive) return;
@@ -6484,16 +6511,8 @@ function TokenPage({ user, setUser, mode = 'overview', demoEcommerceMode = false
       window.location.href = '/signup';
       return;
     }
-    if (demoModeLoading) {
-      setMessage('Checking checkout mode. Try again in a moment.');
-      return;
-    }
-    if (demoModeError) {
-      setMessage('Checkout settings are unavailable. Refresh before buying credits.');
-      return;
-    }
     setCheckoutLoading(true);
-    setMessage(demoEcommerceMode ? 'Adding credits...' : 'Opening secure PhonePe checkout...');
+    setMessage('Opening secure Razorpay checkout...');
     try {
       const idempotencyKey = checkoutIdempotencyRef.current.get(pack.id)
         || (window.crypto?.randomUUID?.() || `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -6503,16 +6522,69 @@ function TokenPage({ user, setUser, mode = 'overview', demoEcommerceMode = false
         headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({ planId: pack.planId || pack.id })
       });
-      if (data.demo) {
-        if (data.user) setUser(data.user);
-        setCreditedOrder({ order: data.order, user: data.user || user });
-        setMessage('');
-        setCheckoutLoading(false);
-        announce(`${Number(data.order?.tokens || 0)} credits credited.`);
+      if (data.razorpay) {
+        const Razorpay = await loadRazorpayCheckout();
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return false;
+            settled = true;
+            return true;
+          };
+          const checkout = new Razorpay({
+            key: data.razorpay.key,
+            amount: data.razorpay.amount,
+            currency: data.razorpay.currency || 'INR',
+            name: data.razorpay.name || 'Lookmefy',
+            description: data.razorpay.description || pack.label,
+            order_id: data.razorpay.orderId,
+            prefill: data.razorpay.prefill || {},
+            notes: data.razorpay.notes || {},
+            theme: { color: '#1f1b19' },
+            handler: async (response) => {
+              try {
+                setCheckoutLoading(true);
+                setMessage('Verifying payment with Razorpay...');
+                const verified = await api(data.razorpay.verifyPath || '/payments/razorpay/verify', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    merchantOrderId: data.order?.merchantOrderId,
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_signature: response.razorpay_signature
+                  })
+                });
+                if (verified.user) setUser(verified.user);
+                setCreditedOrder({ order: verified.order, user: verified.user || user });
+                checkoutIdempotencyRef.current.delete(pack.id);
+                setMessage('');
+                announce(`${Number(verified.order?.tokens || 0)} credits credited.`);
+                if (finish()) resolve();
+              } catch (error) {
+                if (finish()) reject(error);
+              } finally {
+                setCheckoutLoading(false);
+              }
+            },
+            modal: {
+              ondismiss: () => {
+                if (!finish()) return;
+                setMessage('Checkout closed before payment was completed.');
+                setCheckoutLoading(false);
+                resolve();
+              }
+            }
+          });
+          checkout.on('payment.failed', (response) => {
+            if (!finish()) return;
+            setMessage(razorpayFailureMessage(response));
+            setCheckoutLoading(false);
+            resolve();
+          });
+          checkout.open();
+          setCheckoutLoading(false);
+        });
         return;
-      }
-      if (demoEcommerceMode) {
-        throw new Error('Checkout mode is active, but the server returned a payment redirect. Refresh and try again after deployment.');
       }
       if (!data.redirectUrl) throw new Error('Checkout did not return a payment link.');
       window.location.assign(data.redirectUrl);
@@ -6635,9 +6707,9 @@ function TokenPage({ user, setUser, mode = 'overview', demoEcommerceMode = false
             </section>
 
             <section className="credit-payment-section" aria-label="Payment method">
-              <div className="credit-section-heading"><h2>Payment Method</h2><span>{demoEcommerceMode ? 'Instant crediting' : 'Secure checkout'}</span></div>
+              <div className="credit-section-heading"><h2>Payment Method</h2><span>Secure checkout</span></div>
               <button className="credit-payment-choice active" type="button" aria-pressed="true">
-                <span className="credit-phonepe-mark">{demoEcommerceMode ? 'L' : 'P'}</span><strong>{demoEcommerceMode ? 'Lookmefy credits' : 'PhonePe'}</strong><small>{demoEcommerceMode ? 'Credits are added inside Lookmefy' : 'UPI, cards, and net banking'}</small><b>Selected</b>
+                <span className="credit-phonepe-mark">R</span><strong>Razorpay</strong><small>UPI, cards, and net banking</small><b>Selected</b>
               </button>
             </section>
           </div>
@@ -6659,8 +6731,8 @@ function TokenPage({ user, setUser, mode = 'overview', demoEcommerceMode = false
             )}
             <div className="credit-summary-row"><span>Processing Fee</span><strong>Free</strong></div>
             <div className="credit-summary-total"><span>Due today</span><strong>{selectedPack.price}</strong></div>
-            <button type="button" onClick={completeSelection} disabled={checkoutLoading || demoModeLoading}>{demoModeLoading ? 'Checking mode...' : checkoutLoading ? demoEcommerceMode ? 'Crediting...' : 'Opening checkout...' : selectedPack.cta}</button>
-            <small>{isPaidPack ? demoEcommerceMode ? 'Credits are added instantly inside Lookmefy.' : (isActive && subscription.currentPeriodEnd && selectedPack.id === 'monthly_150_tokens' ? `Current plan ends ${formatDate(subscription.currentPeriodEnd)}. Credits are added after secure payment verification.` : 'Secured by PhonePe. Credits are added only after payment verification.') : selectedPack.copy}</small>
+            <button type="button" onClick={completeSelection} disabled={checkoutLoading}>{checkoutLoading ? 'Opening checkout...' : selectedPack.cta}</button>
+            <small>{isPaidPack ? (isActive && subscription.currentPeriodEnd && selectedPack.id === 'monthly_150_tokens' ? `Current plan ends ${formatDate(subscription.currentPeriodEnd)}. Credits are added after secure payment verification.` : 'Secured by Razorpay. Credits are added only after payment verification.') : selectedPack.copy}</small>
           </aside>
         </div>
       </section>
@@ -6937,7 +7009,7 @@ function ProfilePage({ user, setUser }) {
 
         <section className="profile-reference-panel profile-reference-payment" aria-label="Payment methods">
           <div className="profile-reference-section-head"><div><h2>Payment Methods</h2><p>Payments are securely verified before credits are added.</p></div><a href="/tokens">Add credits</a></div>
-          <div className="profile-reference-payment-row"><span>PhonePe</span><strong>UPI, cards, and net banking</strong><small>Secure checkout</small><a href="/tokens" aria-label="Open credit checkout">›</a></div>
+          <div className="profile-reference-payment-row"><span>Razorpay</span><strong>UPI, cards, and net banking</strong><small>Secure checkout</small><a href="/tokens" aria-label="Open credit checkout">›</a></div>
         </section>
 
         <section className="profile-reference-panel profile-reference-settings" aria-label="Account settings">
@@ -7703,7 +7775,7 @@ function OrderStatusPage({ id, user }) {
         {order && (
           <>
             <h1>{paid ? 'Payment received.' : failed ? 'Payment was not completed.' : 'Payment is pending.'}</h1>
-            <p>{paid ? 'Your order is confirmed and delivery updates will be sent to your contact details.' : failed ? 'You can return to checkout and try payment again.' : 'PhonePe is still processing this payment. This page will refresh automatically.'}</p>
+            <p>{paid ? 'Your order is confirmed and delivery updates will be sent to your contact details.' : failed ? 'You can return to checkout and try payment again.' : 'Payment is still processing. This page will refresh automatically.'}</p>
             <div className="order-status-details">
               <div><span>Order</span><strong>{order.merchantOrderId || order.id}</strong></div>
               <div><span>Payment</span><strong>{order.paymentStatus}</strong></div>
@@ -10353,8 +10425,8 @@ function App() {
     if (path === '/checkout') return <CheckoutPage user={user} demoEcommerceMode={demoEcommerceMode} demoModeLoading={storefrontConfig.loading} />;
     if (path === '/custom-try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/style-bot') return <StyleBotPage user={user} setUser={setUser} />;
-    if (path === '/tokens') return <TokenPage user={user} setUser={setUser} mode="overview" demoEcommerceMode={demoEcommerceMode} demoModeLoading={storefrontConfig.loading} demoModeError={storefrontConfig.error} />;
-    if (path === '/tokens/top-up') return <TokenPage key={routeKey} user={user} setUser={setUser} mode="topup" demoEcommerceMode={demoEcommerceMode} demoModeLoading={storefrontConfig.loading} demoModeError={storefrontConfig.error} />;
+    if (path === '/tokens') return <TokenPage user={user} setUser={setUser} mode="overview" />;
+    if (path === '/tokens/top-up') return <TokenPage key={routeKey} user={user} setUser={setUser} mode="topup" />;
     if (path === '/profile') return <ProfilePage user={user} setUser={setUser} />;
     if (path === '/generation-history') return <GenerationHistoryPage user={user} />;
     if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} demoEcommerceMode={demoEcommerceMode} />;

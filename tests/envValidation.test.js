@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { configurationReadiness, phonePeEnabled, validateServerEnv } from '../server/utils/envValidation.js';
+import { configurationReadiness, phonePeEnabled, razorpayEnabled, validateServerEnv } from '../server/utils/envValidation.js';
 
 const productionAiEnv = {
   AI_PROVIDER: 'pruna',
@@ -72,7 +72,8 @@ test('MSG91 OTP delivery is valid and reported configured with complete server c
   assert.deepEqual(configurationReadiness(env), {
     otpProvider: 'configured',
     otpProviderType: 'msg91',
-    phonePe: 'disabled'
+    phonePe: 'disabled',
+    razorpay: 'not_configured'
   });
 });
 
@@ -139,7 +140,8 @@ test('PhonePe can be explicitly disabled without validating stale partial creden
   assert.deepEqual(configurationReadiness(env), {
     otpProvider: 'disabled',
     otpProviderType: 'disabled',
-    phonePe: 'disabled'
+    phonePe: 'disabled',
+    razorpay: 'not_configured'
   });
 });
 
@@ -153,6 +155,32 @@ test('partial PhonePe production configuration still fails when payments are ena
     PHONEPE_ENABLED: 'true',
     PHONEPE_CLIENT_ID: 'partial'
   }), /PhonePe payments are partially configured/);
+});
+
+test('Razorpay readiness reports configured test credentials and validates partial production config', () => {
+  const configured = {
+    NODE_ENV: 'production',
+    ...productionAiEnv,
+    MONGODB_URI: 'mongodb://localhost:27017/fitlook',
+    JWT_SECRET: 'secret',
+    OTP_DELIVERY_PROVIDER: 'disabled',
+    PHONEPE_ENABLED: 'false',
+    RAZORPAY_KEY_ID: 'rzp_test_123',
+    RAZORPAY_KEY_SECRET: 'secret'
+  };
+  assert.equal(razorpayEnabled(configured), true);
+  assert.deepEqual(validateServerEnv(configured), { warnings: [] });
+  assert.equal(configurationReadiness(configured).razorpay, 'configured');
+
+  assert.throws(() => validateServerEnv({
+    NODE_ENV: 'production',
+    ...productionAiEnv,
+    MONGODB_URI: 'mongodb://localhost:27017/fitlook',
+    JWT_SECRET: 'secret',
+    OTP_DELIVERY_PROVIDER: 'disabled',
+    PHONEPE_ENABLED: 'false',
+    RAZORPAY_KEY_ID: 'rzp_test_partial'
+  }), /Razorpay payments are partially configured/);
 });
 
 test('validateServerEnv warns when mock OTP delivery is incomplete outside production', () => {
@@ -198,7 +226,8 @@ test('validateServerEnv allows explicitly enabled fixed OTP in production', () =
   assert.deepEqual(configurationReadiness(env), {
     otpProvider: 'configured',
     otpProviderType: 'fixed',
-    phonePe: 'disabled'
+    phonePe: 'disabled',
+    razorpay: 'not_configured'
   });
 });
 
