@@ -24,6 +24,14 @@ test('demo storefront hides product ratings while keeping checkout copy ecommerc
   assert.match(source, /!\s*demoEcommerceMode && \{ id: 'top-rated'/);
 });
 
+test('demo storefront hides Amazon badges on product imagery', async () => {
+  const source = await fs.readFile('src/App.jsx', 'utf8');
+
+  assert.match(source, /function displayProductBadge\(product, \{ demoEcommerceMode = false \} = \{\}\)/);
+  assert.match(source, /demoEcommerceMode && badge\.toLowerCase\(\) === 'amazon'/);
+  assert.match(source, /displayProductBadge\(product, \{ demoEcommerceMode \}\)/);
+});
+
 test('signup duplicate responses redirect through login with a prefilled identifier', async () => {
   const appSource = await fs.readFile('src/App.jsx', 'utf8');
   const authSource = await fs.readFile('server/routes/auth.js', 'utf8');

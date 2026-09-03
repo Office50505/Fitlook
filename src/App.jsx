@@ -1079,8 +1079,9 @@ function displayCategory(product) {
   return cleanDisplayText(product?.category, 'Products');
 }
 
-function displayProductBadge(product) {
+function displayProductBadge(product, { demoEcommerceMode = false } = {}) {
   const badge = cleanDisplayText(product?.badge, '');
+  if (demoEcommerceMode && badge.toLowerCase() === 'amazon') return '';
   return badge.toLowerCase() === 'affiliate' ? '' : badge;
 }
 
@@ -2205,7 +2206,7 @@ function AtelierProductRailCard({ product, demoEcommerceMode = false }) {
   const discount = hasDiscount ? Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100) : 0;
   const rating = Number(product.rating || 0);
   const ratingCount = Number(product.ratingCount || product.reviewsCount || product.reviewCount || 0);
-  const badge = displayProductBadge(product);
+  const badge = displayProductBadge(product, { demoEcommerceMode });
 
   return (
     <article className="atelier-product">
@@ -3564,7 +3565,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, d
   const [isWishlisted, setIsWishlisted] = useState(() => readWishlistProductIds().includes(String(product.id)));
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? `${Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}% OFF` : '';
-  const badge = displayProductBadge(product);
+  const badge = displayProductBadge(product, { demoEcommerceMode });
   const productImage = product.imageUrl || asset('hero2.png');
   const tryOnImageUrl = protectedMediaUrl(tryOn?.imageUrl || '');
   const tryOnVideoUrl = protectedMediaUrl(tryOn?.videoUrl || '');
@@ -8102,7 +8103,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
   const productImage = product.imageUrl || asset('hero2.png');
   const tryOnImageUrl = protectedMediaUrl(tryOn?.imageUrl || '');
   const tryOnVideoUrl = protectedMediaUrl(tryOn?.videoUrl || '');
-  const badge = displayProductBadge(product);
+  const badge = displayProductBadge(product, { demoEcommerceMode });
   const hasUsableTryOn = Boolean(tryOnImageUrl) && !tryOnImageFailed;
   const hasTryOnVideo = Boolean(tryOnVideoUrl) && hasUsableTryOn;
   const showingTryOnVideo = hasTryOnVideo && detailImageView === 'video';
