@@ -31297,54 +31297,87 @@ main,
 
   .mobile-bottom-nav {
     position: fixed;
-    right: 0;
-    bottom: 0;
-    left: 0;
+    right: 12px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    left: 12px;
     z-index: 120;
     display: grid;
     box-sizing: border-box;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     column-gap: 0;
-    height: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom));
-    overflow: hidden;
-    padding: 7px 4px max(7px, env(safe-area-inset-bottom));
-    border-top: 1px solid rgba(17, 16, 14, .10);
+    min-height: 72px;
+    height: auto;
+    overflow: visible;
+    padding: 7px 6px 5px;
+    border: 0;
+    border-radius: 24px;
     background: rgba(255, 253, 252, .96);
-    box-shadow: 0 -12px 34px rgba(17, 16, 14, .10);
+    box-shadow: 0 18px 44px rgba(30, 24, 21, .2);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
   }
 
   .mobile-bottom-nav a {
+    position: relative;
     display: grid;
     min-width: 0;
     max-width: 100%;
-    min-height: 52px;
+    min-height: 58px;
     place-items: center;
     align-content: center;
     gap: 3px;
-    border-radius: 12px;
-    color: #69625d;
+    border-radius: 0;
+    color: #34302c;
     font-family: var(--font-interface);
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     line-height: 1;
     text-decoration: none;
+    background: transparent;
   }
 
   .mobile-bottom-nav svg {
-    width: 19px;
-    height: 19px;
+    width: 23px;
+    height: 23px;
     fill: none;
     stroke: currentColor;
-    stroke-width: 1.85;
+    stroke-width: 1.65;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
 
   .mobile-bottom-nav a.active {
-    background: #211e1c;
-    color: #fff;
+    background: transparent;
+    color: #a74458;
+  }
+
+  .mobile-bottom-nav a.active svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .mobile-bottom-nav a.active::before {
+    content: "";
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    z-index: -1;
+    width: 50px;
+    height: 50px;
+    border-radius: 999px;
+    background: #f5e5e9;
+    transform: translateX(-50%);
+  }
+
+  .mobile-bottom-nav a.active::after {
+    content: "";
+    position: absolute;
+    right: 16px;
+    bottom: -4px;
+    left: 16px;
+    height: 2px;
+    border-radius: 999px;
+    background: #a74458;
   }
 
   .mobile-bottom-nav span {
@@ -37066,7 +37099,6 @@ label,
     top: 66px !important;
   }
 }
-<<<<<<< HEAD
 /* Closet mobile reference screen */
 .wardrobe-app-topbar,
 .wardrobe-status-strip,
@@ -39094,7 +39126,7 @@ label,
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
   }
-=======
+}
 
 /* Signup password fields share the login visibility toggle without changing the signup form rhythm. */
 .auth-signup-reference-form .auth-input-field.signup-field {
@@ -39150,5 +39182,128 @@ label,
 .auth-signup-reference-form .auth-input-field.signup-field .auth-password-toggle svg {
   width: 15px !important;
   height: 15px !important;
->>>>>>> 05e74cca516698977686e2df47cf32c619e51692
+}
+
+/* Closet desktop uses the same shared top header as the rest of the site. */
+@media (min-width: 761px) {
+  body:has(#main-content .wardrobe-studio-page) .site-header {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 140 !important;
+    display: block !important;
+    pointer-events: auto !important;
+    background: rgba(255, 253, 252, .94) !important;
+    border-bottom: 1px solid rgba(17, 16, 14, .08) !important;
+    box-shadow: none !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) .site-header .header-inner {
+    min-height: clamp(64px, 6vw, 82px) !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) .wardrobe-status-strip,
+  body:has(#main-content .wardrobe-studio-page) .wardrobe-app-topbar,
+  body:has(#main-content .wardrobe-studio-page) .wardrobe-app-bottom-nav {
+    display: none !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) .wardrobe-studio-page,
+  body:has(#main-content .wardrobe-studio-page) .wardrobe-model-stage {
+    height: calc(100svh - 82px) !important;
+    min-height: calc(760px - 82px) !important;
+    max-height: calc(100svh - 82px) !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) .wardrobe-model-stage {
+    background: #d7d7d5 !important;
+  }
+}
+
+/* Closet mobile also uses the shared top and bottom navigation. */
+@media (max-width: 760px) {
+  body:has(#main-content .wardrobe-studio-page) .site-header {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 140 !important;
+    display: block !important;
+    pointer-events: auto !important;
+    background: #fffdfc !important;
+    border-bottom: 1px solid rgba(17, 16, 14, .08) !important;
+    box-shadow: 0 1px 0 rgba(17, 16, 14, .08) !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) .site-header .header-inner {
+    min-height: 60px !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) > .mobile-bottom-nav {
+    position: fixed !important;
+    right: 12px !important;
+    bottom: max(8px, env(safe-area-inset-bottom)) !important;
+    left: 12px !important;
+    z-index: 160 !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    min-height: 72px !important;
+    height: auto !important;
+    padding: 7px 6px 5px !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 24px !important;
+    background: rgba(255, 255, 255, .96) !important;
+    box-shadow: 0 18px 44px rgba(30, 24, 21, .2) !important;
+    backdrop-filter: blur(18px) !important;
+    -webkit-backdrop-filter: blur(18px) !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) > .mobile-bottom-nav a {
+    position: relative !important;
+    min-height: 58px !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #34302c !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) > .mobile-bottom-nav a.active {
+    color: #a74458 !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) > .mobile-bottom-nav a.active::before {
+    content: "" !important;
+    position: absolute !important;
+    top: -5px !important;
+    left: 50% !important;
+    z-index: -1 !important;
+    width: 50px !important;
+    height: 50px !important;
+    border-radius: 999px !important;
+    background: #f5e5e9 !important;
+    transform: translateX(-50%) !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) > .mobile-bottom-nav a.active::after {
+    content: "" !important;
+    position: absolute !important;
+    right: 16px !important;
+    bottom: -4px !important;
+    left: 16px !important;
+    height: 2px !important;
+    border-radius: 999px !important;
+    background: #a74458 !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) .wardrobe-status-strip,
+  body:has(#main-content .wardrobe-studio-page) .wardrobe-app-topbar,
+  body:has(#main-content .wardrobe-studio-page) .wardrobe-app-bottom-nav {
+    display: none !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) .wardrobe-studio-page,
+  body:has(#main-content .wardrobe-studio-page) .wardrobe-model-stage {
+    height: calc(100svh - 60px) !important;
+    min-height: calc(100svh - 60px) !important;
+    max-height: calc(100svh - 60px) !important;
+  }
 }

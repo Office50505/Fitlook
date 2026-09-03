@@ -1579,24 +1579,14 @@ function useGenerationHistory(user) {
 
 function MobileBottomNav({ user }) {
   const currentPath = normalizePath();
-<<<<<<< HEAD
-  const usesWardrobeItems = currentPath === '/home' || currentPath === '/categories' || currentPath === '/explore' || currentPath === '/closet' || currentPath === '/style-bot' || currentPath === '/profile';
+  const usesWardrobeItems = currentPath === '/home' || currentPath === '/categories' || currentPath === '/explore' || currentPath === '/style-bot' || currentPath === '/profile';
   const usesWardrobeStyle = usesWardrobeItems || currentPath === '/custom-try-on';
-=======
-  const ProfileNavIcon = () => <NavProfileAvatar user={user} />;
->>>>>>> 05e74cca516698977686e2df47cf32c619e51692
   const mobileNavLinks = [
     { label: 'Home', href: '/home', Icon: HomeIcon },
     { label: 'Categories', href: '/categories', Icon: GridIcon },
     { label: 'Try-On', href: '/custom-try-on', Icon: TryOnIcon },
-<<<<<<< HEAD
     { label: 'Wardrobe', href: '/closet', Icon: TShirtIcon },
     { label: 'AI Studio', href: user ? '/style-bot' : '/signup', Icon: SparkleLineIcon }
-=======
-    { label: 'AI Stylist', href: user ? '/style-bot' : '/signup', Icon: SparkleLineIcon },
-    { label: 'Wardrobe', href: '/closet', Icon: ClosetIcon },
-    { label: 'Profile', href: user ? '/profile' : '/signup', Icon: ProfileNavIcon }
->>>>>>> 05e74cca516698977686e2df47cf32c619e51692
   ];
   const isActiveLink = (href, index, link = {}) => {
     if (link.inactiveOn?.includes(currentPath)) return false;
@@ -3888,7 +3878,7 @@ function inspectPreviewImage(src) {
   });
 }
 
-function stageMatchedModelImage(src, targetRgb = [215, 215, 213]) {
+function stageMatchedModelImage(src) {
   return new Promise((resolve, reject) => {
     if (!src) {
       reject(new Error('Model image URL is missing'));
@@ -3904,7 +3894,7 @@ function stageMatchedModelImage(src, targetRgb = [215, 215, 213]) {
         return;
       }
 
-      const maxSide = 1200;
+      const maxSide = 2400;
       const scale = Math.min(1, maxSide / Math.max(naturalWidth, naturalHeight));
       const width = Math.max(1, Math.round(naturalWidth * scale));
       const height = Math.max(1, Math.round(naturalHeight * scale));
@@ -3912,6 +3902,8 @@ function stageMatchedModelImage(src, targetRgb = [215, 215, 213]) {
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext('2d', { willReadFrequently: true });
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = 'high';
       context.drawImage(image, 0, 0, width, height);
 
       const imageData = context.getImageData(0, 0, width, height);
@@ -3935,7 +3927,7 @@ function stageMatchedModelImage(src, targetRgb = [215, 215, 213]) {
       const backgroundRgb = samples.length
         ? samples.reduce((sum, rgb) => [sum[0] + rgb[0], sum[1] + rgb[1], sum[2] + rgb[2]], [0, 0, 0]).map((value) => value / samples.length)
         : [238, 238, 236];
-      const threshold = 78;
+      const threshold = 72;
       const visited = new Uint8Array(width * height);
       const stack = [];
       const push = (x, y) => {
@@ -3967,10 +3959,7 @@ function stageMatchedModelImage(src, targetRgb = [215, 215, 213]) {
         const pixel = stack.pop();
         if (!isBackgroundPixel(pixel)) continue;
         const index = pixel * 4;
-        data[index] = targetRgb[0];
-        data[index + 1] = targetRgb[1];
-        data[index + 2] = targetRgb[2];
-        data[index + 3] = 255;
+        data[index + 3] = 0;
         const x = pixel % width;
         const y = Math.floor(pixel / width);
         push(x + 1, y);
@@ -3982,33 +3971,33 @@ function stageMatchedModelImage(src, targetRgb = [215, 215, 213]) {
       context.putImageData(imageData, 0, 0);
       canvas.toBlob((blob) => {
         if (blob) resolve(URL.createObjectURL(blob));
-        else reject(new Error('Could not prepare stage-matched model image'));
+        else reject(new Error('Could not prepare transparent model image'));
       }, 'image/png');
     };
-    image.onerror = () => reject(new Error('Model image could not be loaded for background matching'));
+    image.onerror = () => reject(new Error('Model image could not be loaded for background removal'));
     image.src = src;
   });
 }
 
 function useStageMatchedModelImage(src, enabled) {
-  const [matchedSrc, setMatchedSrc] = useState('');
+  const [state, setState] = useState({ src: '', status: 'idle' });
 
   useEffect(() => {
     if (!src || !enabled) {
-      setMatchedSrc('');
+      setState({ src: '', status: 'idle' });
       return undefined;
     }
     let active = true;
     let objectUrl = '';
-    setMatchedSrc('');
+    setState({ src: '', status: 'loading' });
     stageMatchedModelImage(src)
       .then((url) => {
         objectUrl = url;
-        if (active) setMatchedSrc(url);
+        if (active) setState({ src: url, status: 'ready' });
         else URL.revokeObjectURL(url);
       })
       .catch(() => {
-        if (active) setMatchedSrc('');
+        if (active) setState({ src: '', status: 'failed' });
       });
     return () => {
       active = false;
@@ -4016,7 +4005,7 @@ function useStageMatchedModelImage(src, enabled) {
     };
   }, [src, enabled]);
 
-  return matchedSrc;
+  return state;
 }
 
 function useSubjectIsolation(modelSource, user) {
@@ -4235,12 +4224,13 @@ function RoomScene({ modelSource, alt, generating, user, onOpen, onEmpty }) {
   const isolation = useSubjectIsolation(modelSource, user);
   const transparentSrc = safeWardrobeImageUrl(isolation.transparentUrl);
   const originalSrc = safeWardrobeImageUrl(modelSource?.imageUrl);
-  const matchedSrc = useStageMatchedModelImage(originalSrc, Boolean(originalSrc && !transparentSrc));
-  const visibleSrc = transparentSrc || matchedSrc || originalSrc;
+  const fallbackCutout = useStageMatchedModelImage(originalSrc, Boolean(originalSrc && !transparentSrc));
+  const cutoutLoading = Boolean(originalSrc && !transparentSrc && fallbackCutout.status === 'loading');
+  const visibleSrc = transparentSrc || fallbackCutout.src || (fallbackCutout.status === 'failed' ? originalSrc : '');
   const imageAlt = alt || 'Wardrobe preview';
 
   return (
-    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''} ${transparentSrc ? 'has-transparent-model' : 'match-stage-background'}`}>
+    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''} ${transparentSrc || fallbackCutout.src ? 'has-transparent-model' : ''}`}>
       {visibleSrc ? (
         <button className="wardrobe-flat-model" type="button" onClick={onOpen} aria-label="Open wardrobe preview full screen">
           <OptimizedImage
@@ -4252,6 +4242,8 @@ function RoomScene({ modelSource, alt, generating, user, onOpen, onEmpty }) {
             style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', objectPosition: 'center center' }}
           />
         </button>
+      ) : cutoutLoading ? (
+        <div className="wardrobe-flat-model wardrobe-flat-model-loading" aria-hidden="true" />
       ) : (
         <button className="wardrobe-model-empty" type="button" onClick={onEmpty}>
           <UserIcon />
