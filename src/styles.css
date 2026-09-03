@@ -25311,7 +25311,7 @@ textarea { font: inherit; }
   }
 
   .atelier-category-product-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: clamp(16px, 1.25vw, 24px);
   }
 }
@@ -30903,7 +30903,7 @@ main,
     z-index: 120;
     display: grid;
     box-sizing: border-box;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     column-gap: 0;
     height: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom));
     overflow: hidden;
@@ -33538,7 +33538,7 @@ body:has(.network-status):has(.app-toast) .wishlist-undo-toast {
     padding: 0 52px !important;
     overflow: visible !important;
   }
-
+ 
   .atelier-category-page .atelier-category-rail-wrap::before,
   .atelier-category-page .atelier-category-rail-wrap::after {
     position: absolute !important;
@@ -36677,7 +36677,8 @@ label,
 
 @media (max-width: 760px) {
   body:has(.wardrobe-studio-page) .site-header,
-  body:has(.wardrobe-studio-page) .footer {
+  body:has(.wardrobe-studio-page) .footer,
+  body:has(.wardrobe-studio-page) > .mobile-bottom-nav {
     display: none !important;
   }
 
@@ -37027,15 +37028,15 @@ label,
     justify-items: center !important;
     gap: 4px !important;
     color: #34302c !important;
-    font-size: 10px !important;
+    font-size: 12px !important;
     font-weight: 700 !important;
     text-align: center !important;
     text-decoration: none !important;
   }
 
   .wardrobe-app-bottom-nav svg {
-    width: 23px !important;
-    height: 23px !important;
+    width: 27px !important;
+    height: 27px !important;
     stroke-width: 1.65 !important;
   }
 
@@ -37044,8 +37045,8 @@ label,
   }
 
   .wardrobe-app-bottom-nav a.active svg {
-    width: 26px !important;
-    height: 26px !important;
+    width: 30px !important;
+    height: 30px !important;
   }
 
   .wardrobe-app-bottom-nav a.active::before {
@@ -37054,8 +37055,8 @@ label,
     top: -7px !important;
     left: 50% !important;
     z-index: -1 !important;
-    width: 52px !important;
-    height: 52px !important;
+    width: 58px !important;
+    height: 58px !important;
     border-radius: 999px !important;
     background: #f5e5e9 !important;
     transform: translateX(-50%) !important;
@@ -38324,15 +38325,15 @@ label,
     justify-items: center !important;
     gap: 4px !important;
     color: #34302c !important;
-    font-size: 10px !important;
+    font-size: 13px !important;
     font-weight: 700 !important;
     text-align: center !important;
     text-decoration: none !important;
   }
 
   .wardrobe-app-bottom-nav svg {
-    width: 23px !important;
-    height: 23px !important;
+    width: 28px !important;
+    height: 28px !important;
     stroke-width: 1.65 !important;
   }
 
@@ -38341,8 +38342,8 @@ label,
   }
 
   .wardrobe-app-bottom-nav a.active svg {
-    width: 26px !important;
-    height: 26px !important;
+    width: 32px !important;
+    height: 32px !important;
   }
 
   .wardrobe-app-bottom-nav a.active::before {
@@ -38351,8 +38352,8 @@ label,
     top: -7px !important;
     left: 50% !important;
     z-index: -1 !important;
-    width: 52px !important;
-    height: 52px !important;
+    width: 62px !important;
+    height: 62px !important;
     border-radius: 999px !important;
     background: #f5e5e9 !important;
     transform: translateX(-50%) !important;
@@ -38568,7 +38569,7 @@ label,
     left: 0 !important;
     height: calc(74px + env(safe-area-inset-bottom)) !important;
     padding: 8px 7px max(7px, env(safe-area-inset-bottom)) !important;
-    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
     align-items: center !important;
     overflow: hidden !important;
     border-top: 1px solid rgba(17, 16, 14, .12) !important;
@@ -38608,14 +38609,12 @@ label,
 }
 
 @media (max-width: 700px) {
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style {
-    right: 8px !important;
+  body:has(.atelier-home) .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style {
+    right: 12px !important;
     bottom: max(8px, env(safe-area-inset-bottom)) !important;
-    left: 8px !important;
+    left: 12px !important;
     display: grid !important;
     grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-    width: auto !important;
-    max-width: none !important;
     height: auto !important;
     min-height: 72px !important;
     align-items: center !important;
@@ -38627,10 +38626,9 @@ label,
     box-shadow: 0 18px 44px rgba(30, 24, 21, .2) !important;
     backdrop-filter: blur(18px) !important;
     -webkit-backdrop-filter: blur(18px) !important;
-    transform: none !important;
   }
 
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a {
+  body:has(.atelier-home) .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a {
     position: relative !important;
     display: grid !important;
     min-width: 0 !important;
@@ -38648,23 +38646,23 @@ label,
     background: transparent !important;
   }
 
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style svg {
+  body:has(.atelier-home) .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style svg {
     width: 23px !important;
     height: 23px !important;
     stroke-width: 1.65 !important;
   }
 
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active {
+  body:has(.atelier-home) .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active {
     color: #a74458 !important;
     background: transparent !important;
   }
 
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active svg {
+  body:has(.atelier-home) .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active svg {
     width: 26px !important;
     height: 26px !important;
   }
 
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::before {
+  body:has(.atelier-home) .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::before {
     content: "" !important;
     position: absolute !important;
     top: -5px !important;
@@ -38677,7 +38675,7 @@ label,
     transform: translateX(-50%) !important;
   }
 
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::after {
+  body:has(.atelier-home) .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::after {
     content: "" !important;
     position: absolute !important;
     right: 16px !important;
@@ -38688,223 +38686,11 @@ label,
     background: #a74458 !important;
   }
 
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style span {
+  body:has(.atelier-home) .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style span {
     max-width: 100% !important;
     font-size: 11px !important;
     line-height: 1 !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
   }
-}
-
-@media (max-width: 700px) {
-  body:has(#main-content .atelier-home) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style,
-  body:has(#main-content .atelier-category-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style,
-  body:has(#main-content .style-bot-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style,
-  body:has(#main-content .profile-reference-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style,
-  body:has(#main-content .custom-tryon-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style {
-    right: 0 !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    display: flex !important;
-    width: 100vw !important;
-    max-width: none !important;
-    min-height: calc(78px + env(safe-area-inset-bottom)) !important;
-    padding: 8px 8px max(8px, env(safe-area-inset-bottom)) !important;
-    border-radius: 18px 18px 0 0 !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    gap: 0 !important;
-    grid-template-columns: none !important;
-    transform: none !important;
-  }
-
-  body:has(#main-content .atelier-home) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a,
-  body:has(#main-content .atelier-category-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a,
-  body:has(#main-content .style-bot-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a,
-  body:has(#main-content .profile-reference-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a,
-  body:has(#main-content .custom-tryon-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a {
-    flex: 1 1 0 !important;
-    width: auto !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    justify-content: center !important;
-  }
-
-  body:has(#main-content .atelier-home) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active,
-  body:has(#main-content .atelier-category-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active,
-  body:has(#main-content .style-bot-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active,
-  body:has(#main-content .profile-reference-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active,
-  body:has(#main-content .custom-tryon-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active {
-    color: #a74458 !important;
-    background: transparent !important;
-  }
-
-  body:has(#main-content .atelier-home) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::before,
-  body:has(#main-content .atelier-category-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::before,
-  body:has(#main-content .style-bot-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::before,
-  body:has(#main-content .profile-reference-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::before,
-  body:has(#main-content .custom-tryon-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::before {
-    content: "" !important;
-    position: absolute !important;
-    top: -5px !important;
-    left: 50% !important;
-    z-index: -1 !important;
-    width: 50px !important;
-    height: 50px !important;
-    border-radius: 999px !important;
-    background: #f5e5e9 !important;
-    transform: translateX(-50%) !important;
-  }
-
-  body:has(#main-content .atelier-home) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::after,
-  body:has(#main-content .atelier-category-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::after,
-  body:has(#main-content .style-bot-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::after,
-  body:has(#main-content .profile-reference-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::after,
-  body:has(#main-content .custom-tryon-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a.active::after {
-    content: "" !important;
-    position: absolute !important;
-    right: 16px !important;
-    bottom: -4px !important;
-    left: 16px !important;
-    height: 2px !important;
-    border-radius: 999px !important;
-    background: #a74458 !important;
-  }
-}
-
-@media (max-width: 760px) {
-  .wardrobe-studio-page .wardrobe-ai-disclaimer {
-    right: auto !important;
-    bottom: calc(204px + env(safe-area-inset-bottom)) !important;
-    left: 34px !important;
-    width: 84px !important;
-    min-height: 52px !important;
-    max-width: 84px !important;
-    padding: 5px 6px !important;
-    font-size: 7px !important;
-    line-height: 1.18 !important;
-    text-align: center !important;
-    transform: none !important;
-  }
-}
-
-@media (max-width: 700px) {
-  body:has(#main-content .custom-tryon-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style {
-    display: flex !important;
-    flex-wrap: nowrap !important;
-    align-items: center !important;
-    justify-content: stretch !important;
-    min-height: calc(72px + env(safe-area-inset-bottom)) !important;
-    padding-inline: 4px !important;
-  }
-
-  body:has(#main-content .custom-tryon-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style a {
-    flex: 0 0 20% !important;
-    width: 20% !important;
-    min-width: 0 !important;
-    max-width: 20% !important;
-    min-height: 56px !important;
-    gap: 3px !important;
-    font-size: 9px !important;
-  }
-
-  body:has(#main-content .custom-tryon-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style svg {
-    width: 18px !important;
-    height: 18px !important;
-  }
-
-  body:has(#main-content .custom-tryon-page) > .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style span {
-    font-size: 9px !important;
-  }
-}
-
-@media (max-width: 760px) {
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style.mobile-bottom-nav-six-items {
-    right: 0 !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    display: grid !important;
-    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-    width: 100vw !important;
-    max-width: none !important;
-    min-height: calc(72px + env(safe-area-inset-bottom)) !important;
-    padding: 7px 4px max(7px, env(safe-area-inset-bottom)) !important;
-    overflow: visible !important;
-    border-radius: 18px 18px 0 0 !important;
-    transform: none !important;
-  }
-
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style.mobile-bottom-nav-six-items a {
-    width: auto !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    min-height: 56px !important;
-    gap: 3px !important;
-    padding: 0 !important;
-    font-size: 9px !important;
-  }
-
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style.mobile-bottom-nav-six-items svg {
-    width: 18px !important;
-    height: 18px !important;
-  }
-
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style.mobile-bottom-nav-six-items span {
-    max-width: 100% !important;
-    font-size: 9px !important;
-    white-space: nowrap !important;
-  }
-
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style.mobile-bottom-nav-six-items a.active::before {
-    top: -3px !important;
-    width: 48px !important;
-    height: 48px !important;
-  }
-
-  .mobile-bottom-nav.mobile-bottom-nav-wardrobe-style.mobile-bottom-nav-six-items a.active::after {
-    right: 14px !important;
-    left: 14px !important;
-  }
-}
-
-@media (max-width: 760px) {
-  body:has(#main-content .wardrobe-studio-page) .announcement,
-  body:has(#main-content .wardrobe-studio-page) .wardrobe-status-strip,
-  body:has(#main-content .wardrobe-studio-page) .wardrobe-app-topbar {
-    display: none !important;
-  }
-
-  body:has(#main-content .wardrobe-studio-page) .site-header {
-    position: relative !important;
-    z-index: 140 !important;
-    display: block !important;
-    border-bottom: 1px solid rgba(17, 16, 14, .1) !important;
-    background: #fffdfc !important;
-    box-shadow: 0 1px 0 rgba(17, 16, 14, .08) !important;
-  }
-
-  body:has(#main-content .wardrobe-studio-page) .site-header .header-inner {
-    min-height: 60px !important;
-  }
-
-  body:has(#main-content .wardrobe-studio-page) .wardrobe-studio-page,
-  body:has(#main-content .wardrobe-studio-page) .wardrobe-model-stage {
-    height: calc(100svh - 60px) !important;
-    min-height: calc(100svh - 60px) !important;
-    max-height: calc(100svh - 60px) !important;
-  }
-}
-
-body:has(#main-content .wardrobe-studio-page) .announcement,
-body:has(#main-content .wardrobe-studio-page) .wardrobe-status-strip,
-body:has(#main-content .wardrobe-studio-page) .wardrobe-app-topbar {
-  display: none !important;
-}
-
-body:has(#main-content .wardrobe-studio-page) .site-header {
-  position: relative !important;
-  z-index: 140 !important;
-  display: block !important;
-  pointer-events: auto !important;
 }
