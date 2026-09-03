@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import test from 'node:test';
 import {
   amountForPlan,
@@ -6,11 +7,16 @@ import {
   calculatePhonePeCallbackAuthorization,
   checkoutIdempotencyKey,
   configuredRedirectUrl,
+  createDemoCreditPayment,
+  createRazorpayPayment,
+  completeRazorpayPayment,
   orderIdFromCallback,
   reconcileOrder,
   recurringAmountForPlan,
+  statusFromRazorpayOrderStatus,
   statusFromPhonePeState,
-  validatePhonePeCallbackAuth
+  validatePhonePeCallbackAuth,
+  verifyRazorpaySignature
 } from '../server/routes/payments.js';
 import TokenOrder from '../server/models/TokenOrder.js';
 import User from '../server/models/User.js';
@@ -86,6 +92,90 @@ test('checkout idempotency key accepts only bounded opaque keys', () => {
   assert.throws(() => checkoutIdempotencyKey(requestStub({ headers: { 'idempotency-key': 'bad key with spaces' } })), /Invalid checkout idempotency key/);
 });
 
+test('demo credit checkout credits the user once and does not require a redirect URL', async () => {
+  const original = {
+    tokenFindOne: TokenOrder.findOne,
+    tokenCreate: TokenOrder.create,
+    tokenFindOneAndUpdate: TokenOrder.findOneAndUpdate,
+    userFindById: User.findById,
+    userFindOneAndUpdate: User.findOneAndUpdate
+  };
+  const plan = TOP_UP_PLANS[0];
+  const user = {
+    _id: 'user-demo-123456789',
+    tokens: 8,
+    toClient() {
+      return { id: this._id, tokens: this.tokens };
+    }
+  };
+  let order = null;
+  let createCount = 0;
+  let creditedTokens = 0;
+  try {
+    TokenOrder.findOne = async (filter) => {
+      if (filter.idempotencyKey && order?.idempotencyKey === filter.idempotencyKey) return order;
+      return null;
+    };
+    TokenOrder.create = async (doc) => {
+      createCount += 1;
+      order = {
+        _id: 'demo-order-1',
+        ...doc,
+        creditedAt: null
+      };
+      return order;
+    };
+    TokenOrder.findOneAndUpdate = async (filter, update) => {
+      if (filter.creditedAt === null && order.creditedAt) return null;
+      order = {
+        ...order,
+        ...update.$set
+      };
+      return order;
+    };
+    User.findById = async () => ({
+      _id: user._id,
+      tokens: user.tokens + creditedTokens,
+      toClient() {
+        return { id: this._id, tokens: this.tokens };
+      }
+    });
+    User.findOneAndUpdate = async (_filter, update) => {
+      creditedTokens += Number(update.$inc?.tokens || 0);
+      return {
+        _id: user._id,
+        tokens: user.tokens + creditedTokens,
+        toClient() {
+          return { id: this._id, tokens: this.tokens };
+        }
+      };
+    };
+
+    const req = requestStub({ headers: { 'idempotency-key': 'demo-credit-checkout-1' } });
+    const first = await createDemoCreditPayment({ req, user, plan });
+    assert.equal(first.order.status, 'completed');
+    assert.equal(first.order.providerState, 'DEMO_COMPLETED');
+    assert.equal(first.order.redirectUrl, '');
+    assert.equal(first.order.merchantOrderId.startsWith('FLDEMO_'), true);
+    assert.equal(first.order.merchantOrderId.length <= 63, true);
+    assert.equal(first.user.tokens, user.tokens + plan.tokens);
+    assert.equal(first.alreadyCredited, false);
+    assert.equal(creditedTokens, plan.tokens);
+
+    const duplicate = await createDemoCreditPayment({ req, user, plan });
+    assert.equal(duplicate.alreadyCredited, true);
+    assert.equal(createCount, 1);
+    assert.equal(creditedTokens, plan.tokens);
+    assert.equal(duplicate.user.tokens, user.tokens + plan.tokens);
+  } finally {
+    TokenOrder.findOne = original.tokenFindOne;
+    TokenOrder.create = original.tokenCreate;
+    TokenOrder.findOneAndUpdate = original.tokenFindOneAndUpdate;
+    User.findById = original.userFindById;
+    User.findOneAndUpdate = original.userFindOneAndUpdate;
+  }
+});
+
 test('PhonePe state mapping handles success, failure, cancellation, timeout, and pending states', () => {
   assert.equal(statusFromPhonePeState('COMPLETED'), 'completed');
   assert.equal(statusFromPhonePeState('FAILED'), 'failed');
@@ -94,6 +184,185 @@ test('PhonePe state mapping handles success, failure, cancellation, timeout, and
   assert.equal(statusFromPhonePeState('TIMED_OUT'), 'failed');
   assert.equal(statusFromPhonePeState('PENDING'), 'pending');
   assert.equal(statusFromPhonePeState('UNKNOWN'), '');
+});
+
+test('Razorpay signature verification uses order id, payment id, and key secret', () => {
+  const signature = createHmac('sha256', 'secret').update('order_test|pay_test').digest('hex');
+  assert.equal(verifyRazorpaySignature({
+    orderId: 'order_test',
+    paymentId: 'pay_test',
+    signature,
+    secret: 'secret'
+  }), true);
+  assert.equal(verifyRazorpaySignature({
+    orderId: 'order_test',
+    paymentId: 'pay_test',
+    signature: 'bad',
+    secret: 'secret'
+  }), false);
+  assert.equal(statusFromRazorpayOrderStatus('paid'), 'completed');
+  assert.equal(statusFromRazorpayOrderStatus('created'), 'pending');
+  assert.equal(statusFromRazorpayOrderStatus('attempted'), 'pending');
+});
+
+test('Razorpay checkout creates a provider order without a redirect URL', async () => {
+  const original = {
+    tokenFindOne: TokenOrder.findOne,
+    tokenCreate: TokenOrder.create,
+    fetch: global.fetch,
+    env: {
+      RAZORPAY_ENABLED: process.env.RAZORPAY_ENABLED,
+      RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID,
+      RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET,
+      RAZORPAY_BASE_URL: process.env.RAZORPAY_BASE_URL
+    }
+  };
+  const created = [];
+  try {
+    process.env.RAZORPAY_ENABLED = 'true';
+    process.env.RAZORPAY_KEY_ID = 'rzp_test_key';
+    process.env.RAZORPAY_KEY_SECRET = 'rzp_test_secret';
+    process.env.RAZORPAY_BASE_URL = 'https://razorpay.test/v1';
+    TokenOrder.findOne = async () => null;
+    TokenOrder.create = async (doc) => {
+      const order = {
+        _id: 'token-order-1',
+        ...doc,
+        async save() {
+          created.push({ saved: true, razorpayOrderId: this.razorpayOrderId, provider: this.provider });
+        }
+      };
+      created.push(order);
+      return order;
+    };
+    global.fetch = async (url, options = {}) => {
+      assert.equal(String(url), 'https://razorpay.test/v1/orders');
+      assert.match(String(options.headers?.Authorization || ''), /^Basic /);
+      const body = JSON.parse(options.body);
+      assert.equal(body.amount, TOP_UP_PLANS[0].amount);
+      assert.equal(body.currency, 'INR');
+      assert.equal(body.notes.planId, TOP_UP_PLANS[0].id);
+      return new Response(JSON.stringify({ id: 'order_rzp_1', status: 'created', amount: body.amount, currency: body.currency }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    };
+
+    const order = await createRazorpayPayment({
+      req: requestStub({ headers: { 'idempotency-key': 'razorpay-checkout-1' } }),
+      user: { _id: 'user-rzp-12345678', name: 'Test User' },
+      plan: TOP_UP_PLANS[0]
+    });
+    assert.equal(order.provider, 'razorpay');
+    assert.equal(order.razorpayOrderId, 'order_rzp_1');
+    assert.equal(order.redirectUrl, '');
+    assert.equal(order.status, 'pending');
+    assert.equal(created.some((entry) => entry.saved && entry.provider === 'razorpay'), true);
+  } finally {
+    TokenOrder.findOne = original.tokenFindOne;
+    TokenOrder.create = original.tokenCreate;
+    global.fetch = original.fetch;
+    for (const [key, value] of Object.entries(original.env)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Razorpay verification credits tokens once after signature validation', async () => {
+  const original = {
+    tokenFindOne: TokenOrder.findOne,
+    tokenFindById: TokenOrder.findById,
+    tokenFindByIdAndUpdate: TokenOrder.findByIdAndUpdate,
+    tokenFindOneAndUpdate: TokenOrder.findOneAndUpdate,
+    userFindById: User.findById,
+    userFindOneAndUpdate: User.findOneAndUpdate,
+    fetch: global.fetch,
+    env: {
+      RAZORPAY_ENABLED: process.env.RAZORPAY_ENABLED,
+      RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID,
+      RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET,
+      RAZORPAY_BASE_URL: process.env.RAZORPAY_BASE_URL
+    }
+  };
+  const signature = createHmac('sha256', 'rzp_secret').update('order_rzp_1|pay_rzp_1').digest('hex');
+  let order = {
+    _id: 'order1',
+    user: 'user1',
+    provider: 'razorpay',
+    merchantOrderId: 'FLRZP_TEST',
+    razorpayOrderId: 'order_rzp_1',
+    amount: TOP_UP_PLANS[0].amount,
+    dueTodayAmount: TOP_UP_PLANS[0].amount,
+    planId: TOP_UP_PLANS[0].id,
+    orderType: 'topup',
+    tokens: TOP_UP_PLANS[0].tokens,
+    status: 'pending',
+    creditedAt: null
+  };
+  let creditedTokens = 0;
+  try {
+    process.env.RAZORPAY_ENABLED = 'true';
+    process.env.RAZORPAY_KEY_ID = 'rzp_key';
+    process.env.RAZORPAY_KEY_SECRET = 'rzp_secret';
+    process.env.RAZORPAY_BASE_URL = 'https://razorpay.test/v1';
+    TokenOrder.findOne = async () => order;
+    TokenOrder.findById = async () => order;
+    TokenOrder.findByIdAndUpdate = async (_id, update) => {
+      order = { ...order, ...update.$set };
+      return order;
+    };
+    TokenOrder.findOneAndUpdate = async (filter, update) => {
+      if (filter.creditedAt === null && order.creditedAt) return null;
+      order = { ...order, ...update.$set };
+      return order;
+    };
+    User.findById = async () => ({ _id: 'user1', tokens: 8 + creditedTokens });
+    User.findOneAndUpdate = async (_filter, update) => {
+      creditedTokens += Number(update.$inc?.tokens || 0);
+      return { _id: 'user1', tokens: 8 + creditedTokens };
+    };
+    global.fetch = async (url) => {
+      assert.equal(String(url), 'https://razorpay.test/v1/payments/pay_rzp_1');
+      return new Response(JSON.stringify({ id: 'pay_rzp_1', order_id: 'order_rzp_1', amount: TOP_UP_PLANS[0].amount, status: 'captured' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    };
+
+    const first = await completeRazorpayPayment({
+      user: { _id: 'user1' },
+      merchantOrderId: 'FLRZP_TEST',
+      razorpayOrderId: 'order_rzp_1',
+      razorpayPaymentId: 'pay_rzp_1',
+      razorpaySignature: signature
+    });
+    assert.equal(first.order.status, 'completed');
+    assert.equal(first.user.tokens, 8 + TOP_UP_PLANS[0].tokens);
+    assert.equal(creditedTokens, TOP_UP_PLANS[0].tokens);
+
+    const duplicate = await completeRazorpayPayment({
+      user: { _id: 'user1' },
+      merchantOrderId: 'FLRZP_TEST',
+      razorpayOrderId: 'order_rzp_1',
+      razorpayPaymentId: 'pay_rzp_1',
+      razorpaySignature: signature
+    });
+    assert.equal(duplicate.alreadyCredited, true);
+    assert.equal(creditedTokens, TOP_UP_PLANS[0].tokens);
+  } finally {
+    TokenOrder.findOne = original.tokenFindOne;
+    TokenOrder.findById = original.tokenFindById;
+    TokenOrder.findByIdAndUpdate = original.tokenFindByIdAndUpdate;
+    TokenOrder.findOneAndUpdate = original.tokenFindOneAndUpdate;
+    User.findById = original.userFindById;
+    User.findOneAndUpdate = original.userFindOneAndUpdate;
+    global.fetch = original.fetch;
+    for (const [key, value] of Object.entries(original.env)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 async function withMockedPhonePeStatus(states, callback) {

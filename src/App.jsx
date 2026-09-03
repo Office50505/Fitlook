@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import OptimizedImage from './components/common/OptimizedImage.jsx';
 import ShaderBackground from './components/common/ShaderBackground.jsx';
-import { cartItemCount, cartSubtotal, readCartItems, removeCartItem, updateCartQuantity } from './utils/cart.js';
+import { cartItemCount, cartSubtotal, readCartItems, removeCartItem, saveCartItems, updateCartQuantity } from './utils/cart.js';
 import { trackClientEvent } from './utils/analytics.js';
 import { DEFAULT_MODEL_PLACEMENT, calculateModelPlacement, normalizedPlacement } from './utils/modelPlacement.js';
 import { updateProductSeo, updateRouteSeo } from './utils/seo.js';
@@ -31,6 +31,44 @@ const PLAY_STORE_URL = safeExternalStoreUrl(import.meta.env.VITE_PLAY_STORE_URL)
 const productListCache = new Map();
 const productDetailLocalCache = new Map();
 const EMPTY_PRODUCT_FACETS = { brands: [], categories: [], categoryCounts: [] };
+const INDIA_STATES = [
+  'Andaman and Nicobar Islands',
+  'Andhra Pradesh',
+  'Arunachal Pradesh',
+  'Assam',
+  'Bihar',
+  'Chandigarh',
+  'Chhattisgarh',
+  'Dadra and Nagar Haveli and Daman and Diu',
+  'Delhi',
+  'Goa',
+  'Gujarat',
+  'Haryana',
+  'Himachal Pradesh',
+  'Jammu and Kashmir',
+  'Jharkhand',
+  'Karnataka',
+  'Kerala',
+  'Ladakh',
+  'Lakshadweep',
+  'Madhya Pradesh',
+  'Maharashtra',
+  'Manipur',
+  'Meghalaya',
+  'Mizoram',
+  'Nagaland',
+  'Odisha',
+  'Puducherry',
+  'Punjab',
+  'Rajasthan',
+  'Sikkim',
+  'Tamil Nadu',
+  'Telangana',
+  'Tripura',
+  'Uttar Pradesh',
+  'Uttarakhand',
+  'West Bengal'
+];
 
 function safeExternalStoreUrl(value = '') {
   const candidate = String(value || '').trim();
@@ -775,6 +813,83 @@ const policyPages = {
   }
 };
 
+const demoPolicyPages = {
+  '/terms': {
+    title: 'Terms and Conditions',
+    intro: `These Terms govern ${legalDetails.brand} ecommerce checkout, account features, AI try-on previews, token purchases, and product orders placed directly on Lookmefy.`,
+    sections: [
+      ['Who operates Lookmefy', [`${legalDetails.brand} is operated by ${legalDetails.legalEntity}. Registered address: ${legalDetails.registeredAddress}.`, 'Lookmefy can collect product order details and confirm supported India deliveries through the checkout flow.']],
+      ['Product orders', ['Product prices, availability, images, descriptions, and eligible variants are shown in the catalog and rechecked before order creation.', 'An order is confirmed only after payment status is successfully verified. We may cancel or refund orders affected by pricing errors, stock issues, serviceability limits, fraud checks, or technical failure.']],
+      ['Payments', ['The Pay now action confirms the order in Lookmefy for this checkout mode.', 'Lookmefy stores order identifiers, payment status, contact details, delivery address, and support records needed for fulfilment workflows.']],
+      ['Delivery, cancellation, returns, and refunds', ['Delivery is currently available within India for serviceable pincodes. Delivery timelines, support handling, cancellation eligibility, return eligibility, and refund timelines are described in the linked policy pages.', `Approved refunds are initiated within ${legalDetails.refundTimeline}, subject to payment provider and bank timelines.`]],
+      ['AI try-on and tokens', ['AI try-on previews remain visual guides only. They do not guarantee exact fit, size, colour, fabric, or final product appearance.', 'Token purchases, memberships, and AI generation requests continue to follow the token and AI policy sections shown in the app.']],
+      ['Liability and governing law', [`To the maximum extent permitted by law, ${legalDetails.brand} is provided on an as-is and as-available basis.`, `These Terms are governed by the laws of India, and courts at ${legalDetails.jurisdiction} will have jurisdiction, subject to applicable law.`]]
+    ]
+  },
+  '/privacy': {
+    title: 'Privacy Policy',
+    intro: `This Privacy Policy explains how ${legalDetails.brand} handles account data, checkout contact details, delivery addresses, payment events, uploaded photos, generated try-ons, and usage activity.`,
+    sections: [
+      ['Data we collect', ['For ecommerce checkout, we collect full name, mobile number, delivery address, pincode, cart items, product snapshots, order totals, and payment status metadata.', 'For AI and account features, we collect the profile, media, generation, wishlist, wardrobe, token, and usage data described in the standard Privacy Policy.']],
+      ['How we use data', ['We use checkout data to create orders, validate serviceable pincodes, confirm payment status, provide delivery updates, prevent abuse, and support customer requests.', 'We may use limited operational data to improve reliability, security, catalog quality, and fulfilment workflows.']],
+      ['Payment providers and service providers', ['Lookmefy stores order references and transaction state needed to operate the checkout and support customer requests.', 'We may share necessary checkout and support data with hosting, storage, analytics, logistics, notification, and support providers.']],
+      ['Retention and deletion', ['Order and payment records may be retained for legal, tax, accounting, fraud prevention, dispute resolution, security, and support requirements.', 'You can request access, correction, consent withdrawal where applicable, or deletion of eligible account and media data by contacting support.']],
+      ['Contact and grievance support', [`Support and privacy requests can be sent to ${legalDetails.supportEmail}. Include the order ID, checkout mobile number, registered account detail if any, and enough detail for us to verify the request.`]]
+    ]
+  },
+  '/shipping': {
+    title: 'Shipping Policy',
+    intro: `${legalDetails.brand} currently delivers product orders within India to serviceable pincodes.`,
+    sections: [
+      ['Delivery area', ['Checkout accepts India delivery addresses only. Pincode lookup may auto-fill city/state details when available and will block unsupported pincodes.', 'Some pincodes may be unsupported because of courier coverage, inventory location, operational limits, or temporary service restrictions.']],
+      ['Shipping charges and timelines', ['Checkout currently shows free shipping unless a future shipping rule is added. Estimated timelines will be shared through order support or delivery updates.', 'Delivery may be delayed by address errors, customer unavailability, courier constraints, weather, public holidays, strikes, or other events outside direct control.']],
+      ['Delivery updates', ['Order and delivery updates use the full name and mobile number entered at checkout.', 'If your address or contact information is wrong, contact support quickly with the order ID. Changes may not be possible after packing or dispatch.']]
+    ]
+  },
+  '/returns': {
+    title: 'Return and Refund Policy',
+    intro: 'This policy covers product orders placed directly through Lookmefy checkout, plus token and AI-generation refunds.',
+    sections: [
+      ['Product returns', ['Return eligibility depends on product category, condition, tags, packaging, hygiene restrictions, damage checks, pickup feasibility, and the return window shown or communicated for the order.', 'Items used, washed, altered, missing original tags/packaging, damaged after delivery, hygiene-sensitive, personalized, or marked final sale may be refused.']],
+      ['Refunds', [`Approved product refunds are initiated within ${legalDetails.refundTimeline} after return approval or successful cancellation, subject to payment network and bank timelines.`, 'Refunds normally return to the original payment method unless another legally valid remedy is agreed.']],
+      ['Damaged, wrong, or missing items', ['Contact support with order ID, photos, packaging images, and an unboxing/delivery issue description as soon as possible.', 'We may request additional verification before approving replacement, return, or refund.']],
+      ['Token and AI generation refunds', ['Tokens used for completed AI outputs are generally non-refundable. If tokens are deducted for a failed generation with no usable output, token restoration may apply after review.']]
+    ]
+  },
+  '/cancellation': {
+    title: 'Cancellation Policy',
+    intro: 'This policy explains cancellation for Lookmefy product orders, token purchases, membership billing, and AI generation requests.',
+    sections: [
+      ['Product order cancellation', ['A product order can be cancelled before it is packed or dispatched, subject to payment verification, inventory status, fraud checks, and fulfilment stage.', 'After dispatch, cancellation may not be available and the return process may apply instead.']],
+      ['Failed or pending payments', ['Checkout should confirm inside Lookmefy. If an order remains pending because of a technical issue, you can retry checkout from the order status or product page.', 'For token purchases, contact support with the transaction reference if payment succeeds but account crediting is delayed.']],
+      ['AI generation and token cancellation', ['AI generation requests start quickly and may not be cancellable once submitted. Token purchase and membership cancellation continue to follow the token policy terms.']]
+    ]
+  },
+  '/contact': {
+    title: 'Contact and Grievance Support',
+    intro: 'Use this page for product orders, delivery updates, payment issues, account support, AI generation, and privacy requests.',
+    sections: [
+      ['Customer support', [`Email: ${legalDetails.supportEmail}. Include your full name, checkout mobile number, order ID or transaction reference, screenshots if helpful, and a short issue description.`]],
+      ['Order support', ['For delivery, cancellation, return, refund, wrong item, damaged item, or payment confirmation issues, include the Lookmefy order ID and checkout contact details used on the order.']],
+      ['Privacy and grievance requests', [`For privacy, data deletion, policy, or grievance questions, contact ${legalDetails.supportEmail}. We may verify your identity before acting on account, media, payment, or order data.`]]
+    ]
+  },
+  '/support': {
+    title: 'Support Center',
+    intro: 'Find help for product orders, payments, delivery, returns, account access, AI try-on, tokens, and privacy requests.',
+    sections: [
+      ['Fastest way to get help', [`Email ${legalDetails.supportEmail} with your order ID, registered contact details, transaction reference if relevant, screenshots, and the issue type.`]],
+      ['Checkout and payment help', ['Product checkout confirms inside Lookmefy. If the success popup does not appear, retry from checkout or the order status page.', 'For token payments, support can verify transaction metadata when needed.']],
+      ['Delivery, cancellation, and returns', ['Delivery is currently within India for supported pincodes. Cancellation and return support depends on the order status and product condition.']],
+      ['AI and token help', ['For failed generations or token issues, include the generation type, product link if any, and account email or mobile number.']]
+    ]
+  }
+};
+
+function policyForPath(path, demoEcommerceMode = false) {
+  return demoEcommerceMode ? (demoPolicyPages[path] || policyPages[path]) : policyPages[path];
+}
+
 function normalizePath() {
   const path = window.location.pathname.replace(/\.html$/, '').replace(/\/$/, '');
   return path || '/';
@@ -790,6 +905,24 @@ function authReturnPath() {
   } catch {
     return '/home';
   }
+}
+
+function loginHrefForIdentifier(identifier = '') {
+  const params = new URLSearchParams();
+  const cleanIdentifier = String(identifier || '').trim();
+  const destination = authReturnPath();
+  if (cleanIdentifier) params.set('identifier', cleanIdentifier);
+  if (destination && destination !== '/home') params.set('return', destination);
+  const query = params.toString();
+  return `/login${query ? `?${query}` : ''}`;
+}
+
+function isExistingAccountError(error) {
+  return error?.code === 'ACCOUNT_EXISTS' || (error?.status === 409 && /account already exists/i.test(error?.message || ''));
+}
+
+function isLikelyEmail(value = '') {
+  return /^\S+@\S+\.\S+$/.test(String(value || '').trim());
 }
 
 function requiresAuthentication(path = normalizePath()) {
@@ -999,6 +1132,11 @@ async function api(path, options = {}) {
       if (!res.ok) {
         const error = new Error(res.status === 429 ? rateLimitMessage(data, `Request failed (${res.status})`) : readableError(data, `Request failed (${res.status})`));
         error.status = res.status;
+        if (data && typeof data === 'object') {
+          error.data = data;
+          error.code = data.code;
+          error.identifier = data.identifier;
+        }
         throw error;
       }
       if (data === null && !contentType.includes('application/json')) {
@@ -1058,6 +1196,33 @@ async function generateQueuedTryOn(path, options = {}) {
   return resolveQueuedJobResponse(data, { timeout: options.timeout || AI_IMAGE_TIMEOUT_MS });
 }
 
+let razorpayCheckoutLoader = null;
+
+function loadRazorpayCheckout() {
+  if (typeof window === 'undefined') return Promise.reject(new Error('Razorpay checkout is only available in the browser.'));
+  if (window.Razorpay) return Promise.resolve(window.Razorpay);
+  if (razorpayCheckoutLoader) return razorpayCheckoutLoader;
+  razorpayCheckoutLoader = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.Razorpay) resolve(window.Razorpay);
+      else reject(new Error('Razorpay checkout could not be loaded.'));
+    };
+    script.onerror = () => reject(new Error('Razorpay checkout could not be loaded. Check your connection and try again.'));
+    document.head.appendChild(script);
+  }).catch((error) => {
+    razorpayCheckoutLoader = null;
+    throw error;
+  });
+  return razorpayCheckoutLoader;
+}
+
+function razorpayFailureMessage(response) {
+  return response?.error?.description || response?.error?.reason || 'Payment was not completed. You can try again when ready.';
+}
+
 function recordEvent(type, payload = {}) {
   trackClientEvent(type, payload);
   if (!readAuthToken()) return;
@@ -1099,6 +1264,26 @@ function useMediaQuery(query) {
   }, [query]);
 
   return matches;
+}
+
+function useStorefrontConfig() {
+  const [state, setState] = useState({ demoEcommerceMode: false, loading: true, error: '' });
+
+  useEffect(() => {
+    let alive = true;
+    api('/storefront/config', { retry: 1 })
+      .then((data) => {
+        if (alive) setState({ demoEcommerceMode: Boolean(data?.demoEcommerceMode), loading: false, error: '' });
+      })
+      .catch((error) => {
+        if (alive) setState({ demoEcommerceMode: false, loading: false, error: error.message || 'Storefront settings unavailable' });
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return state;
 }
 
 function useProducts(params) {
@@ -1198,6 +1383,10 @@ function useProduct(id) {
   const [state, setState] = useState({ product: null, loading: true, error: '' });
 
   useEffect(() => {
+    if (!id) {
+      setState({ product: null, loading: false, error: '' });
+      return undefined;
+    }
     let alive = true;
     const controller = new AbortController();
     setState({ product: null, loading: true, error: '' });
@@ -1390,14 +1579,24 @@ function useGenerationHistory(user) {
 
 function MobileBottomNav({ user }) {
   const currentPath = normalizePath();
+<<<<<<< HEAD
   const usesWardrobeItems = currentPath === '/home' || currentPath === '/categories' || currentPath === '/explore' || currentPath === '/closet' || currentPath === '/style-bot' || currentPath === '/profile';
   const usesWardrobeStyle = usesWardrobeItems || currentPath === '/custom-try-on';
+=======
+  const ProfileNavIcon = () => <NavProfileAvatar user={user} />;
+>>>>>>> 05e74cca516698977686e2df47cf32c619e51692
   const mobileNavLinks = [
     { label: 'Home', href: '/home', Icon: HomeIcon },
     { label: 'Categories', href: '/categories', Icon: GridIcon },
     { label: 'Try-On', href: '/custom-try-on', Icon: TryOnIcon },
+<<<<<<< HEAD
     { label: 'Wardrobe', href: '/closet', Icon: TShirtIcon },
     { label: 'AI Studio', href: user ? '/style-bot' : '/signup', Icon: SparkleLineIcon }
+=======
+    { label: 'AI Stylist', href: user ? '/style-bot' : '/signup', Icon: SparkleLineIcon },
+    { label: 'Wardrobe', href: '/closet', Icon: ClosetIcon },
+    { label: 'Profile', href: user ? '/profile' : '/signup', Icon: ProfileNavIcon }
+>>>>>>> 05e74cca516698977686e2df47cf32c619e51692
   ];
   const isActiveLink = (href, index, link = {}) => {
     if (link.inactiveOn?.includes(currentPath)) return false;
@@ -1413,6 +1612,15 @@ function MobileBottomNav({ user }) {
         return <a className={active ? 'active' : ''} href={href} aria-current={active ? 'page' : undefined} key={label}><Icon /><span>{label}</span></a>;
       })}
     </nav>
+  );
+}
+
+function NavProfileAvatar({ user }) {
+  const imageUrl = protectedMediaUrl(user?.bodyPhotoUrl || user?.bodyPhotoOriginalUrl || '');
+  return (
+    <span className={`nav-profile-avatar ${imageUrl ? 'has-image' : ''}`}>
+      {imageUrl ? <img src={imageUrl} alt="" /> : <UserIcon />}
+    </span>
   );
 }
 
@@ -1577,7 +1785,7 @@ function Header({ user, setUser, authChecked = true }) {
             <a className="icon-button mobile-search-trigger" href="/search" aria-label="Open search"><SearchIcon /></a>
             <a className={`header-credit-button ${!authChecked ? 'auth-pending' : ''}`} href="/tokens" aria-label={user ? `Buy credits. ${tokenLabel} available` : 'Buy credits'}><SparkleLineIcon /><span>Credits</span>{user && <strong>{user.tokens}</strong>}{!authChecked && <strong className="header-auth-skeleton" aria-hidden="true" />}</a>
             <a className="icon-button header-count-button" href="/wishlist" aria-label={`${wishlistCount} wishlist items`}><HeartIcon />{wishlistCount > 0 && <strong>{wishlistCount}</strong>}</a>
-            {!authChecked ? <span className="icon-button header-auth-loading" role="status" aria-label="Checking account"><UserIcon /></span> : user ? <a className="icon-button" href="/profile" aria-label="Profile"><UserIcon /></a> : <a className="icon-button" href="/signup" aria-label="Account"><UserIcon /></a>}
+            {!authChecked ? <span className="icon-button header-auth-loading" role="status" aria-label="Checking account"><UserIcon /></span> : user ? <a className="icon-button" href="/profile" aria-label="Profile"><NavProfileAvatar user={user} /></a> : <a className="icon-button" href="/signup" aria-label="Account"><UserIcon /></a>}
             {user && <button className="text-button" onClick={logout}>Log out</button>}
             <button className="icon-button menu-toggle" type="button" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-controls="mobile-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
               {menuOpen ? <CloseIcon /> : <MenuIcon />}
@@ -1992,7 +2200,7 @@ const atelierHeroSlides = [
   }
 ];
 
-function AtelierProductRailCard({ product }) {
+function AtelierProductRailCard({ product, demoEcommerceMode = false }) {
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100) : 0;
   const rating = Number(product.rating || 0);
@@ -2012,9 +2220,9 @@ function AtelierProductRailCard({ product }) {
           <strong>{formatMoney(product.price || 0, product.currency)}</strong>
           {hasDiscount && <del>{formatMoney(product.compareAtPrice, product.currency)}</del>}
         </span>
-        {(rating > 0 || product.tryOnAvailable || product.aiTryOnAvailable) && (
+        {(!demoEcommerceMode && rating > 0 || product.tryOnAvailable || product.aiTryOnAvailable) && (
           <span className="atelier-product-meta">
-            {rating > 0 && <span>★ {rating.toFixed(1)}{ratingCount > 0 ? ` (${ratingCount})` : ''}</span>}
+            {!demoEcommerceMode && rating > 0 && <span>★ {rating.toFixed(1)}{ratingCount > 0 ? ` (${ratingCount})` : ''}</span>}
             {(product.tryOnAvailable || product.aiTryOnAvailable) && <span>AI Try-On</span>}
           </span>
         )}
@@ -2040,7 +2248,7 @@ function AtelierCategoryProductCard({ product }) {
   );
 }
 
-function AtelierProductStrip({ title, railId, label, products, viewHref = '/categories', viewLabel = 'View more', railRef, onScroll, onKeyDown }) {
+function AtelierProductStrip({ title, railId, label, products, viewHref = '/categories', viewLabel = 'View more', railRef, onScroll, onKeyDown, demoEcommerceMode = false }) {
   if (!products.length) return null;
   return (
     <section className="atelier-arrivals atelier-product-strip">
@@ -2053,7 +2261,7 @@ function AtelierProductStrip({ title, railId, label, products, viewHref = '/cate
           </div>
         </div>
         <div className="atelier-product-grid atelier-arrivals-rail" id={railId} ref={railRef} tabIndex="0" aria-label={label} onKeyDown={(event) => onKeyDown(railRef, event)}>
-          {products.map((product) => <AtelierProductRailCard product={product} key={product.id} />)}
+          {products.map((product) => <AtelierProductRailCard product={product} demoEcommerceMode={demoEcommerceMode} key={product.id} />)}
           <a className="atelier-arrivals-more" href={viewHref}><span>{label}</span><strong>{viewLabel}</strong><small>Explore the full edit <b>→</b></small></a>
         </div>
       </div>
@@ -2119,7 +2327,7 @@ function fillProductRailProducts(products = [], fallbackProducts = [], minimum =
   return uniqueProducts([...primary, ...fillers]).slice(0, minimum);
 }
 
-function AtelierCommerceStrip({ id, title, subtitle, products, viewHref = '/categories' }) {
+function AtelierCommerceStrip({ id, title, subtitle, products, viewHref = '/categories', demoEcommerceMode = false }) {
   const railRef = useRef(null);
   const isMobileRail = useMediaQuery('(max-width: 760px)');
   const visibleProducts = uniqueProducts(products).slice(0, isMobileRail ? 8 : 18);
@@ -2152,7 +2360,7 @@ function AtelierCommerceStrip({ id, title, subtitle, products, viewHref = '/cate
           </div>
         </div>
         <div className="atelier-product-grid atelier-arrivals-rail" id={id} ref={railRef} tabIndex="0" aria-label={title} onKeyDown={handleKeyDown}>
-          {visibleProducts.map((product) => <AtelierProductRailCard product={product} key={`${id}-${product.id}`} />)}
+          {visibleProducts.map((product) => <AtelierProductRailCard product={product} demoEcommerceMode={demoEcommerceMode} key={`${id}-${product.id}`} />)}
         </div>
       </div>
     </section>
@@ -2415,7 +2623,7 @@ function AtelierBestCategories({ categories = [] }) {
   );
 }
 
-function AtelierHome({ user }) {
+function AtelierHome({ user, demoEcommerceMode = false }) {
   const state = useProducts({ limit: 96, sort: 'newest' });
   const recommendedState = useRecommendedProducts(user, 16);
   const arrivalsRailRef = useRef(null);
@@ -2486,10 +2694,10 @@ function AtelierHome({ user }) {
       { id: 'best-sellers', title: 'Best Sellers', subtitle: 'Ranked from available sales data', products: fillProductRailProducts(bestSellers, catalogProducts), viewHref: '/categories' },
       { id: 'most-viewed', title: 'Most Viewed', subtitle: 'Products shoppers are opening', products: fillProductRailProducts(mostViewed, catalogProducts), viewHref: '/categories' },
       { id: 'most-wishlisted', title: 'Most Wishlisted', subtitle: 'Saved most often', products: mostWishlisted, viewHref: '/wishlist' },
-      { id: 'top-rated', title: 'Top Rated', subtitle: 'Highest rated catalog products', products: fillProductRailProducts(byRating, catalogProducts), viewHref: '/categories' }
-    ];
+      !demoEcommerceMode && { id: 'top-rated', title: 'Top Rated', subtitle: 'Highest rated catalog products', products: fillProductRailProducts(byRating, catalogProducts), viewHref: '/categories' }
+    ].filter(Boolean);
     return sections.filter((section) => uniqueProducts(section.products).length >= 4);
-  }, [catalogProducts, recommendedProducts]);
+  }, [catalogProducts, demoEcommerceMode, recommendedProducts]);
   const categoryCards = useMemo(() => {
     const counts = state.facets?.categoryCounts || [];
     return counts
@@ -2588,16 +2796,16 @@ function AtelierHome({ user }) {
           {promoProducts.map((product) => <article className="atelier-promo atelier-promo-sale" key={product.id}><a className="atelier-promo-link" href={`/product/${encodeURIComponent(product.id)}`}><div><span className="atelier-eyebrow">{displayCategory(product)}</span><h3>{product.name}</h3><p>{displayBrand(product)} · {formatMoney(product.price || 0, product.currency)}</p><span className="atelier-text-link">View Product →</span></div><OptimizedImage src={product.imageUrl} alt={product.name} highResolution={false} /></a><WishlistHeartButton product={product} className="card-wishlist-heart" /></article>)}
         </section>}
 
-        <AtelierProductStrip title="Curated New Arrivals" railId="new-arrivals-rail" label="Curated new arrivals" products={arrivalProducts} railRef={arrivalsRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
+        <AtelierProductStrip title="Curated New Arrivals" railId="new-arrivals-rail" label="Curated new arrivals" products={arrivalProducts} railRef={arrivalsRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} demoEcommerceMode={demoEcommerceMode} />
         <AtelierOfferCards offers={offerCards.slice(0, 4)} />
-        {firstCommerceSections.map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
-        <AtelierProductStrip title="AI Try-On Picks" railId="ai-tryon-picks-rail" label="AI try-on picks" products={tryOnPickProducts} viewHref="/categories" railRef={tryOnRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
+        {firstCommerceSections.map((section) => <AtelierCommerceStrip {...section} demoEcommerceMode={demoEcommerceMode} key={section.id} />)}
+        <AtelierProductStrip title="AI Try-On Picks" railId="ai-tryon-picks-rail" label="AI try-on picks" products={tryOnPickProducts} viewHref="/categories" railRef={tryOnRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} demoEcommerceMode={demoEcommerceMode} />
         {!isMobileHome && <AtelierOfferCards offers={offerCards.slice(4)} />}
         {!isMobileHome && <AtelierCampaignCards cards={campaignCards} />}
         <AtelierBestCategories categories={categoryCards} />
-        {secondCommerceSections.map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
-        <AtelierProductStrip title="Daily Essentials" railId="daily-essentials-rail" label="Daily essentials" products={dailyEssentialProducts} viewHref="/categories" railRef={essentialsRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} />
-        {finalCommerceSections.map((section) => <AtelierCommerceStrip {...section} key={section.id} />)}
+        {secondCommerceSections.map((section) => <AtelierCommerceStrip {...section} demoEcommerceMode={demoEcommerceMode} key={section.id} />)}
+        <AtelierProductStrip title="Daily Essentials" railId="daily-essentials-rail" label="Daily essentials" products={dailyEssentialProducts} viewHref="/categories" railRef={essentialsRailRef} onScroll={scrollProductRail} onKeyDown={handleProductRailKeyDown} demoEcommerceMode={demoEcommerceMode} />
+        {finalCommerceSections.map((section) => <AtelierCommerceStrip {...section} demoEcommerceMode={demoEcommerceMode} key={section.id} />)}
         {mixedFeedProducts.length > 0 && (
           <section className="atelier-mixed-feed">
             <div className="atelier-wide">
@@ -2606,7 +2814,7 @@ function AtelierHome({ user }) {
                 <p>{mixedFeedLabel}</p>
               </div>
               <div className="atelier-mixed-grid" aria-label="Mixed product recommendations">
-                {mixedFeedProducts.map((product) => <AtelierProductRailCard product={product} key={`mixed-${product.id}`} />)}
+                {mixedFeedProducts.map((product) => <AtelierProductRailCard product={product} demoEcommerceMode={demoEcommerceMode} key={`mixed-${product.id}`} />)}
               </div>
             </div>
           </section>
@@ -3241,7 +3449,7 @@ const departmentPriceFilters = [
   { value: '2500-plus', label: '2,500+', test: (price) => price >= 2500 }
 ];
 
-function CategoryDepartmentPage({ category, user }) {
+function CategoryDepartmentPage({ category, user, demoEcommerceMode = false }) {
   const initialGender = new URLSearchParams(window.location.search).get('gender') || '';
   const [gender, setGender] = useState(initialGender);
   const [brandFilter, setBrandFilter] = useState('all');
@@ -3271,6 +3479,12 @@ function CategoryDepartmentPage({ category, user }) {
       ? departmentProducts.length
       : departmentProducts.filter((product) => option.test(Number(product.price || 0))).length
   })), [departmentProducts]);
+  const departmentSortOptions = [
+    ['newest', 'Newest'],
+    ['price_asc', 'Price: Low to High'],
+    ['price_desc', 'Price: High to Low'],
+    !demoEcommerceMode && ['rating', 'Top Rated']
+  ].filter(Boolean);
   const visibleProducts = useMemo(() => {
     const priceOption = departmentPriceFilters.find((option) => option.value === priceFilter) || departmentPriceFilters[0];
     return departmentProducts
@@ -3292,6 +3506,10 @@ function CategoryDepartmentPage({ category, user }) {
   useEffect(() => {
     if (brandFilter !== 'all' && !departmentBrands.some((brand) => brand.value === brandFilter)) setBrandFilter('all');
   }, [brandFilter, departmentBrands]);
+
+  useEffect(() => {
+    if (demoEcommerceMode && sort === 'rating') setSort('newest');
+  }, [demoEcommerceMode, sort]);
 
   const resetDepartmentFilters = () => {
     setGender('');
@@ -3327,7 +3545,7 @@ function CategoryDepartmentPage({ category, user }) {
           <div className="department-filter-selects">
             <label className="department-sort"><span>Brand</span><select value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)} aria-label="Filter products by brand" disabled={!departmentBrands.length}><option value="all">All brands</option>{departmentBrands.map((brand) => <option value={brand.value} key={brand.value}>{brand.label} ({brand.count})</option>)}</select></label>
             <label className="department-sort"><span>Price</span><select value={priceFilter} onChange={(event) => setPriceFilter(event.target.value)} aria-label="Filter products by price">{departmentPriceOptions.map((option) => <option value={option.value} key={option.value}>{option.label}{option.value !== 'all' ? ` (${option.count})` : ''}</option>)}</select></label>
-            <label className="department-sort"><span>Sort</span><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort products"><option value="newest">Newest</option><option value="price_asc">Price: Low to High</option><option value="price_desc">Price: High to Low</option><option value="rating">Top Rated</option></select></label>
+            <label className="department-sort"><span>Sort</span><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort products">{departmentSortOptions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
           </div>
         </div>
 
@@ -3335,13 +3553,13 @@ function CategoryDepartmentPage({ category, user }) {
         {state.loading && <ProductGridSkeleton count={8} />}
         {state.error && <StatusPanel text={state.error} onRetry={state.retry} />}
         {!state.loading && !state.error && visibleProducts.length === 0 && <EmptyProducts search={title} />}
-        {!state.loading && !state.error && visibleProducts.length > 0 && <div className="product-grid department-product-grid">{visibleProducts.map((product) => <ProductCard key={product.id} product={product} user={user} />)}</div>}
+        {!state.loading && !state.error && visibleProducts.length > 0 && <div className="product-grid department-product-grid">{visibleProducts.map((product) => <ProductCard key={product.id} product={product} user={user} demoEcommerceMode={demoEcommerceMode} />)}</div>}
       </section>
     </main>
   );
 }
 
-function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, tryOnLoading = false, tryOnVideoLoading = false, tryOnError = '', tryOnVideoError = '', onTryOn, onTryOnVideo }) {
+function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, demoEcommerceMode = false, tryOnLoading = false, tryOnVideoLoading = false, tryOnError = '', tryOnVideoError = '', onTryOn, onTryOnVideo }) {
   const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const [isWishlisted, setIsWishlisted] = useState(() => readWishlistProductIds().includes(String(product.id)));
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
@@ -3354,6 +3572,8 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
   const hasTryOnVideo = Boolean(tryOnVideoUrl) && hasUsableTryOn;
   const image = hasUsableTryOn ? tryOnImageUrl : productImage;
   const detailHref = `/product/${encodeURIComponent(product.id)}`;
+  const buyHref = `/checkout?productId=${encodeURIComponent(product.id)}`;
+  const authBuyHref = `/signup?return=${encodeURIComponent(buyHref)}`;
   const brand = displayBrand(product);
 
   useEffect(() => {
@@ -3409,7 +3629,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
         <h3 className="product-title">{product.name}</h3>
         <p className="product-brand">{brand}</p>
         <p className="product-category-chip">{displayCategory(product)}</p>
-        <p className="rating"><span>★</span> {Number(product.rating || 0).toFixed(1)} {product.ratingCount ? `(${product.ratingCount})` : ''}</p>
+        {!demoEcommerceMode && <p className="rating"><span>★</span> {Number(product.rating || 0).toFixed(1)} {product.ratingCount ? `(${product.ratingCount})` : ''}</p>}
         <div className="price-row">
           <span className="price">{formatMoney(product.price || 0, product.currency)}</span>
           {hasDiscount && <span className="was">{formatMoney(product.compareAtPrice, product.currency)}</span>}
@@ -3436,7 +3656,11 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, t
               {tryOnVideoLoading ? 'Video...' : tryOn?.videoUrl ? 'New Video' : 'Video Try-On'}
             </button>
           )}
-          {product.affiliateLink && <a className="shop-action" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop</a>}
+          {demoEcommerceMode ? (
+            <a className="shop-action" href={user ? buyHref : authBuyHref} onClick={() => recordEvent(user ? 'buy_now_click' : 'buy_auth_prompt', { productId: product.id })}>{user ? 'Buy' : 'Sign up to buy'}</a>
+          ) : (
+            product.affiliateLink && <a className="shop-action" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop</a>
+          )}
           {tryOnError && <p>{tryOnError}</p>}
           {tryOnVideoError && <p>{tryOnVideoError}</p>}
         </div>
@@ -5351,7 +5575,7 @@ function ProductDetailSkeleton() {
   );
 }
 
-function SearchPage({ user, setUser, tryOnMode = false }) {
+function SearchPage({ user, setUser, tryOnMode = false, demoEcommerceMode = false }) {
   const params = new URLSearchParams(window.location.search);
   const q = normalizeSearchQuery(params.get('q') || '');
   const tag = params.get('tag') || '';
@@ -5501,7 +5725,7 @@ function SearchPage({ user, setUser, tryOnMode = false }) {
           {!state.loading && !state.error && state.products.length === 0 && <EmptyProducts search={title} />}
           {!state.loading && !state.error && state.products.length > 0 && (
             <div className="product-grid">
-              {visibleProducts.map((product, index) => <ProductCard key={product.id} product={product} user={user} tryOn={tryOns[product.id]} canTryOn={allowTryOnTrial && index < 4} tryOnLoading={Boolean(tryOnLoading[product.id])} tryOnVideoLoading={Boolean(tryOnVideoLoading[product.id])} tryOnError={tryOnErrors[product.id]} tryOnVideoError={tryOnVideoErrors[product.id]} onTryOn={generateTryOn} onTryOnVideo={generateTryOnVideo} />)}
+              {visibleProducts.map((product, index) => <ProductCard key={product.id} product={product} user={user} tryOn={tryOns[product.id]} canTryOn={allowTryOnTrial && index < 4} demoEcommerceMode={demoEcommerceMode} tryOnLoading={Boolean(tryOnLoading[product.id])} tryOnVideoLoading={Boolean(tryOnVideoLoading[product.id])} tryOnError={tryOnErrors[product.id]} tryOnVideoError={tryOnVideoErrors[product.id]} onTryOn={generateTryOn} onTryOnVideo={generateTryOnVideo} />)}
               {lockedProducts.length > 0 && (
                 <div className="locked-row">
                   {lockedProducts.map((product) => <ProductCard key={`locked-${product.id}`} product={product} locked />)}
@@ -5697,7 +5921,7 @@ function readWishlistCollections() {
   }
 }
 
-function WishlistPage({ user }) {
+function WishlistPage({ user, demoEcommerceMode = false }) {
   const [wishlistIds, setWishlistIds] = useState(() => readWishlistProductIds());
   const [savedCollections, setSavedCollections] = useState(() => readWishlistCollections());
   const [activeCollection, setActiveCollection] = useState('all');
@@ -5853,7 +6077,7 @@ function WishlistPage({ user }) {
           {wishlistState.error && wishlistIds.length > 0 && <StatusPanel text={wishlistState.error} onRetry={wishlistState.retry} />}
           {!isLoadingWishlist && !wishlistState.error && visibleWishlistProducts.length > 0 && (
             <div className={`wishlist-reference-grid ${view === 'list' ? 'is-list' : ''}`}>
-              {visibleWishlistProducts.map((product) => <WishlistProductCard key={wishlistProductId(product)} product={product} onRemove={() => removeFromWishlist(product)} />)}
+              {visibleWishlistProducts.map((product) => <WishlistProductCard key={wishlistProductId(product)} product={product} user={user} demoEcommerceMode={demoEcommerceMode} onRemove={() => removeFromWishlist(product)} />)}
             </div>
           )}
           {!isLoadingWishlist && !wishlistState.error && wishlistIds.length === 0 && (
@@ -5886,11 +6110,15 @@ function WishlistPage({ user }) {
   );
 }
 
-function WishlistProductCard({ product, onRemove }) {
+function WishlistProductCard({ product, user, demoEcommerceMode = false, onRemove }) {
   const id = wishlistProductId(product);
   const detailHref = `/product/${encodeURIComponent(id)}`;
-  const shopHref = product.affiliateLink || detailHref;
-  const isExternalShop = Boolean(product.affiliateLink);
+  const checkoutHref = `/checkout?productId=${encodeURIComponent(id)}`;
+  const authBuyHref = `/signup?return=${encodeURIComponent(checkoutHref)}`;
+  const shopHref = demoEcommerceMode ? (user ? checkoutHref : authBuyHref) : (product.affiliateLink || detailHref);
+  const isExternalShop = Boolean(!demoEcommerceMode && product.affiliateLink);
+  const actionLabel = demoEcommerceMode ? (user ? 'Buy now' : 'Sign up to buy') : isExternalShop ? 'Move to Bag' : 'View Product';
+  const actionEvent = demoEcommerceMode ? (user ? 'buy_now_click' : 'buy_auth_prompt') : (isExternalShop ? 'shop_click' : 'product_click');
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
 
   return (
@@ -5904,7 +6132,7 @@ function WishlistProductCard({ product, onRemove }) {
         <a href={detailHref} onClick={() => recordEvent('product_click', { productId: id })}><h3>{product.name}</h3></a>
         <div><strong>{formatMoney(product.price || 0, product.currency)}</strong>{hasDiscount && <s>{formatMoney(product.compareAtPrice, product.currency)}</s>}</div>
       </div>
-      <a className="wishlist-reference-card-action" href={shopHref} target={isExternalShop ? '_blank' : undefined} rel={isExternalShop ? 'noreferrer' : undefined} onClick={() => recordEvent(isExternalShop ? 'shop_click' : 'product_click', { productId: id })}>{isExternalShop ? 'Move to Bag' : 'View Product'} <span>→</span></a>
+      <a className="wishlist-reference-card-action" href={shopHref} target={isExternalShop ? '_blank' : undefined} rel={isExternalShop ? 'noreferrer' : undefined} onClick={() => recordEvent(actionEvent, { productId: id })}>{actionLabel} <span>→</span></a>
     </article>
   );
 }
@@ -6442,6 +6670,7 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [selectedPackId, setSelectedPackId] = useState(isTopUpPage ? 'topup_50_tokens' : 'monthly_150_tokens');
   const [message, setMessage] = useState('');
+  const [creditedOrder, setCreditedOrder] = useState(null);
   const verifiedOrderRef = useRef('');
   const checkoutIdempotencyRef = useRef(new Map());
   const params = new URLSearchParams(window.location.search);
@@ -6453,7 +6682,7 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
     if (!user || !returnedOrderId || verifiedOrderRef.current === returnedOrderId) return;
     verifiedOrderRef.current = returnedOrderId;
     let alive = true;
-    setMessage('Verifying payment with PhonePe...');
+    setMessage('Verifying payment with Razorpay...');
     api(`/payments/orders/${encodeURIComponent(returnedOrderId)}/status`)
       .then((data) => {
         if (!alive) return;
@@ -6480,7 +6709,7 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
       return;
     }
     setCheckoutLoading(true);
-    setMessage('Opening secure PhonePe checkout...');
+    setMessage('Opening secure Razorpay checkout...');
     try {
       const idempotencyKey = checkoutIdempotencyRef.current.get(pack.id)
         || (window.crypto?.randomUUID?.() || `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -6490,6 +6719,71 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
         headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({ planId: pack.planId || pack.id })
       });
+      if (data.razorpay) {
+        const Razorpay = await loadRazorpayCheckout();
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return false;
+            settled = true;
+            return true;
+          };
+          const checkout = new Razorpay({
+            key: data.razorpay.key,
+            amount: data.razorpay.amount,
+            currency: data.razorpay.currency || 'INR',
+            name: data.razorpay.name || 'Lookmefy',
+            description: data.razorpay.description || pack.label,
+            order_id: data.razorpay.orderId,
+            prefill: data.razorpay.prefill || {},
+            notes: data.razorpay.notes || {},
+            theme: { color: '#1f1b19' },
+            handler: async (response) => {
+              try {
+                setCheckoutLoading(true);
+                setMessage('Verifying payment with Razorpay...');
+                const verified = await api(data.razorpay.verifyPath || '/payments/razorpay/verify', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    merchantOrderId: data.order?.merchantOrderId,
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_signature: response.razorpay_signature
+                  })
+                });
+                if (verified.user) setUser(verified.user);
+                setCreditedOrder({ order: verified.order, user: verified.user || user });
+                checkoutIdempotencyRef.current.delete(pack.id);
+                setMessage('');
+                announce(`${Number(verified.order?.tokens || 0)} credits credited.`);
+                if (finish()) resolve();
+              } catch (error) {
+                if (finish()) reject(error);
+              } finally {
+                setCheckoutLoading(false);
+              }
+            },
+            modal: {
+              ondismiss: () => {
+                if (!finish()) return;
+                setMessage('Checkout closed before payment was completed.');
+                setCheckoutLoading(false);
+                resolve();
+              }
+            }
+          });
+          checkout.on('payment.failed', (response) => {
+            if (!finish()) return;
+            setMessage(razorpayFailureMessage(response));
+            setCheckoutLoading(false);
+            resolve();
+          });
+          checkout.open();
+          setCheckoutLoading(false);
+        });
+        return;
+      }
+      if (!data.redirectUrl) throw new Error('Checkout did not return a payment link.');
       window.location.assign(data.redirectUrl);
     } catch (err) {
       checkoutIdempotencyRef.current.delete(pack.id);
@@ -6612,7 +6906,7 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
             <section className="credit-payment-section" aria-label="Payment method">
               <div className="credit-section-heading"><h2>Payment Method</h2><span>Secure checkout</span></div>
               <button className="credit-payment-choice active" type="button" aria-pressed="true">
-                <span className="credit-phonepe-mark">P</span><strong>PhonePe</strong><small>UPI, cards, and net banking</small><b>Selected</b>
+                <span className="credit-phonepe-mark">R</span><strong>Razorpay</strong><small>UPI, cards, and net banking</small><b>Selected</b>
               </button>
             </section>
           </div>
@@ -6635,11 +6929,47 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
             <div className="credit-summary-row"><span>Processing Fee</span><strong>Free</strong></div>
             <div className="credit-summary-total"><span>Due today</span><strong>{selectedPack.price}</strong></div>
             <button type="button" onClick={completeSelection} disabled={checkoutLoading}>{checkoutLoading ? 'Opening checkout...' : selectedPack.cta}</button>
-            <small>{isPaidPack ? (isActive && subscription.currentPeriodEnd && selectedPack.id === 'monthly_150_tokens' ? `Current plan ends ${formatDate(subscription.currentPeriodEnd)}. Credits are added after secure payment verification.` : 'Secured by PhonePe. Credits are added only after payment verification.') : selectedPack.copy}</small>
+            <small>{isPaidPack ? (isActive && subscription.currentPeriodEnd && selectedPack.id === 'monthly_150_tokens' ? `Current plan ends ${formatDate(subscription.currentPeriodEnd)}. Credits are added after secure payment verification.` : 'Secured by Razorpay. Credits are added only after payment verification.') : selectedPack.copy}</small>
           </aside>
         </div>
       </section>
+      {creditedOrder && <CreditSuccessModal order={creditedOrder.order} user={creditedOrder.user} onClose={() => setCreditedOrder(null)} />}
     </main>
+  );
+}
+
+function CreditSuccessModal({ order, user, onClose }) {
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+    const onKey = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="checkout-success-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="checkout-success-modal credit-success-modal" role="dialog" aria-modal="true" aria-labelledby="credit-success-title">
+        <button ref={closeButtonRef} className="checkout-success-close" type="button" onClick={onClose} aria-label="Close credit success"><CloseIcon /></button>
+        <div className="checkout-success-mark" aria-hidden="true">✓</div>
+        <p className="kicker">Credits credited</p>
+        <h2 id="credit-success-title">Credits added</h2>
+        <p>Your credit pack has been added to your Lookmefy account.</p>
+        <div className="checkout-success-details">
+          <div><span>Pack</span><strong>{order?.planName || 'Credits'}</strong></div>
+          <div><span>Credits</span><strong>{Number(order?.tokens || 0)}</strong></div>
+          <div><span>Amount</span><strong>{formatMoney(Number(order?.dueTodayAmount || order?.amount || 0) / 100, order?.currency || 'INR')}</strong></div>
+          <div><span>New balance</span><strong>{Number(user?.tokens || 0)}</strong></div>
+        </div>
+        <div className="checkout-success-actions">
+          <a className="button" href="/custom-try-on">Use credits</a>
+          <a className="button secondary" href="/tokens">Back to credits</a>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -6722,6 +7052,7 @@ function ProfilePage({ user, setUser }) {
   const uploadedProfilePhotoUrl = user.bodyPhotoOriginalUrl || user.bodyPhotoUrl;
   const photoSrc = preview || protectedMediaUrl(generatedProfilePhotoUrl || uploadedProfilePhotoUrl);
   const photoFrameClass = hasAiProfile && !preview ? 'ai-full-body-ready' : '';
+  const showGeneratingPhotoStatus = user.bodyPhotoStatus === 'generating';
   const selectPhoto = (event) => {
     const file = event.currentTarget.files?.[0];
     setPhotoFile(file || null);
@@ -6845,9 +7176,17 @@ function ProfilePage({ user, setUser }) {
         <section className="profile-reference-panel profile-reference-photo" id="tryon-photo" aria-label="Try-on photo">
           <div className="profile-reference-section-head"><div><h2>Try-On Portrait</h2><p>Manage the photo used for your virtual try-on previews.</p></div></div>
           <div className="profile-reference-photo-layout">
-            <div className={`profile-reference-photo-preview ${photoFrameClass}`.trim()}>
-              {photoSrc ? <img src={photoSrc} alt="Current model profile" /> : <span>{initials}</span>}
-              {photoSrc && <button className="fullscreen-button" type="button" aria-label="Open try-on photo full screen" title="Open full screen" onClick={() => setFullscreenImage({ src: photoSrc, alt: 'Current try-on profile', title: 'Try-on Photo' })}><FullscreenIcon /></button>}
+            <div className="profile-reference-photo-preview-stack">
+              <div className={`profile-reference-photo-preview ${photoFrameClass}`.trim()}>
+                {photoSrc ? <img src={photoSrc} alt="Current model profile" /> : <span>{initials}</span>}
+                {photoSrc && <button className="fullscreen-button" type="button" aria-label="Open try-on photo full screen" title="Open full screen" onClick={() => setFullscreenImage({ src: photoSrc, alt: 'Current try-on profile', title: 'Try-on Photo' })}><FullscreenIcon /></button>}
+              </div>
+              {(message || showGeneratingPhotoStatus) && (
+                <div className="profile-reference-photo-status">
+                  {message && <p className={`profile-reference-message ${/failed|error|clearer/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
+                  {showGeneratingPhotoStatus && <p className="profile-reference-message">Full-body profile is preparing in the background.</p>}
+                </div>
+              )}
             </div>
             <form className="profile-reference-photo-form" onSubmit={submitPhoto}>
               <label className="profile-reference-upload-zone">
@@ -6861,15 +7200,13 @@ function ProfilePage({ user, setUser }) {
               <div className="profile-reference-photo-tools"><button type="button" onClick={() => cameraRef.current?.click()}>Take photo</button><div role="radiogroup" aria-label="Profile photo mode"><label><input type="radio" name="profilePhotoMode" value="ai-full-body" checked={profilePhotoMode === 'ai-full-body'} onChange={(event) => setProfilePhotoMode(event.target.value)} /> AI full-body profile</label><label><input type="radio" name="profilePhotoMode" value="exact" checked={profilePhotoMode === 'exact'} onChange={(event) => setProfilePhotoMode(event.target.value)} /> Exact photo</label></div></div>
               {preview && <button className="profile-reference-save-photo" type="submit" disabled={saving}>{saving ? 'Saving photo...' : 'Save new photo'}</button>}
               {hasUploadedPhoto && !hasAiProfile && user.bodyPhotoStatus !== 'generating' && <button className="profile-reference-save-photo secondary" type="button" disabled={saving} onClick={createAiBodyProfile}>{saving ? 'Starting AI profile...' : 'Create AI full-body profile'}</button>}
-              {message && <p className={`profile-reference-message ${/failed|error|clearer/i.test(message) ? 'error-message' : ''}`}>{message}</p>}
-              {user.bodyPhotoStatus === 'generating' && <p className="profile-reference-message">Full-body profile is preparing in the background.</p>}
             </form>
           </div>
         </section>
 
         <section className="profile-reference-panel profile-reference-payment" aria-label="Payment methods">
           <div className="profile-reference-section-head"><div><h2>Payment Methods</h2><p>Payments are securely verified before credits are added.</p></div><a href="/tokens">Add credits</a></div>
-          <div className="profile-reference-payment-row"><span>PhonePe</span><strong>UPI, cards, and net banking</strong><small>Secure checkout</small><a href="/tokens" aria-label="Open credit checkout">›</a></div>
+          <div className="profile-reference-payment-row"><span>Razorpay</span><strong>UPI, cards, and net banking</strong><small>Secure checkout</small><a href="/tokens" aria-label="Open credit checkout">›</a></div>
         </section>
 
         <section className="profile-reference-panel profile-reference-settings" aria-label="Account settings">
@@ -7166,7 +7503,7 @@ function FilterPanel({ facets, values, className = '' }) {
   );
 }
 
-function CartPage() {
+function CartPage({ user, demoEcommerceMode = false }) {
   const [items, setItems] = useState(() => readCartItems());
   const subtotal = cartSubtotal(items);
 
@@ -7259,12 +7596,395 @@ function CartPage() {
           <aside className="cart-summary" aria-label="Cart summary">
             <h2>Order summary</h2>
             <div><span>Subtotal</span><strong>{formatMoney(subtotal, items[0]?.currency || 'INR')}</strong></div>
-            <div><span>Delivery</span><strong>Calculated at checkout</strong></div>
-            <p>Product checkout needs backend order, address, inventory, and payment confirmation APIs before it can accept payment safely.</p>
-            <button type="button" disabled aria-disabled="true">Checkout coming soon</button>
+            <div><span>Delivery</span><strong>{demoEcommerceMode ? 'Free' : 'Calculated at checkout'}</strong></div>
+            <p>{demoEcommerceMode ? 'Checkout confirms orders inside Lookmefy. Delivery is currently available within India.' : 'Product checkout needs backend order, address, inventory, and payment confirmation APIs before it can accept payment safely.'}</p>
+            {demoEcommerceMode ? <a className="cart-checkout-action" href={user ? '/checkout' : `/signup?return=${encodeURIComponent('/checkout')}`}>{user ? 'Checkout' : 'Sign up to checkout'}</a> : <button type="button" disabled aria-disabled="true">Checkout coming soon</button>}
             <a href="/support">Contact support</a>
           </aside>
         </div>
+      </section>
+    </main>
+  );
+}
+
+function checkoutContactFromUser(user) {
+  return {
+    fullName: user?.name || '',
+    mobile: user?.phone || user?.mobile || ''
+  };
+}
+
+function checkoutItemFromProduct(product) {
+  if (!product?.id) return null;
+  return {
+    productId: product.id,
+    name: product.name,
+    brand: product.brand,
+    imageUrl: product.imageUrl,
+    price: product.price,
+    compareAtPrice: product.compareAtPrice,
+    currency: product.currency || 'INR',
+    variant: 'Standard',
+    quantity: 1
+  };
+}
+
+function CheckoutPage({ user, demoEcommerceMode = false, demoModeLoading = false }) {
+  const params = new URLSearchParams(window.location.search);
+  const directProductId = params.get('productId') || '';
+  const { product, loading: productLoading, error: productError } = useProduct(directProductId);
+  const [cartItems, setCartItems] = useState(() => readCartItems());
+  const [form, setForm] = useState(() => ({
+    ...checkoutContactFromUser(user),
+    houseStreet: '',
+    area: '',
+    landmark: '',
+    city: '',
+    state: '',
+    pincode: ''
+  }));
+  const [pincodeStatus, setPincodeStatus] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [createdOrder, setCreatedOrder] = useState(null);
+  const [successOrder, setSuccessOrder] = useState(null);
+  const directItem = checkoutItemFromProduct(product);
+  const items = directItem ? [directItem] : cartItems;
+  const subtotal = cartSubtotal(items);
+  const total = subtotal;
+  const currency = items[0]?.currency || 'INR';
+
+  useEffect(() => {
+    const sync = (event) => setCartItems(event.detail?.items || readCartItems());
+    window.addEventListener('fitlook:cart-change', sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('fitlook:cart-change', sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    const contact = checkoutContactFromUser(user);
+    setForm((current) => ({
+      ...current,
+      fullName: current.fullName || contact.fullName,
+      mobile: current.mobile || contact.mobile
+    }));
+  }, [user?.id]);
+
+  useEffect(() => {
+    const pincode = form.pincode.replace(/\D/g, '').slice(0, 6);
+    if (pincode !== form.pincode) {
+      setForm((current) => ({ ...current, pincode }));
+      return undefined;
+    }
+    if (pincode.length !== 6) {
+      setPincodeStatus('');
+      return undefined;
+    }
+    let alive = true;
+    setPincodeStatus('Checking pincode...');
+    api(`/orders/pincode/${pincode}`, { retry: 0 })
+      .then((data) => {
+        if (!alive) return;
+        if (!data?.serviceable) {
+          setPincodeStatus('This pincode is not serviceable yet.');
+          return;
+        }
+        setForm((current) => ({
+          ...current,
+          city: data.city || current.city,
+          state: data.state || current.state
+        }));
+        setPincodeStatus(data.city ? `Delivering to ${data.city}, ${data.state}.` : `Delivering in ${data.state}. Add your city to continue.`);
+      })
+      .catch((err) => {
+        if (alive) setPincodeStatus(err.message || 'Could not check this pincode.');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [form.pincode]);
+
+  const updateField = (field) => (event) => {
+    const value = field === 'pincode' ? event.target.value.replace(/\D/g, '').slice(0, 6) : event.target.value;
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const startPayment = async (event) => {
+    event.preventDefault();
+    if (submitting || !items.length) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const idempotencyKey = `product-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const orderResponse = await api('/orders', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({
+          items: items.map((item) => ({ productId: item.productId || item.id, quantity: item.quantity, variant: item.variant || 'Standard' })),
+          contact: {
+            fullName: form.fullName,
+            mobile: form.mobile
+          },
+          address: {
+            houseStreet: form.houseStreet,
+            area: form.area,
+            landmark: form.landmark,
+            city: form.city,
+            state: form.state,
+            pincode: form.pincode
+          }
+        })
+      });
+      const order = orderResponse.order;
+      setCreatedOrder(order);
+      const demoPayment = await api(`/orders/${encodeURIComponent(order.id)}/demo-success`, { method: 'POST' });
+      const completedOrder = demoPayment.order || order;
+      setCreatedOrder(completedOrder);
+      if (!directItem) saveCartItems([]);
+      recordEvent('product_checkout_completed', { metadata: { orderId: completedOrder.id, itemCount: items.length, mode: 'demo' } });
+      setSuccessOrder(completedOrder);
+      announce('Checkout successful.');
+    } catch (err) {
+      setError(err.message || 'Could not complete checkout.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (demoModeLoading) {
+    return (
+      <main className="checkout-page">
+        <section className="wrap checkout-empty-state">
+          <p className="kicker">Checkout</p>
+          <h1>Checking checkout mode...</h1>
+          <p>Preparing the storefront settings for this session.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!demoEcommerceMode) {
+    return (
+      <main className="checkout-page">
+        <section className="wrap checkout-empty-state">
+          <p className="kicker">Checkout</p>
+          <h1>Product checkout is not enabled.</h1>
+          <p>Shop links currently open the linked seller. Demo ecommerce mode can be enabled from admin settings.</p>
+          <a className="button" href="/categories">Back to catalog</a>
+        </section>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className="checkout-page">
+        <section className="wrap checkout-empty-state">
+          <p className="kicker">Checkout</p>
+          <h1>Sign up to buy.</h1>
+          <p>Create a Lookmefy account before placing a demo product order.</p>
+          <a className="button" href={`/signup?return=${encodeURIComponent(window.location.pathname + window.location.search)}`}>Create profile</a>
+        </section>
+      </main>
+    );
+  }
+
+  if (directProductId && productLoading) {
+    return <ProductDetailSkeleton />;
+  }
+
+  if (directProductId && (productError || !product)) {
+    return (
+      <main className="checkout-page">
+        <section className="wrap checkout-empty-state">
+          <p className="kicker">Checkout</p>
+          <h1>This product could not be loaded.</h1>
+          <p>{productError || 'Open the catalog and choose another item.'}</p>
+          <a className="button" href="/categories">Back to catalog</a>
+        </section>
+      </main>
+    );
+  }
+
+  if (!items.length) {
+    return (
+      <main className="checkout-page">
+        <section className="wrap checkout-empty-state">
+          <p className="kicker">Checkout</p>
+          <h1>Your bag is empty.</h1>
+          <p>Add a product before starting prepaid checkout.</p>
+          <a className="button" href="/categories">Explore fashion</a>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="checkout-page">
+      <section className="wrap checkout-shell" aria-labelledby="checkout-title">
+        <form className="checkout-form" onSubmit={startPayment}>
+          <div className="checkout-section-head">
+            <p className="kicker">Secure checkout</p>
+            <h1 id="checkout-title">Checkout</h1>
+            <p>For payment and delivery updates</p>
+          </div>
+          <div className="checkout-field-grid">
+            <label><span>Full name</span><input value={form.fullName} onChange={updateField('fullName')} autoComplete="name" required /></label>
+            <label><span>Mobile number</span><input value={form.mobile} onChange={updateField('mobile')} inputMode="tel" autoComplete="tel" required /></label>
+          </div>
+
+          <div className="checkout-section-head compact">
+            <h2>Delivery address</h2>
+            <p>Currently delivering within India</p>
+          </div>
+          <div className="checkout-field-grid">
+            <label className="wide"><span>House / flat and street</span><input value={form.houseStreet} onChange={updateField('houseStreet')} autoComplete="address-line1" required /></label>
+            <label><span>Area / locality (optional)</span><input value={form.area} onChange={updateField('area')} autoComplete="address-line2" /></label>
+            <label><span>Landmark (optional)</span><input value={form.landmark} onChange={updateField('landmark')} /></label>
+            <label><span>City</span><input value={form.city} onChange={updateField('city')} autoComplete="address-level2" required /></label>
+            <label><span>State</span><select value={form.state} onChange={updateField('state')} autoComplete="address-level1" required><option value="">Choose state</option>{INDIA_STATES.map((state) => <option value={state} key={state}>{state}</option>)}</select></label>
+            <label><span>Pincode</span><input value={form.pincode} onChange={updateField('pincode')} inputMode="numeric" pattern="[0-9]{6}" maxLength="6" autoComplete="postal-code" placeholder="Enter a 6-digit pincode" required /></label>
+          </div>
+          {pincodeStatus && <p className={`checkout-pincode-status ${/not|could/i.test(pincodeStatus) ? 'error-message' : ''}`.trim()}>{pincodeStatus}</p>}
+
+          <div className="checkout-section-head compact">
+            <h2>Payment</h2>
+            <p>Prepaid and secure</p>
+          </div>
+          <label className="checkout-payment-option">
+            <input type="radio" checked readOnly />
+            <span><strong>Prepaid online checkout</strong><small>Pay now confirms the order securely inside Lookmefy.</small></span>
+          </label>
+
+          {error && <p className="form-message error-message" role="alert">{error}</p>}
+          {createdOrder && !successOrder && <p className="form-message">Order created. Confirming checkout...</p>}
+          <button className="checkout-pay-button" type="submit" disabled={submitting}>{submitting ? 'Confirming order...' : 'Pay now'}</button>
+        </form>
+
+        <aside className="checkout-summary" aria-label="Order summary">
+          <h2>Order summary</h2>
+          <div className="checkout-summary-items">
+            {items.map((item) => (
+              <article className="checkout-summary-item" key={`${item.productId || item.id}-${item.variant}`}>
+                <img src={item.imageUrl || asset('hero2.png')} alt="" />
+                <div><strong>{item.name}</strong><span>{item.brand || 'Lookmefy'} · Qty {item.quantity}</span></div>
+                <b>{formatMoney((Number(item.price) || 0) * (Number(item.quantity) || 1), item.currency)}</b>
+              </article>
+            ))}
+          </div>
+          <div className="checkout-total-row"><span>Subtotal</span><strong>{formatMoney(subtotal, currency)}</strong></div>
+          <div className="checkout-total-row"><span>Shipping</span><strong>Free</strong></div>
+          <div className="checkout-total-row total"><span>Total</span><strong>{formatMoney(total, currency)}</strong></div>
+        </aside>
+      </section>
+      {successOrder && <CheckoutSuccessModal order={successOrder} onClose={() => setSuccessOrder(null)} />}
+    </main>
+  );
+}
+
+function CheckoutSuccessModal({ order, onClose }) {
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+    const onKey = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="checkout-success-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="checkout-success-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-success-title">
+        <button ref={closeButtonRef} className="checkout-success-close" type="button" onClick={onClose} aria-label="Close checkout success"><CloseIcon /></button>
+        <div className="checkout-success-mark" aria-hidden="true">✓</div>
+        <p className="kicker">Order placed</p>
+        <h2 id="checkout-success-title">Checkout successful</h2>
+        <p>Your order has been confirmed inside Lookmefy.</p>
+        <div className="checkout-success-details">
+          <div><span>Order ID</span><strong>{order.merchantOrderId || order.id}</strong></div>
+          <div><span>Total</span><strong>{formatMoney(order.total, order.currency)}</strong></div>
+          <div><span>Mobile</span><strong>{order.contact?.mobile || 'Not provided'}</strong></div>
+          <div><span>Status</span><strong>{order.paymentStatus}</strong></div>
+        </div>
+        <div className="checkout-success-actions">
+          <a className="button" href={`/order/${encodeURIComponent(order.id)}/status`}>View order</a>
+          <a className="button secondary" href="/categories">Continue shopping</a>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OrderStatusPage({ id, user }) {
+  const [state, setState] = useState({ order: null, loading: true, error: '' });
+
+  useEffect(() => {
+    if (!id || !user) return undefined;
+    let alive = true;
+    let timer = null;
+    const load = () => {
+      api(`/orders/${encodeURIComponent(id)}/payment-status`, { retry: 0 })
+        .then((data) => {
+          if (!alive) return;
+          const order = data.order || null;
+          setState({ order, loading: false, error: '' });
+          if (order?.paymentStatus === 'pending') timer = window.setTimeout(load, 5000);
+        })
+        .catch((err) => {
+          if (alive) setState({ order: null, loading: false, error: err.message || 'Could not load order status.' });
+        });
+    };
+    load();
+    return () => {
+      alive = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [id, user]);
+
+  const order = state.order;
+  const paid = order?.paymentStatus === 'paid';
+  const failed = ['failed', 'cancelled'].includes(order?.paymentStatus);
+
+  if (!user) {
+    return (
+      <main className="checkout-page order-status-page">
+        <section className="wrap checkout-empty-state order-status-shell">
+          <p className="kicker">Order status</p>
+          <h1>Sign in to view this order.</h1>
+          <p>Order details are linked to the account that placed the checkout.</p>
+          <a className="button" href={`/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}`}>Sign in</a>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="checkout-page order-status-page">
+      <section className="wrap checkout-empty-state order-status-shell">
+        <p className="kicker">Order status</p>
+        {state.loading && <h1>Checking payment...</h1>}
+        {state.error && <><h1>We could not load this order.</h1><p>{state.error}</p></>}
+        {order && (
+          <>
+            <h1>{paid ? 'Payment received.' : failed ? 'Payment was not completed.' : 'Payment is pending.'}</h1>
+            <p>{paid ? 'Your order is confirmed and delivery updates will be sent to your contact details.' : failed ? 'You can return to checkout and try payment again.' : 'Payment is still processing. This page will refresh automatically.'}</p>
+            <div className="order-status-details">
+              <div><span>Order</span><strong>{order.merchantOrderId || order.id}</strong></div>
+              <div><span>Payment</span><strong>{order.paymentStatus}</strong></div>
+              <div><span>Fulfillment</span><strong>{order.fulfillmentStatus}</strong></div>
+              <div><span>Total</span><strong>{formatMoney(order.total, order.currency)}</strong></div>
+            </div>
+            <div className="empty-products-actions">
+              {failed && <a className="button" href={`/checkout${order.items?.[0]?.productId ? `?productId=${encodeURIComponent(order.items[0].productId)}` : ''}`}>Try again</a>}
+              <a className="button secondary" href="/categories">Continue shopping</a>
+            </div>
+          </>
+        )}
       </section>
     </main>
   );
@@ -7297,7 +8017,7 @@ function AutoPlayingTryOnVideo({ src, poster }) {
   );
 }
 
-function ProductPage({ id, user, setUser }) {
+function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
   const { product, loading, error } = useProduct(id);
   const related = useSimilarProducts(id, 4);
   const [tryOn, setTryOn] = useState(null);
@@ -7406,11 +8126,13 @@ function ProductPage({ id, user, setUser }) {
     ['Category', category],
     ['Fit area', product.garmentPlacement === 'bottom' ? 'Bottomwear' : 'Topwear'],
     ['For', product.gender],
-    ['Rating', `${Number(product.rating || 0).toFixed(1)}${product.ratingCount ? ` from ${product.ratingCount} reviews` : ''}`],
+    !demoEcommerceMode && ['Rating', `${Number(product.rating || 0).toFixed(1)}${product.ratingCount ? ` from ${product.ratingCount} reviews` : ''}`],
     ['Price', formatMoney(product.price, product.currency)]
-  ].filter(([, value]) => value);
+  ].filter(Boolean).filter(([, value]) => value);
   const productTags = (product.tags || []).filter(Boolean).slice(0, 10);
   const editorialImage = relatedProducts.find((item) => item.imageUrl)?.imageUrl || productImage;
+  const buyHref = `/checkout?productId=${encodeURIComponent(product.id)}`;
+  const authBuyHref = `/signup?return=${encodeURIComponent(buyHref)}`;
   const galleryItems = [
     {
       key: 'product',
@@ -7610,7 +8332,7 @@ function ProductPage({ id, user, setUser }) {
                 {hasDiscount && <del>{formatMoney(product.compareAtPrice, product.currency)}</del>}
                 {discount && <span>{discount}</span>}
               </div>
-              <p className="product-editorial-rating"><span>Rating</span> {Number(product.rating || 0).toFixed(1)} {product.ratingCount ? `(${product.ratingCount} reviews)` : ''}</p>
+              {!demoEcommerceMode && <p className="product-editorial-rating"><span>Rating</span> {Number(product.rating || 0).toFixed(1)} {product.ratingCount ? `(${product.ratingCount} reviews)` : ''}</p>}
             </div>
 
             <div className="product-editorial-actions">
@@ -7631,14 +8353,18 @@ function ProductPage({ id, user, setUser }) {
                   {tryOnVideoLoading ? 'Making video...' : hasTryOnVideo ? 'Refresh video' : 'Generate video'}
                 </button>
               ) : <a className="product-editorial-video" href="/signup">Generate video</a>}
-              {product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop now</a>}
+              {demoEcommerceMode ? (
+                <a className="product-editorial-shop" href={user ? buyHref : authBuyHref} onClick={() => recordEvent(user ? 'buy_now_click' : 'buy_auth_prompt', { productId: product.id })}>{user ? 'Buy now' : 'Sign up to buy'}</a>
+              ) : (
+                product.affiliateLink && <a className="product-editorial-shop" href={product.affiliateLink} target="_blank" rel="noreferrer" onClick={() => recordEvent('shop_click', { productId: product.id })}>Shop now</a>
+              )}
             </div>
             {(tryOnLoading || tryOnVideoLoading) && <p className="form-message" role="status">{tryOnSlow ? 'This is taking a little longer than usual.' : 'Preparing your try-on...'}</p>}
             {tryOnCreditNotice && <p className="form-message">{tryOnCreditNotice}</p>}
             <div className="product-editorial-ship"><span>Shipping</span><strong>Live catalog item</strong></div>
             <div className="product-editorial-benefits">
               <div><strong>AI fit preview</strong><span>Built from your Lookmefy profile</span></div>
-              <div><strong>Verified catalog</strong><span>Live brand and price details</span></div>
+              <div><strong>Verified catalog</strong><span>Brand and price details</span></div>
             </div>
             {tryOnError && <p className="form-message error-message">{tryOnError}</p>}
             {tryOnVideoError && <p className="form-message error-message">{tryOnVideoError}</p>}
@@ -7660,7 +8386,7 @@ function ProductPage({ id, user, setUser }) {
               </details>
               <details>
                 <summary>Delivery and returns</summary>
-                <p>Checkout, delivery, and return terms are managed by Amazon or the linked seller.</p>
+                <p>{demoEcommerceMode ? 'Checkout confirms your order inside Lookmefy. Delivery is currently available within India, and order updates are sent to your contact details.' : 'Checkout, delivery, and return terms are managed by Amazon or the linked seller.'}</p>
               </details>
             </div>
           </div>
@@ -8397,8 +9123,8 @@ function DownloadAppPage() {
   );
 }
 
-function InfoPage({ meta, children, user, ctaLabel, ctaHref }) {
-  const policy = policyPages[normalizePath()];
+function InfoPage({ meta, children, user, ctaLabel, ctaHref, demoEcommerceMode = false }) {
+  const policy = policyForPath(normalizePath(), demoEcommerceMode);
   if (policy && !children) return <PolicyContent policy={policy} />;
 
   const [kicker, title, lead, image] = meta;
@@ -9247,13 +9973,15 @@ function AuthPage({ mode, setUser }) {
     && window.innerWidth > 700;
 
   useEffect(() => {
-    const resetSucceeded = mode === 'login' && new URLSearchParams(window.location.search).get('passwordReset') === 'success';
+    const params = new URLSearchParams(window.location.search);
+    const resetSucceeded = mode === 'login' && params.get('passwordReset') === 'success';
+    const loginIdentifier = mode === 'login' ? (params.get('identifier') || params.get('email') || params.get('phone') || '') : '';
     setMessage(resetSucceeded ? 'Password reset successfully. Sign in with your new password.' : '');
     setCapsLock(false);
     setIsSubmitting(false);
     setOtpLoading(false);
     setLocalOtpLoading(false);
-    setPhoneValue('');
+    setPhoneValue(loginIdentifier);
     setOtpValue('');
     setOtpSession('');
     setLocalTestOtp('');
@@ -9263,7 +9991,7 @@ function AuthPage({ mode, setUser }) {
     if (mode === 'signup') {
       setSignupStep('phone');
     }
-  }, [mode]);
+  }, [mode, window.location.search]);
 
   useEffect(() => () => {
     if (bodyPhotoPreview) URL.revokeObjectURL(bodyPhotoPreview);
@@ -9309,6 +10037,12 @@ function AuthPage({ mode, setUser }) {
     setLocalTestOtp('');
     setLocalOtpIssue('');
     if (session) void cancelOtpSession(purpose, session, phone);
+  };
+
+  const redirectExistingAccountToLogin = (error, fallbackIdentifier = phoneValue) => {
+    const identifier = error?.identifier || error?.data?.identifier || fallbackIdentifier;
+    window.history.pushState({}, '', loginHrefForIdentifier(identifier));
+    window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
   const fetchLocalTestOtp = async (purpose, session = otpSession, phone = phoneValue, { fill = false } = {}) => {
@@ -9380,6 +10114,10 @@ function AuthPage({ mode, setUser }) {
       const testOtp = await fetchLocalTestOtp('signup', nextSession, nextPhone);
       setMessage(testOtp ? `OTP sent. Test code: ${testOtp}` : 'OTP sent.');
     } catch (err) {
+      if (isExistingAccountError(err)) {
+        redirectExistingAccountToLogin(err, phoneValue);
+        return;
+      }
       setMessage(err.message);
     } finally {
       setOtpLoading(false);
@@ -9464,10 +10202,15 @@ function AuthPage({ mode, setUser }) {
     setMessage(isSignup ? 'Creating account...' : 'Logging in...');
     try {
       const form = event.currentTarget;
-      if (!isSignup && !isLikelyIndianMobile(phoneValue)) throw new Error('Enter a valid mobile number.');
+      const loginIdentifier = String(phoneValue || '').trim();
+      if (!isSignup && !loginIdentifier) throw new Error('Enter your mobile number or email.');
+      if (!isSignup && !isLikelyEmail(loginIdentifier) && !isLikelyIndianMobile(loginIdentifier)) throw new Error('Enter a valid mobile number or email.');
       const body = isSignup
         ? new FormData(form)
-        : JSON.stringify({ phone: phoneValue, password: String(new FormData(form).get('password') || '') });
+        : JSON.stringify({
+          [isLikelyEmail(loginIdentifier) ? 'email' : 'phone']: loginIdentifier,
+          password: String(new FormData(form).get('password') || '')
+        });
       if (isSignup) {
         const cleanName = String(body.get('name') || '').trim();
         const password = String(body.get('password') || '');
@@ -9497,6 +10240,10 @@ function AuthPage({ mode, setUser }) {
       window.history.pushState({}, '', destination);
       window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (err) {
+      if (isSignup && isExistingAccountError(err)) {
+        redirectExistingAccountToLogin(err, phoneValue);
+        return;
+      }
       setMessage(err.message);
     } finally {
       setIsSubmitting(false);
@@ -9512,10 +10259,10 @@ function AuthPage({ mode, setUser }) {
           <div className="auth-login-card">
             <a className="auth-login-mobile-logo" href="/" aria-label="Lookmefy home"><BrandLogo /></a>
             <h1 id="login-title">Welcome Back</h1>
-            <p className="auth-login-copy">Login with your mobile number and password.</p>
-            <div className="auth-login-tabs" aria-hidden="true"><span>Mobile Password</span></div>
+            <p className="auth-login-copy">Login with your mobile number or email and password.</p>
+            <div className="auth-login-tabs" aria-hidden="true"><span>Password Login</span></div>
             <form className="auth-login-form" onSubmit={submit} aria-busy={isSubmitting}>
-              <AuthInputField label="Mobile number" name="loginPhone" type="tel" inputMode="numeric" pattern="[0-9]*" required autoFocus={shouldAutoFocusAuthField} autoComplete="tel-national" placeholder="Mobile number" value={phoneValue} onChange={(event) => updatePhoneEntry('login', event.target.value)} />
+              <AuthInputField label="Mobile number or email" name="loginIdentifier" type="text" required autoFocus={shouldAutoFocusAuthField} autoComplete="username" placeholder="Mobile number or email" value={phoneValue} onChange={(event) => setPhoneValue(event.target.value)} />
               <AuthInputField label="Password" name="password" type="password" required autoComplete="current-password" placeholder="Enter your password" />
               <p className="auth-login-switch-inline auth-forgot-password-link"><a href="/forgot-password">Forgot password?</a></p>
               <button className="signup-submit-button signup-otp-button" type="submit" disabled={isSubmitting || !phoneValue.trim()}>{isSubmitting ? 'Logging in...' : 'Login'}</button>
@@ -9564,14 +10311,8 @@ function AuthPage({ mode, setUser }) {
                   <span>Full name</span>
                   <input name="name" required autoFocus={shouldAutoFocusAuthField} value={nameValue} autoComplete="name" placeholder="Enter your name" onChange={(event) => setNameValue(event.target.value)} />
                 </label>
-                <label className="signup-field">
-                  <span>Create password</span>
-                  <input name="password" type="password" required minLength="12" maxLength="72" value={signupPassword} autoComplete="new-password" placeholder="At least 12 characters" onChange={(event) => setSignupPassword(event.target.value)} />
-                </label>
-                <label className="signup-field">
-                  <span>Confirm password</span>
-                  <input name="confirmPassword" type="password" required minLength="12" maxLength="72" value={signupConfirmPassword} autoComplete="new-password" placeholder="Repeat your password" onChange={(event) => setSignupConfirmPassword(event.target.value)} />
-                </label>
+                <AuthInputField className="signup-field" label="Create password" name="password" type="password" required minLength="12" maxLength="72" value={signupPassword} autoComplete="new-password" placeholder="At least 12 characters" onChange={(event) => setSignupPassword(event.target.value)} />
+                <AuthInputField className="signup-field" label="Confirm password" name="confirmPassword" type="password" required minLength="12" maxLength="72" value={signupConfirmPassword} autoComplete="new-password" placeholder="Repeat your password" onChange={(event) => setSignupConfirmPassword(event.target.value)} />
               </div>
 
               <fieldset className="signup-gender-group">
@@ -9662,6 +10403,8 @@ function App() {
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [toast, setToast] = useState(null);
   const [replayTourOpen, setReplayTourOpen] = useState(false);
+  const storefrontConfig = useStorefrontConfig();
+  const demoEcommerceMode = Boolean(storefrontConfig.demoEcommerceMode);
   const scrollPositions = useRef(new Map());
   const toastTimer = useRef(null);
 
@@ -9861,37 +10604,40 @@ function App() {
 
   const page = useMemo(() => {
     const productMatch = path.match(/^\/product\/([^/]+)$/);
+    const orderStatusMatch = path.match(/^\/order\/([^/]+)\/status$/);
     const categoryMatch = path.match(/^\/categories\/([^/]+)$/);
     if (requiresAuthentication(path) && !user) return <ProtectedRouteGate path={path} authChecked={authChecked} />;
     if (path === '/') return <Home user={user} />;
-    if (path === '/home') return <AtelierHome user={user} />;
-    if (path === '/categories' || path === '/explore') return <CategoriesPage key={routeKey} user={user} />;
-    if (categoryMatch) return <CategoryDepartmentPage category={decodeURIComponent(categoryMatch[1])} user={user} />;
+    if (path === '/home') return <AtelierHome user={user} demoEcommerceMode={demoEcommerceMode} />;
+    if (path === '/categories' || path === '/explore') return <CategoriesPage key={routeKey} user={user} demoEcommerceMode={demoEcommerceMode} />;
+    if (categoryMatch) return <CategoryDepartmentPage category={decodeURIComponent(categoryMatch[1])} user={user} demoEcommerceMode={demoEcommerceMode} />;
     if (path === '/search') return <SearchLandingPage key={routeKey} />;
     if (path === '/try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/closet') return <ClosetPage user={user} setUser={setUser} />;
     if (path === '/closet/add') return <ClosetAddPage user={user} setUser={setUser} />;
     if (path === '/closet/combo') return <ClosetComboPage user={user} setUser={setUser} />;
     if (path === '/closet/items') return <ClosetItemsPage user={user} setUser={setUser} />;
-    if (path === '/wishlist') return <WishlistPage user={user} />;
-    if (path === '/cart') return <CartPage />;
+    if (path === '/wishlist') return <WishlistPage user={user} demoEcommerceMode={demoEcommerceMode} />;
+    if (path === '/cart') return <CartPage user={user} demoEcommerceMode={demoEcommerceMode} />;
+    if (path === '/checkout') return <CheckoutPage user={user} demoEcommerceMode={demoEcommerceMode} demoModeLoading={storefrontConfig.loading} />;
     if (path === '/custom-try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/style-bot') return <StyleBotPage user={user} setUser={setUser} />;
     if (path === '/tokens') return <TokenPage user={user} setUser={setUser} mode="overview" />;
     if (path === '/tokens/top-up') return <TokenPage key={routeKey} user={user} setUser={setUser} mode="topup" />;
     if (path === '/profile') return <ProfilePage user={user} setUser={setUser} />;
     if (path === '/generation-history') return <GenerationHistoryPage user={user} />;
-    if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} />;
-    if (['/signup', '/login', '/forgot-password'].includes(path) && user) return <SearchPage user={user} setUser={setUser} />;
+    if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} demoEcommerceMode={demoEcommerceMode} />;
+    if (orderStatusMatch) return <OrderStatusPage id={decodeURIComponent(orderStatusMatch[1])} user={user} />;
+    if (['/signup', '/login', '/forgot-password'].includes(path) && user) return <SearchPage user={user} setUser={setUser} demoEcommerceMode={demoEcommerceMode} />;
     if (path === '/signup') return <AuthPage mode="signup" setUser={setUser} />;
     if (path === '/login') return <AuthPage mode="login" setUser={setUser} />;
     if (path === '/forgot-password') return <ForgotPasswordPage />;
     if (path === '/how-it-works') return <HowItWorks user={user} />;
     if (path === '/about') return <AboutPage user={user} />;
     if (path === '/download') return <DownloadAppPage />;
-    if (pageMeta[path]) return <InfoPage meta={pageMeta[path]} user={user} />;
+    if (pageMeta[path]) return <InfoPage meta={pageMeta[path]} user={user} demoEcommerceMode={demoEcommerceMode} />;
     return <NotFoundPage />;
-  }, [authChecked, path, routeKey, user]);
+  }, [authChecked, demoEcommerceMode, path, routeKey, storefrontConfig.loading, user]);
 
   useEffect(() => {
     const revealSelectors = [

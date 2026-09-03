@@ -1,6 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import AdminUser from '../models/AdminUser.js';
+import { getStorefrontSetting } from '../models/StorefrontSetting.js';
 import SystemIncident from '../models/SystemIncident.js';
 import { recordAdminAudit } from '../utils/adminAudit.js';
 import { requireAdmin, requireAdminPermission, requireAdminSection, signAdminSession } from '../utils/adminAccess.js';
@@ -135,6 +136,35 @@ router.post('/roles/:id/revoke-sessions', async (req, res, next) => {
     const isCurrent = String(admin._id) === String(req.admin._id);
     const token = isCurrent ? await signAdminSession(admin) : '';
     res.json({ admin: adminToClient(admin), ...(token ? { token } : {}) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/storefront-settings', requireSystemAdmin, async (_req, res, next) => {
+  try {
+    const setting = await getStorefrontSetting();
+    res.json({ setting: setting.toClient() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/storefront-settings/demo-mode', requireSystemAdmin, async (req, res, next) => {
+  try {
+    const enabled = Boolean(req.body?.enabled);
+    const setting = await getStorefrontSetting();
+    const before = Boolean(setting.demoEcommerceMode);
+    setting.demoEcommerceMode = enabled;
+    setting.updatedBy = req.admin._id;
+    await setting.save();
+    await recordAdminAudit(req, {
+      action: 'demo_ecommerce_mode_changed',
+      entityType: 'storefront_setting',
+      label: 'Demo ecommerce mode',
+      detail: { before, after: enabled }
+    });
+    res.json({ setting: setting.toClient() });
   } catch (error) {
     next(error);
   }

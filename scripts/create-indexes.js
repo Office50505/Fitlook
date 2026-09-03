@@ -9,6 +9,8 @@ import ExternalTryOn from '../server/models/ExternalTryOn.js';
 import GenerationMetric from '../server/models/GenerationMetric.js';
 import OtpDeliveryMetric from '../server/models/OtpDeliveryMetric.js';
 import Product from '../server/models/Product.js';
+import ProductOrder from '../server/models/ProductOrder.js';
+import StorefrontSetting from '../server/models/StorefrontSetting.js';
 import TokenOrder from '../server/models/TokenOrder.js';
 import TryOn from '../server/models/TryOn.js';
 import User from '../server/models/User.js';
@@ -30,6 +32,8 @@ const models = [
   GenerationMetric,
   OtpDeliveryMetric,
   Product,
+  ProductOrder,
+  StorefrontSetting,
   TokenOrder,
   TryOn,
   User,

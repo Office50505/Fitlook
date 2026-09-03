@@ -8,7 +8,7 @@ const ADMIN_SECTIONS = [
       { id: 'users', label: 'Users', icon: 'users', kicker: 'Customers', lead: 'Find users, review activity, and manage account access and credits.' },
       { id: 'analytics', label: 'Analytics', icon: 'analytics', kicker: 'Reports', lead: 'Understand user behavior, recommendations, searches, and product performance.' },
       { id: 'storage', label: 'Media Library', icon: 'storage', kicker: 'Media', lead: 'Review profile, try-on, closet, and catalog files saved by Lookmefy.' },
-      { id: 'orders', label: 'Orders', icon: 'orders', kicker: 'Payments', lead: 'Review recent credit orders and payment outcomes.' }
+      { id: 'orders', label: 'Orders', icon: 'orders', kicker: 'Payments', lead: 'Review recent credit and product orders with payment outcomes.' }
     ]
   },
   {
@@ -24,7 +24,7 @@ const ADMIN_SECTIONS = [
       { id: 'android-report', label: 'Android Report', icon: 'android', kicker: 'Mobile', lead: 'Review Android web telemetry and native reporting connection status.' },
       { id: 'audit-log', label: 'Audit Log', icon: 'audit', kicker: 'Governance', lead: 'Review administrative changes and the account responsible for each action.' },
       { id: 'roles', label: 'Roles', icon: 'roles', kicker: 'Access', lead: 'Review admin access requests and manage roles, permissions, and account status.', requiresRoleManagement: true },
-      { id: 'settings', label: 'Settings', icon: 'settings', kicker: 'Setup', lead: 'Manage the current admin session and dashboard preferences.' }
+      { id: 'settings', label: 'Settings', icon: 'settings', kicker: 'Setup', lead: 'Manage storefront mode, the current admin session, and dashboard preferences.' }
     ]
   },
   {
@@ -39,7 +39,7 @@ const ADMIN_SECTIONS = [
       { id: 'cost-mongodb', label: 'MongoDB Atlas', icon: 'database', kicker: 'Database Cost', lead: 'Review database size, operational usage, and Atlas billing coverage.', provider: 'mongodb' },
       { id: 'cost-otp', label: 'OTP', icon: 'otp', kicker: 'Messaging Cost', lead: 'Review OTP deliveries, failures, estimated spend, and wallet coverage.', provider: 'otp' },
       { id: 'cost-aws', label: 'AWS', icon: 'cloud', kicker: 'Infrastructure Cost', lead: 'Review infrastructure spend, budget status, and Cost Explorer connection.', provider: 'aws' },
-      { id: 'cost-phonepe', label: 'PhonePe Fees', icon: 'orders', kicker: 'Payment Cost', lead: 'Review completed payment volume and settlement fee coverage.', provider: 'phonepe' }
+      { id: 'cost-razorpay', label: 'Razorpay Fees', icon: 'orders', kicker: 'Payment Cost', lead: 'Review completed payment volume and settlement fee coverage.', provider: 'razorpay' }
     ]
   }
 ];

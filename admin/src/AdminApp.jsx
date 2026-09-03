@@ -513,6 +513,7 @@ function AdminApp() {
   const mobileState = useAdminResource(Boolean(adminSession?.token) && hasSystemManagement && Boolean(mobilePlatform), mobilePlatform ? `/admin/system/mobile/${mobilePlatform}?days=30` : '', managementRefresh);
   const costOverviewState = useAdminResource(Boolean(adminSession?.token) && hasCostManagement && costOverviewEnabled, '/admin/costs/summary', managementRefresh);
   const providerCostState = useAdminResource(Boolean(adminSession?.token) && hasCostManagement && Boolean(activeCostProvider), activeCostProvider ? `/admin/costs/${activeCostProvider}` : '', managementRefresh);
+  const storefrontSettingsState = useAdminResource(Boolean(adminSession?.token) && hasSystemManagement && activePage === 'settings', '/admin/storefront-settings', managementRefresh);
   const duplicateWarnings = useMemo(() => {
     const counts = new Map();
     const remember = (type, value) => {
@@ -642,6 +643,22 @@ function AdminApp() {
       setManagementRefresh((value) => value + 1);
     } catch (error) {
       setMessage(error.message);
+    }
+  };
+
+  const toggleDemoMode = async (enabled) => {
+    setActionBusy(true);
+    try {
+      await api('/admin/storefront-settings/demo-mode', {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled })
+      });
+      setManagementRefresh((value) => value + 1);
+      setMessage(enabled ? 'Demo ecommerce mode enabled.' : 'Demo ecommerce mode disabled.');
+    } catch (error) {
+      setMessage(error.message || 'Could not update demo mode.');
+    } finally {
+      setActionBusy(false);
     }
   };
 
@@ -1521,6 +1538,31 @@ function AdminApp() {
                   <button className="danger-action" type="button" onClick={logout}>Logout</button>
                 </div>
               </section>
+              {hasSystemManagement && (
+                <section className="admin-card settings-panel">
+                  <div className="section-head">
+                    <div>
+                      <h2>Storefront Mode</h2>
+                      <p>Switch product CTAs, checkout, and policies between affiliate and ecommerce demo mode.</p>
+                    </div>
+                  </div>
+                  {storefrontSettingsState.loading && <StatusPanel text="Loading storefront settings..." />}
+                  {storefrontSettingsState.error && <StatusPanel text={storefrontSettingsState.error} />}
+                  {!storefrontSettingsState.loading && !storefrontSettingsState.error && (
+                    <div className="settings-list storefront-settings-list">
+                      <div><span>Demo ecommerce</span><strong>{storefrontSettingsState.data?.setting?.demoEcommerceMode ? 'Enabled' : 'Disabled'}</strong></div>
+                      <div><span>Last updated</span><strong>{formatCatalogDate(storefrontSettingsState.data?.setting?.updatedAt)}</strong></div>
+                      <button
+                        type="button"
+                        disabled={actionBusy}
+                        onClick={() => toggleDemoMode(!storefrontSettingsState.data?.setting?.demoEcommerceMode)}
+                      >
+                        {storefrontSettingsState.data?.setting?.demoEcommerceMode ? 'Disable demo checkout' : 'Enable demo checkout'}
+                      </button>
+                    </div>
+                  )}
+                </section>
+              )}
               </section>
             </div>
           )}
@@ -2524,6 +2566,7 @@ function OrdersPage({ refresh }) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [state, setState] = useState({ orders: [], orderTotals: {}, pagination: { page: 1, pages: 1, total: 0 }, loading: true, error: '' });
+  const [productOrders, setProductOrders] = useState({ orders: [], pagination: { total: 0 }, loading: true, error: '' });
 
   useEffect(() => {
     let alive = true;
@@ -2546,6 +2589,41 @@ function OrdersPage({ refresh }) {
     };
   }, [page, query, refresh, status]);
 
+  useEffect(() => {
+    let alive = true;
+    const timeout = window.setTimeout(() => {
+      const params = new URLSearchParams({ limit: '50' });
+      if (query.trim()) params.set('q', query.trim());
+      setProductOrders((current) => ({ ...current, loading: true, error: '' }));
+      api(`/orders/admin/list?${params.toString()}`)
+        .then((data) => {
+          if (alive) setProductOrders({ orders: data.orders || [], pagination: data.pagination || { total: 0 }, loading: false, error: '' });
+        })
+        .catch((error) => {
+          if (alive) setProductOrders((current) => ({ ...current, loading: false, error: error.message }));
+        });
+    }, 250);
+    return () => {
+      alive = false;
+      window.clearTimeout(timeout);
+    };
+  }, [query, refresh]);
+
+  const updateProductOrderStatus = async (orderId, fulfillmentStatus) => {
+    try {
+      const data = await api(`/orders/admin/${encodeURIComponent(orderId)}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ fulfillmentStatus })
+      });
+      setProductOrders((current) => ({
+        ...current,
+        orders: current.orders.map((order) => order.id === orderId ? data.order : order)
+      }));
+    } catch (error) {
+      setProductOrders((current) => ({ ...current, error: error.message || 'Could not update product order.' }));
+    }
+  };
+
   return (
     <div className="management-page">
       <section className="admin-card orders-page-panel">
@@ -2557,7 +2635,47 @@ function OrdersPage({ refresh }) {
       </section>
       <RecentOrdersPanel operationsState={state} limit={100} />
       <PaginationControls page={state.pagination.page || page} pages={state.pagination.pages || 1} total={state.pagination.total || 0} loading={state.loading} label="orders" onPage={setPage} />
+      <ProductOrdersPanel state={productOrders} onStatus={updateProductOrderStatus} />
     </div>
+  );
+}
+
+function ProductOrdersPanel({ state, onStatus }) {
+  const statuses = ['new', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled'];
+  return (
+    <section className="admin-card orders-page-panel product-orders-panel">
+      <div className="section-head">
+        <div>
+          <h2>Product orders</h2>
+          <p>Demo ecommerce orders created from the storefront checkout.</p>
+        </div>
+        <span className="section-count">{formatNumber(state.pagination?.total || state.orders.length)} total</span>
+      </div>
+      {state.loading && <StatusPanel text="Loading product orders..." />}
+      {state.error && <StatusPanel text={state.error} />}
+      {!state.loading && !state.error && state.orders.length === 0 && <StatusPanel text="No product orders yet." />}
+      {!state.loading && state.orders.length > 0 && (
+        <div className="product-orders-list">
+          {state.orders.map((order) => (
+            <article className="product-order-row" key={order.id}>
+              <div className="product-order-main">
+                <strong>{order.contact?.fullName || 'Customer'}</strong>
+                <span>{order.items?.map((item) => `${item.name} x${item.quantity}`).join(', ')}</span>
+                <em>{order.address?.city || 'City pending'}, {order.address?.state || 'State pending'} - {order.address?.pincode || 'PIN'}</em>
+              </div>
+              <div className="product-order-meta">
+                <b>{formatMoney(order.total, order.currency)}</b>
+                <span className={`account-status ${order.paymentStatus}`}>{order.paymentStatus}</span>
+                <span>{order.paymentMode === 'demo' ? 'demo checkout' : order.providerState || 'payment'}</span>
+                <select value={order.fulfillmentStatus || 'new'} onChange={(event) => onStatus(order.id, event.target.value)} aria-label={`Fulfillment status for ${order.id}`}>
+                  {statuses.map((status) => <option value={status} key={status}>{status}</option>)}
+                </select>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

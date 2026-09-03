@@ -7,9 +7,11 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import authRoutes from './routes/auth.js';
 import closetRoutes from './routes/closet.js';
+import orderRoutes from './routes/orders.js';
 import paymentRoutes from './routes/payments.js';
 import productRoutes from './routes/products.js';
 import recommendationRoutes from './routes/recommendations.js';
+import storefrontRoutes from './routes/storefront.js';
 import tryOnRoutes from './routes/tryons.js';
 import imageRoutes from './routes/images.js';
 import jobRoutes from './routes/jobs.js';
@@ -131,9 +133,11 @@ app.use('/uploads', serveUploadedMedia());
 app.use('/api', globalApiLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/closet', closetRoutes);
+app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/recommendations', recommendationRoutes);
+app.use('/api/storefront', storefrontRoutes);
 app.use('/api/tryons', tryOnRoutes);
 app.use('/api/images', imageRoutes);
 app.use('/api/jobs', jobRoutes);
@@ -164,6 +168,7 @@ app.get('/api/health/ready', async (_req, res) => {
     otpProvider: config.otpProvider,
     otpProviderType: config.otpProviderType,
     phonePe: config.phonePe,
+    razorpay: config.razorpay,
     shuttingDown,
     ...service
   });

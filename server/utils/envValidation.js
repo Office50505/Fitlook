@@ -9,6 +9,10 @@ const FEATURE_ENV_GROUPS = [
     keys: ['PHONEPE_CLIENT_ID', 'PHONEPE_CLIENT_SECRET', 'PHONEPE_CLIENT_VERSION', 'PHONEPE_CALLBACK_USERNAME', 'PHONEPE_CALLBACK_PASSWORD']
   },
   {
+    name: 'Razorpay payments',
+    keys: ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET']
+  },
+  {
     name: 'FAL AI generation',
     keys: ['FAL_KEY']
   },
@@ -66,6 +70,11 @@ export function phonePeEnabled(env = process.env) {
   return value ? !FALSE_ENV_VALUES.has(value) : true;
 }
 
+export function razorpayEnabled(env = process.env) {
+  const value = String(env.RAZORPAY_ENABLED || '').trim().toLowerCase();
+  return value ? !FALSE_ENV_VALUES.has(value) : true;
+}
+
 function fixedOtpAllowedInProduction(env = process.env) {
   return TRUE_ENV_VALUES.has(String(env.ALLOW_FIXED_OTP_IN_PRODUCTION || '').trim().toLowerCase());
 }
@@ -102,12 +111,14 @@ export function validateServerEnv(env = process.env) {
   const otpProvider = String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase();
   const allowProductionFixedOtp = fixedOtpAllowedInProduction(env);
   const paymentsEnabled = phonePeEnabled(env);
+  const razorpayPaymentsEnabled = razorpayEnabled(env);
   if (production && !['msg91', 'webhook', 'disabled'].includes(otpProvider)) {
     errors.push('Production requires OTP_DELIVERY_PROVIDER=msg91, webhook, or disabled.');
   }
 
   const warnings = FEATURE_ENV_GROUPS.flatMap((group) => {
     if (group.name === 'PhonePe payments' && !paymentsEnabled) return [];
+    if (group.name === 'Razorpay payments' && !razorpayPaymentsEnabled) return [];
     const present = group.keys.filter((key) => String(env[key] || '').trim());
     if (!present.length || present.length === group.keys.length) return [];
     const missingFeatureKeys = group.keys.filter((key) => !String(env[key] || '').trim());
@@ -160,6 +171,12 @@ export function validateServerEnv(env = process.env) {
     const missingPhonePeKeys = phonePeKeys.filter((key) => !String(env[key] || '').trim());
     errors.push(`PhonePe payments are partially configured. Missing: ${missingPhonePeKeys.join(', ')}`);
   }
+  const razorpayKeys = FEATURE_ENV_GROUPS.find((group) => group.name === 'Razorpay payments').keys;
+  const presentRazorpayKeys = razorpayKeys.filter((key) => String(env[key] || '').trim());
+  if (production && razorpayPaymentsEnabled && presentRazorpayKeys.length && presentRazorpayKeys.length !== razorpayKeys.length) {
+    const missingRazorpayKeys = razorpayKeys.filter((key) => !String(env[key] || '').trim());
+    errors.push(`Razorpay payments are partially configured. Missing: ${missingRazorpayKeys.join(', ')}`);
+  }
 
   if (errors.length) throw new Error(errors.join(' '));
   return { warnings };
@@ -168,8 +185,11 @@ export function validateServerEnv(env = process.env) {
 export function configurationReadiness(env = process.env) {
   const otpProvider = String(env.OTP_DELIVERY_PROVIDER || '').trim().toLowerCase();
   const paymentsEnabled = phonePeEnabled(env);
+  const razorpayPaymentsEnabled = razorpayEnabled(env);
   const phonePeKeys = ['PHONEPE_CLIENT_ID', 'PHONEPE_CLIENT_SECRET', 'PHONEPE_CLIENT_VERSION', 'PHONEPE_CALLBACK_USERNAME', 'PHONEPE_CALLBACK_PASSWORD'];
   const phonePeConfigured = phonePeKeys.every((key) => Boolean(String(env[key] || '').trim()));
+  const razorpayKeys = ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET'];
+  const razorpayConfigured = razorpayKeys.every((key) => Boolean(String(env[key] || '').trim()));
   const fixedOtpConfigured = isProductionEnv(env)
     && fixedOtpAllowedInProduction(env)
     && /^\d{6}$/.test(String(env.OTP_FIXED_CODE || '').trim())
@@ -187,6 +207,7 @@ export function configurationReadiness(env = process.env) {
   return {
     otpProvider: fixedOtpConfigured ? 'configured' : otpProvider === 'disabled' ? 'disabled' : otpConfigured ? 'configured' : 'not_configured',
     otpProviderType: fixedOtpConfigured ? 'fixed' : otpProvider || 'disabled',
-    phonePe: !paymentsEnabled ? 'disabled' : phonePeConfigured ? 'configured' : 'not_configured'
+    phonePe: !paymentsEnabled ? 'disabled' : phonePeConfigured ? 'configured' : 'not_configured',
+    razorpay: !razorpayPaymentsEnabled ? 'disabled' : razorpayConfigured ? 'configured' : 'not_configured'
   };
 }

@@ -1,5 +1,5 @@
 import express from 'express';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import ClosetOutfit from '../models/ClosetOutfit.js';
 import CustomTryOn from '../models/CustomTryOn.js';
 import TokenOrder from '../models/TokenOrder.js';
@@ -13,16 +13,18 @@ import {
   TOP_UP_PLANS,
   planById
 } from '../../shared/pricing.js';
-import { phonePeEnabled } from '../utils/envValidation.js';
+import { phonePeEnabled, razorpayEnabled } from '../utils/envValidation.js';
 import { isProductionEnv, validateConfiguredHttpsUrl } from '../utils/urlValidation.js';
 
 const router = express.Router();
+const disableDemoCheckoutRateLimit = () => ['1', 'true', 'yes'].includes(String(process.env.DISABLE_DEMO_CHECKOUT_RATE_LIMIT || '').trim().toLowerCase());
 const paymentCreateLimiter = createRateLimiter({
   name: 'payments:create',
   windowMs: 10 * 60 * 1000,
   max: 5,
   keyGenerator: rateLimitKeys.user,
-  message: 'Too many checkout attempts. Please wait a few minutes before trying again.'
+  message: 'Too many checkout attempts. Please wait a few minutes before trying again.',
+  skip: disableDemoCheckoutRateLimit
 });
 const paymentStatusLimiter = createRateLimiter({
   name: 'payments:status',
@@ -196,6 +198,57 @@ function readablePhonePeError(value, fallback = 'PhonePe request failed') {
   if (value instanceof Error) return value.message || fallback;
   if (typeof value === 'object') return value.message || value.code || value.error || fallback;
   return String(value);
+}
+
+function readableRazorpayError(value, fallback = 'Razorpay request failed') {
+  if (!value) return fallback;
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.message || fallback;
+  if (typeof value === 'object') return value.error?.description || value.description || value.message || value.code || value.error || fallback;
+  return String(value);
+}
+
+function requireRazorpayConfig() {
+  if (!razorpayEnabled()) {
+    const error = new Error('Razorpay payments are temporarily unavailable');
+    error.statusCode = 503;
+    throw error;
+  }
+  const missing = ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET'].filter((key) => !process.env[key]);
+  if (missing.length) {
+    const error = new Error(`${missing.join(', ')} missing on the server`);
+    error.statusCode = 503;
+    throw error;
+  }
+}
+
+function razorpayBaseUrl() {
+  return String(process.env.RAZORPAY_BASE_URL || 'https://api.razorpay.com/v1').replace(/\/+$/, '');
+}
+
+async function razorpayFetch(path, options = {}) {
+  requireRazorpayConfig();
+  const credentials = Buffer.from(`${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`).toString('base64');
+  const response = await fetch(`${razorpayBaseUrl()}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Basic ${credentials}`,
+      ...options.headers
+    }
+  });
+  const text = await response.text().catch(() => '');
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (err) {
+    data = { raw: text };
+  }
+  if (!response.ok) {
+    console.error('[razorpay:fetch] failed', { path, status: response.status, body: data });
+    throw new Error(readableRazorpayError(data, 'Razorpay request failed'));
+  }
+  return data;
 }
 
 async function phonePeAuthToken() {
@@ -380,6 +433,306 @@ async function createPhonePePayment({ req, user, plan = SUBSCRIPTION_PLAN }) {
   }
 }
 
+function createRazorpayReceipt(userId) {
+  const userPart = userId.toString().slice(-8);
+  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `FLRZP_${Date.now()}_${userPart}_${random}`.slice(0, 40);
+}
+
+function razorpayCheckoutPayload({ req, user, order, plan }) {
+  return {
+    key: process.env.RAZORPAY_KEY_ID,
+    orderId: order.razorpayOrderId,
+    amount: order.dueTodayAmount || order.amount,
+    currency: order.currency || 'INR',
+    name: 'Lookmefy',
+    description: checkoutMessage(plan),
+    prefill: {
+      name: user.name || user.username || '',
+      email: user.email || '',
+      contact: user.phone || ''
+    },
+    notes: {
+      merchantOrderId: order.merchantOrderId,
+      planId: order.planId
+    },
+    verifyPath: '/payments/razorpay/verify',
+    statusPath: `/payments/orders/${encodeURIComponent(order.merchantOrderId)}/status`,
+    returnUrl: `${clientOrigin(req)}/tokens?merchantOrderId=${encodeURIComponent(order.merchantOrderId)}&plan=${encodeURIComponent(plan.id)}`
+  };
+}
+
+async function createRazorpayPayment({ req, user, plan = SUBSCRIPTION_PLAN }) {
+  requireRazorpayConfig();
+  const idempotencyKey = checkoutIdempotencyKey(req);
+  if (idempotencyKey) {
+    const existingOrder = await TokenOrder.findOne({ user: user._id, idempotencyKey });
+    if (existingOrder) {
+      if (existingOrder.status === 'failed') {
+        const error = new Error('Previous checkout attempt failed. Please start checkout again.');
+        error.statusCode = 409;
+        throw error;
+      }
+      return existingOrder;
+    }
+  }
+
+  const merchantOrderId = createRazorpayReceipt(user._id);
+  const orderPayload = {
+    user: user._id,
+    merchantOrderId,
+    provider: 'razorpay',
+    planId: plan.id,
+    planName: plan.name,
+    orderType: plan.orderType,
+    amount: amountForPlan(plan),
+    dueTodayAmount: amountForPlan(plan),
+    recurringAmount: recurringAmountForPlan(plan),
+    billingFrequency: billingFrequencyForPlan(plan),
+    currency: plan.currency || 'INR',
+    tokens: plan.tokens,
+    redirectUrl: '',
+    idempotencyKey
+  };
+  let order;
+  try {
+    order = await TokenOrder.create(orderPayload);
+  } catch (error) {
+    if (error.code === 11000 && idempotencyKey) {
+      const existingOrder = await TokenOrder.findOne({ user: user._id, idempotencyKey });
+      if (existingOrder) {
+        if (existingOrder.status === 'failed') {
+          const conflict = new Error('Previous checkout attempt failed. Please start checkout again.');
+          conflict.statusCode = 409;
+          throw conflict;
+        }
+        return existingOrder;
+      }
+    }
+    throw error;
+  }
+
+  try {
+    const data = await razorpayFetch('/orders', {
+      method: 'POST',
+      body: JSON.stringify({
+        amount: amountForPlan(plan),
+        currency: plan.currency || 'INR',
+        receipt: merchantOrderId,
+        notes: {
+          userId: user._id.toString(),
+          planId: plan.id,
+          tokens: String(plan.tokens),
+          orderType: plan.orderType,
+          brand: 'Lookmefy'
+        }
+      })
+    });
+
+    order.status = 'pending';
+    order.provider = 'razorpay';
+    order.providerState = String(data.status || 'created').toUpperCase();
+    order.razorpayOrderId = data.id;
+    order.providerResponse = data;
+    await order.save();
+    return order;
+  } catch (error) {
+    order.status = 'failed';
+    order.provider = 'razorpay';
+    order.providerState = 'CREATE_FAILED';
+    order.providerResponse = { message: readableRazorpayError(error) };
+    await order.save();
+    throw error;
+  }
+}
+
+function verifyRazorpaySignature({ orderId, paymentId, signature, secret = process.env.RAZORPAY_KEY_SECRET }) {
+  if (!orderId || !paymentId || !signature || !secret) return false;
+  const generated = createHmac('sha256', secret).update(`${orderId}|${paymentId}`).digest('hex');
+  return safeCompareHex(generated, signature);
+}
+
+async function completeRazorpayPayment({ user, merchantOrderId, razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
+  requireRazorpayConfig();
+  const candidates = [
+    String(merchantOrderId || '').trim() ? { merchantOrderId: String(merchantOrderId || '').trim() } : null,
+    String(razorpayOrderId || '').trim() ? { razorpayOrderId: String(razorpayOrderId || '').trim() } : null
+  ].filter(Boolean);
+  if (!candidates.length) {
+    const error = new Error('Razorpay order id is required');
+    error.statusCode = 400;
+    throw error;
+  }
+  const order = await TokenOrder.findOne({
+    user: user._id,
+    $or: candidates
+  });
+  if (!order) {
+    const error = new Error('Token order not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (order.creditedAt) return { order, user: await User.findById(order.user), alreadyCredited: true };
+  if (!order.razorpayOrderId || order.razorpayOrderId !== razorpayOrderId) {
+    const error = new Error('Razorpay order does not match this checkout');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!verifyRazorpaySignature({ orderId: order.razorpayOrderId, paymentId: razorpayPaymentId, signature: razorpaySignature })) {
+    const error = new Error('Razorpay payment signature verification failed');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const payment = await razorpayFetch(`/payments/${encodeURIComponent(razorpayPaymentId)}`);
+  if (payment.order_id && payment.order_id !== order.razorpayOrderId) {
+    const error = new Error('Razorpay payment belongs to a different order');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (Number(payment.amount || 0) && Number(payment.amount || 0) !== Number(order.dueTodayAmount || order.amount || 0)) {
+    const error = new Error('Razorpay payment amount does not match this checkout');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (['failed', 'cancelled'].includes(String(payment.status || '').toLowerCase())) {
+    const error = new Error('Razorpay payment was not successful');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const providerResponse = {
+    provider: 'razorpay',
+    verifiedBy: 'checkout_signature',
+    payment
+  };
+  await TokenOrder.findByIdAndUpdate(order._id, {
+    $set: {
+      provider: 'razorpay',
+      razorpayPaymentId,
+      razorpaySignature,
+      providerState: String(payment.status || 'verified').toUpperCase(),
+      providerResponse
+    }
+  });
+  const updatedOrder = await TokenOrder.findById(order._id);
+  const creditedUser = await grantPaidTokens(updatedOrder || order, providerResponse);
+  return {
+    order: await TokenOrder.findById(order._id),
+    user: creditedUser,
+    alreadyCredited: false
+  };
+}
+
+function statusFromRazorpayOrderStatus(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'paid') return 'completed';
+  if (['created', 'attempted'].includes(normalized)) return 'pending';
+  return '';
+}
+
+async function reconcileRazorpayOrder(order) {
+  if (!order) return { order: null, user: null };
+  if (order.creditedAt) return { order, user: await User.findById(order.user) };
+  if (!order.razorpayOrderId) return { order, user: await User.findById(order.user) };
+
+  const razorpayOrder = await razorpayFetch(`/orders/${encodeURIComponent(order.razorpayOrderId)}`);
+  const providerState = String(razorpayOrder.status || '').toUpperCase();
+  if (String(razorpayOrder.status || '').toLowerCase() === 'paid') {
+    const payments = await razorpayFetch(`/orders/${encodeURIComponent(order.razorpayOrderId)}/payments`);
+    const payment = (payments.items || []).find((item) => ['captured', 'authorized'].includes(String(item.status || '').toLowerCase()));
+    const providerResponse = {
+      provider: 'razorpay',
+      verifiedBy: 'order_status',
+      order: razorpayOrder,
+      payment: payment || null
+    };
+    await TokenOrder.findByIdAndUpdate(order._id, {
+      $set: {
+        provider: 'razorpay',
+        razorpayPaymentId: payment?.id || order.razorpayPaymentId || '',
+        providerState,
+        providerResponse
+      }
+    });
+    const updatedOrder = await TokenOrder.findById(order._id);
+    const user = await grantPaidTokens(updatedOrder || order, providerResponse);
+    const completedOrder = await TokenOrder.findById(order._id);
+    return { order: completedOrder, user };
+  }
+
+  order.provider = 'razorpay';
+  order.providerState = providerState || order.providerState;
+  order.providerResponse = razorpayOrder;
+  order.status = statusFromRazorpayOrderStatus(razorpayOrder.status) || order.status;
+  await order.save();
+  return { order, user: await User.findById(order.user) };
+}
+
+async function createDemoCreditPayment({ req, user, plan = SUBSCRIPTION_PLAN }) {
+  const idempotencyKey = checkoutIdempotencyKey(req);
+  if (idempotencyKey) {
+    const existingOrder = await TokenOrder.findOne({ user: user._id, idempotencyKey });
+    if (existingOrder) {
+      return completeDemoCreditOrder(existingOrder, user);
+    }
+  }
+
+  const merchantOrderId = createMerchantOrderId(user._id).replace(/^FL_/, 'FLDEMO_').slice(0, 63);
+  let order;
+  try {
+    order = await TokenOrder.create({
+      user: user._id,
+      merchantOrderId,
+      planId: plan.id,
+      planName: plan.name,
+      orderType: plan.orderType,
+      amount: amountForPlan(plan),
+      dueTodayAmount: amountForPlan(plan),
+      recurringAmount: recurringAmountForPlan(plan),
+      billingFrequency: billingFrequencyForPlan(plan),
+      currency: plan.currency,
+      tokens: plan.tokens,
+      idempotencyKey,
+      redirectUrl: '',
+      status: 'created',
+      providerState: 'DEMO_CREATED',
+      providerResponse: {
+        mode: 'demo',
+        message: 'Demo credit checkout created without external payment gateway'
+      }
+    });
+  } catch (error) {
+    if (error.code === 11000 && idempotencyKey) {
+      const existingOrder = await TokenOrder.findOne({ user: user._id, idempotencyKey });
+      if (existingOrder) {
+        return completeDemoCreditOrder(existingOrder, user);
+      }
+    }
+    throw error;
+  }
+
+  return completeDemoCreditOrder(order, user);
+}
+
+async function completeDemoCreditOrder(order, fallbackUser) {
+  const alreadyCredited = Boolean(order.creditedAt);
+  const creditedUser = await grantPaidTokens(order, {
+    mode: 'demo',
+    message: 'Demo credits credited without external payment gateway'
+  });
+  const creditedOrder = await TokenOrder.findOneAndUpdate(
+    { _id: order._id },
+    { $set: { providerState: 'DEMO_COMPLETED' } },
+    { new: true }
+  );
+  return {
+    order: creditedOrder || order,
+    user: creditedUser || fallbackUser,
+    alreadyCredited
+  };
+}
+
 async function grantPaidTokens(order, providerResponse) {
   if (order.creditedAt) return User.findById(order.user);
 
@@ -429,6 +782,7 @@ async function grantPaidTokens(order, providerResponse) {
 async function reconcileOrder(order) {
   if (!order) return { order: null, user: null };
   if (order.creditedAt) return { order, user: await User.findById(order.user) };
+  if (order.provider === 'razorpay' || order.razorpayOrderId) return reconcileRazorpayOrder(order);
 
   const status = await phonePeFetch(`/checkout/v2/order/${encodeURIComponent(order.merchantOrderId)}/status?details=true&errorContext=true`);
   const state = String(status.state || '').toUpperCase();
@@ -484,7 +838,9 @@ async function findOrderFromCallback(req) {
   return TokenOrder.findOne({
     $or: [
       { merchantOrderId: id },
-      { phonePeOrderId: id }
+      { phonePeOrderId: id },
+      { razorpayOrderId: id },
+      { razorpayPaymentId: id }
     ]
   });
 }
@@ -595,19 +951,47 @@ router.post('/checkout', requireUser, paymentCreateLimiter, async (req, res) => 
     const requestedPlanId = String(req.body?.planId || '').trim();
     const plan = requestedPlanId ? planById(requestedPlanId) : SUBSCRIPTION_PLAN;
     if (!plan) return res.status(400).json({ message: 'Selected credit plan is not available.' });
-    const order = await createPhonePePayment({ req, user: req.user, plan });
-    res.status(201).json({ order: order.toClient(), redirectUrl: order.redirectUrl });
+    const order = await createRazorpayPayment({ req, user: req.user, plan });
+    res.status(201).json({
+      order: order.toClient(),
+      provider: 'razorpay',
+      razorpay: razorpayCheckoutPayload({ req, user: req.user, order, plan })
+    });
   } catch (error) {
-    res.status(error.statusCode || 400).json({ message: readablePhonePeError(error, 'Could not start PhonePe checkout') });
+    res.status(error.statusCode || 400).json({ message: readableRazorpayError(error, 'Could not start Razorpay checkout') });
   }
 });
 
 router.post('/phonepe/subscription', requireUser, paymentCreateLimiter, async (req, res) => {
   try {
-    const order = await createPhonePePayment({ req, user: req.user, plan: SUBSCRIPTION_PLAN });
-    res.status(201).json({ order: order.toClient(), redirectUrl: order.redirectUrl });
+    const order = await createRazorpayPayment({ req, user: req.user, plan: SUBSCRIPTION_PLAN });
+    res.status(201).json({
+      order: order.toClient(),
+      provider: 'razorpay',
+      razorpay: razorpayCheckoutPayload({ req, user: req.user, order, plan: SUBSCRIPTION_PLAN })
+    });
   } catch (error) {
-    res.status(error.statusCode || 400).json({ message: readablePhonePeError(error, 'Could not start PhonePe checkout') });
+    res.status(error.statusCode || 400).json({ message: readableRazorpayError(error, 'Could not start Razorpay checkout') });
+  }
+});
+
+router.post('/razorpay/verify', requireUser, paymentStatusLimiter, async (req, res) => {
+  try {
+    const result = await completeRazorpayPayment({
+      user: req.user,
+      merchantOrderId: String(req.body?.merchantOrderId || '').trim(),
+      razorpayOrderId: String(req.body?.razorpay_order_id || req.body?.razorpayOrderId || '').trim(),
+      razorpayPaymentId: String(req.body?.razorpay_payment_id || req.body?.razorpayPaymentId || '').trim(),
+      razorpaySignature: String(req.body?.razorpay_signature || req.body?.razorpaySignature || '').trim()
+    });
+    res.json({
+      order: result.order.toClient(),
+      user: result.user?.toClient?.() || req.user.toClient(),
+      alreadyCredited: result.alreadyCredited,
+      message: 'Payment verified. Credits credited.'
+    });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ message: readableRazorpayError(error, 'Could not verify Razorpay payment') });
   }
 });
 
@@ -625,7 +1009,7 @@ router.get('/orders/:merchantOrderId/status', requireUser, paymentStatusLimiter,
       user: result.user?.toClient?.() || req.user.toClient()
     });
   } catch (error) {
-    res.status(error.statusCode || 400).json({ message: readablePhonePeError(error, 'Could not verify PhonePe payment') });
+    res.status(error.statusCode || 400).json({ message: readableRazorpayError(error, 'Could not verify payment') });
   }
 });
 
@@ -657,15 +1041,31 @@ export {
   amountForPlan,
   billingFrequencyForPlan,
   calculatePhonePeCallbackAuthorization,
+  callbackAuthorizationHeader,
   checkoutIdempotencyKey,
+  completeRazorpayPayment,
   configuredRedirectUrl,
+  createDemoCreditPayment,
+  createMerchantOrderId,
+  createRazorpayPayment,
   findOrderFromCallback,
   grantPaidTokens,
   orderIdFromCallback,
+  phonePeFetch,
+  razorpayCheckoutPayload,
+  razorpayFetch,
+  readableRazorpayError,
   reconcileOrder,
+  reconcileRazorpayOrder,
+  readablePhonePeError,
   recurringAmountForPlan,
+  requirePhonePeCallbackConfig,
+  requirePhonePeConfig,
+  requireRazorpayConfig,
+  statusFromRazorpayOrderStatus,
   statusFromPhonePeState,
-  validatePhonePeCallbackAuth
+  validatePhonePeCallbackAuth,
+  verifyRazorpaySignature
 };
 
 export default router;
