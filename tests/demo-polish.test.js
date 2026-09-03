@@ -29,7 +29,13 @@ test('signup duplicate responses redirect through login with a prefilled identif
   const authSource = await fs.readFile('server/routes/auth.js', 'utf8');
 
   assert.match(authSource, /code:\s*'ACCOUNT_EXISTS'/);
+  assert.match(authSource, /existing\.phone \|\| existing\.email \|\| phone/);
+  assert.match(authSource, /phone-\(\\d\{10,15\}\)@phone\\\.lookmefy\\\.local/);
   assert.match(appSource, /function loginHrefForIdentifier/);
+  assert.match(appSource, /function publicLoginIdentifier/);
+  assert.match(appSource, /phone-\(\\d\{10,15\}\)@phone\\\.lookmefy\\\.local/);
+  assert.match(appSource, /digits\.length === 12 && digits\.startsWith\('91'\)/);
+  assert.match(authSource, /normalizePhone\(publicIdentifier\)\.replace\(\s*\/\^\\\+91\/,\s*''\s*\)/);
   assert.match(appSource, /params\.set\('identifier'/);
   assert.match(appSource, /isExistingAccountError\(err\)/);
   assert.match(appSource, /Mobile number or email/);

@@ -160,20 +160,6 @@ const accountDeleteLimiter = createRateLimiter({
   keyGenerator: rateLimitKeys.user,
   message: 'Too many account deletion attempts. Please wait before trying again.'
 });
-const adminReadLimiter = createRateLimiter({
-  name: 'auth:admin-read',
-  windowMs: 5 * 60 * 1000,
-  max: 120,
-  keyGenerator: rateLimitKeys.userOrIp,
-  message: 'Admin data requests are temporarily limited. Please try again shortly.'
-});
-const adminWriteLimiter = createRateLimiter({
-  name: 'auth:admin-write',
-  windowMs: 10 * 60 * 1000,
-  max: 30,
-  keyGenerator: rateLimitKeys.userOrIp,
-  message: 'Too many admin changes. Please pause briefly and try again.'
-});
 const sessionHeartbeatLimiter = createRateLimiter({
   name: 'auth:session-heartbeat',
   windowMs: 5 * 60 * 1000,
@@ -642,10 +628,14 @@ function asyncRoute(handler) {
 }
 
 function accountExistsPayload(identifier, message = 'An account already exists. Please sign in.') {
+  const cleanIdentifier = String(identifier || '').trim();
+  const phoneEmail = cleanIdentifier.match(/^phone-(\d{10,15})@phone\.lookmefy\.local$/i);
+  const publicIdentifier = phoneEmail ? phoneEmail[1] : cleanIdentifier;
+  const localPhone = normalizePhone(publicIdentifier).replace(/^\+91/, '');
   return {
     message,
     code: 'ACCOUNT_EXISTS',
-    identifier: String(identifier || '').trim()
+    identifier: localPhone || publicIdentifier
   };
 }
 
@@ -653,7 +643,7 @@ router.post('/signup/request-otp', otpRequestIpLimiter, otpRequestPhoneLimiter, 
   const phone = normalizePhone(req.body?.phone);
   if (!phone) return res.status(400).json({ message: 'Enter a valid mobile number.' });
   const existing = await User.findOne({ phone }).select('email phone').lean();
-  if (existing) return res.status(409).json(accountExistsPayload(existing.email || existing.phone || phone, 'An account already exists for this phone number. Please sign in.'));
+  if (existing) return res.status(409).json(accountExistsPayload(existing.phone || existing.email || phone, 'An account already exists for this phone number. Please sign in.'));
 
   const { otpSession, otp, expiresAt } = await createOtpChallenge({
     sessions: signupOtpSessions,
@@ -746,7 +736,7 @@ router.post('/signup', upload.single('bodyPhoto'), asyncRoute(async (req, res) =
     ]
   });
   if (existing?.email === email.toLowerCase()) return res.status(409).json(accountExistsPayload(existing.email, 'An account already exists for this email. Please sign in.'));
-  if (existing?.phone === phone) return res.status(409).json(accountExistsPayload(existing.email || existing.phone || phone, 'An account already exists for this phone number. Please sign in.'));
+  if (existing?.phone === phone) return res.status(409).json(accountExistsPayload(existing.phone || existing.email || phone, 'An account already exists for this phone number. Please sign in.'));
   if (existing?.username === username) return res.status(409).json({ message: 'This username is already taken' });
 
   try {
@@ -1373,7 +1363,7 @@ async function loadAdminMedia({ type = 'all', userId = '', page = 1, limit = 24 
   };
 }
 
-router.get('/admin/users', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+router.get('/admin/users', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const q = String(req.query.q || '').trim();
   const status = String(req.query.status || '').trim().toLowerCase();
   const limit = Math.min(Math.max(Number(req.query.limit) || 80, 1), 150);
@@ -1488,7 +1478,7 @@ function orderToAdmin(order) {
   };
 }
 
-router.get('/admin/search', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+router.get('/admin/search', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json({ products: [], users: [] });
   const expression = new RegExp(escapedSearch(q.slice(0, 120)), 'i');
@@ -1503,7 +1493,7 @@ router.get('/admin/search', requireAdmin, requireUserOperationsAdmin, adminReadL
   });
 });
 
-router.get('/admin/users/:id/insights', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+router.get('/admin/users/:id/insights', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
   const activityPage = Math.min(Math.max(Number(req.query.activityPage) || 1, 1), 200);
   const activityLimit = Math.min(Math.max(Number(req.query.activityLimit) || 24, 1), 50);
@@ -1612,7 +1602,7 @@ router.get('/admin/users/:id/insights', requireAdmin, requireUserOperationsAdmin
   });
 });
 
-router.get('/admin/users/:id/media', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+router.get('/admin/users/:id/media', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
   const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 100);
   const limit = Math.min(Math.max(Number(req.query.limit) || 24, 1), 48);
@@ -1622,7 +1612,7 @@ router.get('/admin/users/:id/media', requireAdmin, requireUserOperationsAdmin, a
   res.json({ user: adminUserPayload(user), ...media });
 });
 
-router.get('/admin/storage', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+router.get('/admin/storage', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const type = String(req.query.type || 'all').trim().toLowerCase();
   if (!['all', 'profile', 'tryon', 'video', 'closet', 'product'].includes(type)) {
     return res.status(400).json({ message: 'Invalid storage media type' });
@@ -1632,11 +1622,11 @@ router.get('/admin/storage', requireAdmin, requireUserOperationsAdmin, adminRead
   res.json(await loadAdminMedia({ type, page, limit }));
 });
 
-router.get('/admin/storage/reconciliation', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (_req, res) => {
+router.get('/admin/storage/reconciliation', requireAdmin, requireUserOperationsAdmin, async (_req, res) => {
   res.json(await reconcileBunnyInventory());
 });
 
-router.delete('/admin/storage/orphans', requireAdmin, requireUserOperationsAdmin, adminWriteLimiter, async (req, res) => {
+router.delete('/admin/storage/orphans', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   if (String(req.body?.confirmation || '') !== 'DELETE') {
     return res.status(400).json({ message: 'Type DELETE to confirm orphan deletion' });
   }
@@ -1650,7 +1640,7 @@ router.delete('/admin/storage/orphans', requireAdmin, requireUserOperationsAdmin
   res.json(result);
 });
 
-router.get('/admin/operations', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (_req, res) => {
+router.get('/admin/operations', requireAdmin, requireUserOperationsAdmin, async (_req, res) => {
   const [orders, orderTotals] = await Promise.all([
     TokenOrder.find({}).sort({ createdAt: -1 }).limit(12).populate('user', 'name email username').lean(),
     TokenOrder.aggregate([{ $group: { _id: '$status', count: { $sum: 1 }, tokens: { $sum: '$tokens' }, amount: { $sum: '$amount' } } }])
@@ -1665,7 +1655,7 @@ router.get('/admin/operations', requireAdmin, requireUserOperationsAdmin, adminR
   });
 });
 
-router.get('/admin/orders', requireAdmin, requireUserOperationsAdmin, adminReadLimiter, async (req, res) => {
+router.get('/admin/orders', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 10_000);
   const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
   const status = String(req.query.status || '').trim().toLowerCase();
@@ -1692,7 +1682,7 @@ router.get('/admin/orders', requireAdmin, requireUserOperationsAdmin, adminReadL
   });
 });
 
-router.get('/admin/audit-log', requireAdmin, requireSystemAdmin, adminReadLimiter, async (req, res) => {
+router.get('/admin/audit-log', requireAdmin, requireSystemAdmin, async (req, res) => {
   const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 10_000);
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
   const action = String(req.query.action || '').trim();
@@ -1731,7 +1721,7 @@ router.get('/admin/audit-log', requireAdmin, requireSystemAdmin, adminReadLimite
   });
 });
 
-router.patch('/admin/users/:id/tokens', requireAdmin, requireUserOperationsAdmin, adminWriteLimiter, async (req, res) => {
+router.patch('/admin/users/:id/tokens', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const mode = String(req.body?.mode || 'set').toLowerCase();
   if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
 
@@ -1757,7 +1747,7 @@ router.patch('/admin/users/:id/tokens', requireAdmin, requireUserOperationsAdmin
   res.json({ user: adminUserPayload(user) });
 });
 
-router.patch('/admin/users/:id/status', requireAdmin, requireUserOperationsAdmin, adminWriteLimiter, async (req, res) => {
+router.patch('/admin/users/:id/status', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
   const status = String(req.body?.status || '').trim().toLowerCase();
   const reason = String(req.body?.reason || '').trim().slice(0, 300);
@@ -1791,7 +1781,7 @@ router.patch('/admin/users/:id/status', requireAdmin, requireUserOperationsAdmin
   res.json({ user: adminUserPayload(user) });
 });
 
-router.delete('/admin/users/:id', requireAdmin, requireUserOperationsAdmin, adminWriteLimiter, async (req, res) => {
+router.delete('/admin/users/:id', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
   if (String(req.body?.confirmation || '') !== 'ANONYMIZE') {
     return res.status(400).json({ message: 'Type ANONYMIZE to confirm account removal' });

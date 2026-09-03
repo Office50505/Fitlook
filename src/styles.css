@@ -39307,3 +39307,68 @@ label,
     max-height: calc(100svh - 60px) !important;
   }
 }
+
+/* Commerce cards should show the full catalog product, especially tall fashion shots. */
+.product-card .product-media,
+.atelier-home .atelier-arrivals-rail .atelier-product-image,
+.atelier-mixed-grid .atelier-product-image,
+.atelier-category-product-image,
+.wishlist-reference-card-media,
+.wishlist-recommendation-card > a > div,
+.concierge-product-image {
+  background: #fff !important;
+}
+
+.product-card .product-media img,
+.product-card .product-media video,
+.atelier-home .atelier-arrivals-rail .atelier-product-image img,
+.atelier-mixed-grid .atelier-product-image img,
+.atelier-category-product-image img,
+.wishlist-reference-card-media img,
+.wishlist-recommendation-card img,
+.concierge-product-image img {
+  box-sizing: border-box !important;
+  padding: clamp(6px, .55vw, 10px) !important;
+  object-fit: contain !important;
+  object-position: center top !important;
+}
+
+.product-card:not(.locked-product):hover .product-media img,
+.product-card:not(.locked-product):focus-within .product-media img,
+.atelier-home .atelier-arrivals-rail .atelier-product:hover .atelier-product-image img,
+.atelier-home .atelier-arrivals-rail .atelier-product:focus-within .atelier-product-image img,
+.atelier-mixed-grid .atelier-product:hover .atelier-product-image img,
+.atelier-mixed-grid .atelier-product:focus-within .atelier-product-image img,
+.atelier-category-product:hover .atelier-category-product-image img,
+.atelier-category-product:focus-within .atelier-category-product-image img,
+.wishlist-reference-card:hover .wishlist-reference-card-media img,
+.wishlist-reference-card:focus-within .wishlist-reference-card-media img,
+.wishlist-recommendation-card:hover img,
+.wishlist-recommendation-card:focus-within img,
+.concierge-product-card:hover .concierge-product-image img,
+.concierge-product-card:focus-within .concierge-product-image img {
+  transform: scale(1.01) !important;
+}
+
+/* Product detail photos are catalog/product imagery, not editorial crops. */
+.product-editorial-page .product-editorial-media.showing-product {
+  background: #fff !important;
+}
+
+.product-editorial-page .product-editorial-media.showing-product .zoomable-image img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  padding: clamp(8px, 1.1vw, 16px) !important;
+  object-fit: contain !important;
+  object-position: center top !important;
+  background: #fff !important;
+}
+
+.product-editorial-thumbnails img {
+  padding: 2px !important;
+  object-fit: contain !important;
+  object-position: center top !important;
+  background: #fff !important;
+}

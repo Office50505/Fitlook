@@ -54,14 +54,6 @@ const amazonSearchLimiter = createRateLimiter({
   keyGenerator: rateLimitKeys.user,
   message: 'Too many style bot searches. Please wait a few minutes before searching again.'
 });
-const adminProductWriteLimiter = createRateLimiter({
-  name: 'products:admin-write',
-  windowMs: 10 * 60 * 1000,
-  max: 60,
-  keyGenerator: rateLimitKeys.userOrIp,
-  message: 'Too many product admin actions. Please pause briefly and try again.'
-});
-
 async function clearProductReadCaches() {
   await Promise.all([
     productListCache.clear(),
@@ -1395,7 +1387,7 @@ router.get('/', productReadLimiter, async (req, res) => {
   res.json(payload);
 });
 
-router.get('/admin/catalog', requireAdmin, requireUserOperationsAdmin, productReadLimiter, async (req, res) => {
+router.get('/admin/catalog', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const { q, tag, category, brand, gender, featured, newArrival, sort, availability } = req.query;
   const limit = Math.min(Math.max(Number(req.query.limit) || 96, 1), 150);
   const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 10_000);
@@ -1863,7 +1855,7 @@ async function runProductRecategorizationJob() {
   return { updated, checked: products.length, changes };
 }
 
-router.post('/recategorize', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+router.post('/recategorize', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   if (req.body?.async || req.query.async === '1') {
     const job = await enqueueJob('maintenance', 'product-recategorize', {}, {
       jobId: safeJobId('product-recategorize', Date.now())
@@ -1909,7 +1901,7 @@ router.get('/:id', productReadLimiter, async (req, res) => {
   }
 });
 
-router.post('/preview-link', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+router.post('/preview-link', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   try {
     const draft = await buildProductDraft(req.body.affiliateLink, { itemType: req.body.itemType });
     res.json({ draft });
@@ -1918,7 +1910,7 @@ router.post('/preview-link', requireAdmin, requireUserOperationsAdmin, adminProd
   }
 });
 
-router.post('/', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, upload.single('image'), async (req, res) => {
+router.post('/', requireAdmin, requireUserOperationsAdmin, upload.single('image'), async (req, res) => {
   const { name, brand, category, gender, price } = req.body;
   if (!name || !brand || !category || !price) {
     return res.status(400).json({ message: 'Name, brand, category, and price are required' });
@@ -1987,7 +1979,7 @@ router.post('/', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimi
   res.status(201).json({ product: productToAdminClient(product) });
 });
 
-router.patch('/admin/inventory', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+router.patch('/admin/inventory', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.map(String))] : [];
   if (!ids.length || ids.length > 150 || ids.some((id) => !/^[a-f\d]{24}$/i.test(id))) {
     return res.status(400).json({ message: 'Provide between 1 and 150 valid product ids' });
@@ -2017,7 +2009,7 @@ router.patch('/admin/inventory', requireAdmin, requireUserOperationsAdmin, admin
   });
 });
 
-router.patch('/:id', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+router.patch('/:id', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
@@ -2037,7 +2029,7 @@ router.patch('/:id', requireAdmin, requireUserOperationsAdmin, adminProductWrite
   }
 });
 
-router.patch('/:id/garment-placement', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+router.patch('/:id/garment-placement', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { garmentPlacement: normalizeGarmentPlacement(req.body.garmentPlacement) },
@@ -2055,7 +2047,7 @@ router.patch('/:id/garment-placement', requireAdmin, requireUserOperationsAdmin,
   res.json({ product: product.toClient() });
 });
 
-router.patch('/:id/tryon-model', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+router.patch('/:id/tryon-model', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { tryOnModel: normalizeTryOnModel(req.body.tryOnModel) },
@@ -2073,7 +2065,7 @@ router.patch('/:id/tryon-model', requireAdmin, requireUserOperationsAdmin, admin
   res.json({ product: product.toClient() });
 });
 
-router.delete('/', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+router.delete('/', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const result = await Product.updateMany(
     { isActive: true },
     { $set: availabilityUpdate('archived', { source: 'manual' }) },
@@ -2089,7 +2081,7 @@ router.delete('/', requireAdmin, requireUserOperationsAdmin, adminProductWriteLi
   res.json({ removed: result.modifiedCount || 0 });
 });
 
-router.delete('/:id/permanent', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+router.delete('/:id/permanent', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   if (req.body?.confirmation !== 'DELETE') {
     return res.status(400).json({ message: 'Type DELETE to permanently remove this product' });
   }
@@ -2136,7 +2128,7 @@ router.delete('/:id/permanent', requireAdmin, requireUserOperationsAdmin, adminP
   });
 });
 
-router.delete('/:id', requireAdmin, requireUserOperationsAdmin, adminProductWriteLimiter, async (req, res) => {
+router.delete('/:id', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { $set: availabilityUpdate('archived', { source: 'manual' }) },

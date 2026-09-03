@@ -338,7 +338,7 @@ router.post('/phonepe/callback', async (req, res) => {
   });
 });
 
-router.get('/admin/list', requireAdmin, requireUserOperationsAdmin, orderStatusLimiter, async (req, res) => {
+router.get('/admin/list', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
   const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 10_000);
   const query = cleanText(req.query.q, 120);

@@ -14,7 +14,6 @@ import {
   normalizeAdminSections,
   removesActiveMaster
 } from '../utils/adminPermissions.js';
-import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import {
   costOverview,
   generationReport,
@@ -26,15 +25,7 @@ import {
 } from '../services/adminManagement.js';
 
 const router = express.Router();
-const adminManagementLimiter = createRateLimiter({
-  name: 'admin:management',
-  windowMs: 5 * 60 * 1000,
-  max: 120,
-  keyGenerator: rateLimitKeys.userOrIp,
-  message: 'Admin monitoring requests are temporarily limited. Please try again shortly.'
-});
-
-router.use(requireAdmin, adminManagementLimiter);
+router.use(requireAdmin);
 
 const requireSystemAdmin = requireAdminSection(ADMIN_SECTIONS.SYSTEM_MANAGEMENT);
 const requireCostAdmin = requireAdminSection(ADMIN_SECTIONS.COST_MANAGEMENT);

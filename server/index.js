@@ -57,16 +57,25 @@ const globalApiLimiter = createRateLimiter({
   max: Number(process.env.RATE_LIMIT_GLOBAL_MAX || 300),
   keyGenerator: rateLimitKeys.clientIp,
   message: 'Too many requests from this network. Please pause for a few minutes and try again.',
-  skip: (req) => req.path.startsWith('/health')
-});
-const adminMetricsLimiter = createRateLimiter({
-  name: 'admin:metrics',
-  windowMs: 5 * 60 * 1000,
-  max: 60,
-  keyGenerator: rateLimitKeys.userOrIp,
-  message: 'Admin metrics are temporarily limited. Please try again shortly.'
+  skip: (req) => req.path.startsWith('/health') || isAdminPanelApiPath(req)
 });
 const requireSystemAdmin = requireAdminSection(ADMIN_SECTIONS.SYSTEM_MANAGEMENT);
+
+function isAdminPanelApiPath(req) {
+  const apiPath = req.path || '';
+  const method = String(req.method || 'GET').toUpperCase();
+  if (apiPath.startsWith('/admin')) return true;
+  if (apiPath === '/auth/admin-login' || apiPath === '/auth/admin-request-access' || apiPath === '/auth/admin-session') return true;
+  if (apiPath.startsWith('/auth/admin/')) return true;
+  if (apiPath === '/products/admin/catalog' || apiPath === '/products/admin/inventory') return true;
+  if (apiPath === '/products/smart-import' || apiPath === '/products/recategorize' || apiPath === '/products/preview-link') return true;
+  if (apiPath === '/products' && ['POST', 'DELETE'].includes(method)) return true;
+  if (/^\/products\/[^/]+$/.test(apiPath) && ['PATCH', 'DELETE'].includes(method)) return true;
+  if (/^\/products\/[^/]+\/(?:garment-placement|tryon-model|permanent)$/.test(apiPath) && ['PATCH', 'DELETE'].includes(method)) return true;
+  if (apiPath.startsWith('/orders/admin/')) return true;
+  if (apiPath.startsWith('/recommendations/admin/')) return true;
+  return false;
+}
 
 function safeTokenMatch(left, right) {
   const leftBuffer = Buffer.from(String(left || ''));
@@ -174,7 +183,7 @@ app.get('/api/health/ready', async (_req, res) => {
   });
 });
 
-app.get('/api/admin/metrics', requireAdmin, requireSystemAdmin, adminMetricsLimiter, async (_req, res, next) => {
+app.get('/api/admin/metrics', requireAdmin, requireSystemAdmin, async (_req, res, next) => {
   try {
     res.json(await observabilitySnapshot({ mongoose }));
   } catch (error) {

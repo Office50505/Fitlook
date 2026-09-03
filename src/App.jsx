@@ -909,12 +909,22 @@ function authReturnPath() {
 
 function loginHrefForIdentifier(identifier = '') {
   const params = new URLSearchParams();
-  const cleanIdentifier = String(identifier || '').trim();
+  const cleanIdentifier = publicLoginIdentifier(identifier);
   const destination = authReturnPath();
   if (cleanIdentifier) params.set('identifier', cleanIdentifier);
   if (destination && destination !== '/home') params.set('return', destination);
   const query = params.toString();
   return `/login${query ? `?${query}` : ''}`;
+}
+
+function publicLoginIdentifier(identifier = '') {
+  const cleanIdentifier = String(identifier || '').trim();
+  const phoneEmail = cleanIdentifier.match(/^phone-(\d{10,15})@phone\.lookmefy\.local$/i);
+  const publicIdentifier = phoneEmail ? phoneEmail[1] : cleanIdentifier;
+  const digits = publicIdentifier.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91') && /^[6-9]\d{9}$/.test(digits.slice(2))) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0') && /^[6-9]\d{9}$/.test(digits.slice(1))) return digits.slice(1);
+  return publicIdentifier;
 }
 
 function isExistingAccountError(error) {
@@ -2202,7 +2212,7 @@ function AtelierProductRailCard({ product, demoEcommerceMode = false }) {
       <a className="atelier-product-link" href={`/product/${encodeURIComponent(product.id)}`} aria-label={`Open ${product.name}`}>
         <span className="atelier-product-image">
           {(badge || discount > 0) && <span className="atelier-best-seller">{badge || `${discount}% off`}</span>}
-          <OptimizedImage src={product.imageUrl} alt={product.name} highResolution={false} />
+          <OptimizedImage src={product.imageUrl} alt={product.name} />
         </span>
         <span className="atelier-product-category">{displayCategory(product)}</span>
         <h3>{product.name}</h3>
@@ -2227,7 +2237,7 @@ function AtelierCategoryProductCard({ product }) {
     <article className="atelier-category-product">
       <a href={`/product/${encodeURIComponent(product.id)}`}>
         <div className="atelier-category-product-image">
-          <OptimizedImage src={product.imageUrl} alt={product.name} highResolution={false} />
+          <OptimizedImage src={product.imageUrl} alt={product.name} />
         </div>
         <span className="atelier-category-product-brand">{displayBrand(product)}</span>
         <h3>{product.name}</h3>
@@ -3604,7 +3614,6 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, d
           <OptimizedImage
             src={image}
             alt={product.name}
-            highResolution={false}
             onError={(event) => {
               if (hasUsableTryOn) setTryOnImageFailed(true);
               else if (event.currentTarget.src !== window.location.origin + asset('hero2.png')) event.currentTarget.src = asset('hero2.png');
@@ -9967,7 +9976,7 @@ function AuthPage({ mode, setUser }) {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const resetSucceeded = mode === 'login' && params.get('passwordReset') === 'success';
-    const loginIdentifier = mode === 'login' ? (params.get('identifier') || params.get('email') || params.get('phone') || '') : '';
+    const loginIdentifier = mode === 'login' ? publicLoginIdentifier(params.get('identifier') || params.get('email') || params.get('phone') || '') : '';
     setMessage(resetSucceeded ? 'Password reset successfully. Sign in with your new password.' : '');
     setCapsLock(false);
     setIsSubmitting(false);
