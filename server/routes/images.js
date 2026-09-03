@@ -24,7 +24,13 @@ function logSubjectIsolation(step, meta = {}) {
 }
 
 function uploadPathname(imageUrl = '') {
-  return String(imageUrl || '').trim().split('#')[0].split('?')[0];
+  const value = String(imageUrl || '').trim().split('#')[0].split('?')[0];
+  if (value.startsWith('/uploads/')) return value;
+  try {
+    return new URL(value).pathname;
+  } catch {
+    return value;
+  }
 }
 
 function userScopedUploadUrl(user, imageUrl = '') {

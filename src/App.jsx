@@ -864,6 +864,22 @@ function protectedMediaUrl(value = '') {
   return API_BASE_URL ? `${API_BASE_URL}${withToken}` : withToken;
 }
 
+function uploadPathnameFromClientUrl(value = '') {
+  const url = typeof value === 'string' ? value.trim().split('#')[0].split('?')[0] : '';
+  if (!url) return '';
+  if (url.startsWith('/uploads/')) return url;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const apiOrigin = API_BASE_URL ? new URL(API_BASE_URL, window.location.origin).origin : '';
+    if ((parsed.origin === window.location.origin || parsed.origin === apiOrigin) && parsed.pathname.startsWith('/uploads/')) {
+      return parsed.pathname;
+    }
+  } catch {
+    return '';
+  }
+  return '';
+}
+
 function readRecentSearches() {
   try {
     const stored = JSON.parse(localStorage.getItem('fitlook_recent_searches') || '[]');
@@ -1374,23 +1390,26 @@ function useGenerationHistory(user) {
 
 function MobileBottomNav({ user }) {
   const currentPath = normalizePath();
+  const usesWardrobeItems = currentPath === '/home' || currentPath === '/categories' || currentPath === '/explore' || currentPath === '/closet' || currentPath === '/style-bot' || currentPath === '/profile';
+  const usesWardrobeStyle = usesWardrobeItems || currentPath === '/custom-try-on';
   const mobileNavLinks = [
     { label: 'Home', href: '/home', Icon: HomeIcon },
-    { label: 'Explore', href: '/categories', Icon: GridIcon },
+    { label: 'Categories', href: '/categories', Icon: GridIcon },
     { label: 'Try-On', href: '/custom-try-on', Icon: TryOnIcon },
-    { label: 'AI Stylist', href: user ? '/style-bot' : '/signup', Icon: SparkleLineIcon },
-    { label: 'Wardrobe', href: '/closet', Icon: ClosetIcon },
-    { label: 'Profile', href: user ? '/profile' : '/signup', Icon: UserIcon }
+    { label: 'Wardrobe', href: '/closet', Icon: TShirtIcon },
+    { label: 'AI Studio', href: user ? '/style-bot' : '/signup', Icon: SparkleLineIcon }
   ];
-  const isActiveLink = (href, index) => {
+  const isActiveLink = (href, index, link = {}) => {
+    if (link.inactiveOn?.includes(currentPath)) return false;
+    if (link.activeOn?.includes(currentPath)) return true;
     const hrefPath = href.split('?')[0] || '/';
-    return currentPath === hrefPath || (currentPath === '/' && index === 0);
+    return currentPath === hrefPath || (currentPath === '/' && index === 0) || (currentPath === '/explore' && hrefPath === '/categories');
   };
 
   return (
-    <nav className="mobile-bottom-nav" aria-label="Primary mobile navigation">
-      {mobileNavLinks.map(({ label, href, Icon }, index) => {
-        const active = isActiveLink(href, index);
+    <nav className={`mobile-bottom-nav${usesWardrobeStyle ? ' mobile-bottom-nav-wardrobe-style' : ''}`} aria-label="Primary mobile navigation">
+      {mobileNavLinks.map(({ label, href, Icon, ...link }, index) => {
+        const active = isActiveLink(href, index, link);
         return <a className={active ? 'active' : ''} href={href} aria-current={active ? 'page' : undefined} key={label}><Icon /><span>{label}</span></a>;
       })}
     </nav>
@@ -3645,8 +3664,140 @@ function inspectPreviewImage(src) {
   });
 }
 
+function stageMatchedModelImage(src, targetRgb = [215, 215, 213]) {
+  return new Promise((resolve, reject) => {
+    if (!src) {
+      reject(new Error('Model image URL is missing'));
+      return;
+    }
+    const image = new Image();
+    if (!/^(?:data:|blob:)/i.test(src)) image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      const naturalWidth = image.naturalWidth || image.width || 0;
+      const naturalHeight = image.naturalHeight || image.height || 0;
+      if (!naturalWidth || !naturalHeight) {
+        reject(new Error('Model image loaded without dimensions'));
+        return;
+      }
+
+      const maxSide = 1200;
+      const scale = Math.min(1, maxSide / Math.max(naturalWidth, naturalHeight));
+      const width = Math.max(1, Math.round(naturalWidth * scale));
+      const height = Math.max(1, Math.round(naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      context.drawImage(image, 0, 0, width, height);
+
+      const imageData = context.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      const cornerSize = Math.max(10, Math.round(Math.min(width, height) * 0.055));
+      const samples = [];
+      const addSample = (x, y) => {
+        const index = (y * width + x) * 4;
+        if (data[index + 3] > 240) samples.push([data[index], data[index + 1], data[index + 2]]);
+      };
+
+      for (let y = 0; y < cornerSize; y += 1) {
+        for (let x = 0; x < cornerSize; x += 1) {
+          addSample(x, y);
+          addSample(width - 1 - x, y);
+          addSample(x, height - 1 - y);
+          addSample(width - 1 - x, height - 1 - y);
+        }
+      }
+
+      const backgroundRgb = samples.length
+        ? samples.reduce((sum, rgb) => [sum[0] + rgb[0], sum[1] + rgb[1], sum[2] + rgb[2]], [0, 0, 0]).map((value) => value / samples.length)
+        : [238, 238, 236];
+      const threshold = 78;
+      const visited = new Uint8Array(width * height);
+      const stack = [];
+      const push = (x, y) => {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        const pixel = y * width + x;
+        if (visited[pixel]) return;
+        visited[pixel] = 1;
+        stack.push(pixel);
+      };
+      const isBackgroundPixel = (pixel) => {
+        const index = pixel * 4;
+        if (data[index + 3] < 220) return true;
+        const dr = data[index] - backgroundRgb[0];
+        const dg = data[index + 1] - backgroundRgb[1];
+        const db = data[index + 2] - backgroundRgb[2];
+        return Math.sqrt((dr * dr) + (dg * dg) + (db * db)) <= threshold;
+      };
+
+      for (let x = 0; x < width; x += 1) {
+        push(x, 0);
+        push(x, height - 1);
+      }
+      for (let y = 1; y < height - 1; y += 1) {
+        push(0, y);
+        push(width - 1, y);
+      }
+
+      while (stack.length) {
+        const pixel = stack.pop();
+        if (!isBackgroundPixel(pixel)) continue;
+        const index = pixel * 4;
+        data[index] = targetRgb[0];
+        data[index + 1] = targetRgb[1];
+        data[index + 2] = targetRgb[2];
+        data[index + 3] = 255;
+        const x = pixel % width;
+        const y = Math.floor(pixel / width);
+        push(x + 1, y);
+        push(x - 1, y);
+        push(x, y + 1);
+        push(x, y - 1);
+      }
+
+      context.putImageData(imageData, 0, 0);
+      canvas.toBlob((blob) => {
+        if (blob) resolve(URL.createObjectURL(blob));
+        else reject(new Error('Could not prepare stage-matched model image'));
+      }, 'image/png');
+    };
+    image.onerror = () => reject(new Error('Model image could not be loaded for background matching'));
+    image.src = src;
+  });
+}
+
+function useStageMatchedModelImage(src, enabled) {
+  const [matchedSrc, setMatchedSrc] = useState('');
+
+  useEffect(() => {
+    if (!src || !enabled) {
+      setMatchedSrc('');
+      return undefined;
+    }
+    let active = true;
+    let objectUrl = '';
+    setMatchedSrc('');
+    stageMatchedModelImage(src)
+      .then((url) => {
+        objectUrl = url;
+        if (active) setMatchedSrc(url);
+        else URL.revokeObjectURL(url);
+      })
+      .catch(() => {
+        if (active) setMatchedSrc('');
+      });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [src, enabled]);
+
+  return matchedSrc;
+}
+
 function useSubjectIsolation(modelSource, user) {
   const sourceUrl = modelSource?.imageUrl || '';
+  const sourceUploadPath = uploadPathnameFromClientUrl(sourceUrl);
   const providedTransparent = modelSource?.transparentImageUrl || '';
   const [retryKey, setRetryKey] = useState(0);
   const [state, setState] = useState({
@@ -3702,7 +3853,7 @@ function useSubjectIsolation(modelSource, user) {
         active = false;
       };
     }
-    if (!user || !sourceUrl.startsWith('/uploads/')) {
+    if (!user || !sourceUploadPath) {
       setState({ status: 'failed', transparentUrl: '', error: 'No saved source image is available for cutout processing.', errorCode: 'SOURCE_UNAVAILABLE', processing: modelSource?.imageProcessing || null, outputLoaded: false, alphaDetected: null, cacheHit: false });
       return () => {
         active = false;
@@ -3713,7 +3864,7 @@ function useSubjectIsolation(modelSource, user) {
     setState((current) => ({ ...current, status: 'requesting', transparentUrl: current.transparentUrl || '', error: '', errorCode: '' }));
     api('/images/subject-isolation', {
       method: 'POST',
-      body: JSON.stringify({ imageUrl: sourceUrl }),
+      body: JSON.stringify({ imageUrl: sourceUploadPath }),
       timeout: 120000,
       signal: controller.signal
     })
@@ -3746,7 +3897,7 @@ function useSubjectIsolation(modelSource, user) {
       active = false;
       controller.abort();
     };
-  }, [sourceUrl, providedTransparent, user?.id, retryKey]);
+  }, [sourceUrl, sourceUploadPath, providedTransparent, user?.id, retryKey]);
 
   return { ...state, retry: () => setRetryKey((current) => current + 1), sourceUrl };
 }
@@ -3856,12 +4007,16 @@ function CutoutFallbackNotice({ isolation, originalSrc, onRetry }) {
   );
 }
 
-function RoomScene({ modelSource, alt, generating, onOpen, onEmpty }) {
-  const visibleSrc = safeWardrobeImageUrl(modelSource?.imageUrl);
+function RoomScene({ modelSource, alt, generating, user, onOpen, onEmpty }) {
+  const isolation = useSubjectIsolation(modelSource, user);
+  const transparentSrc = safeWardrobeImageUrl(isolation.transparentUrl);
+  const originalSrc = safeWardrobeImageUrl(modelSource?.imageUrl);
+  const matchedSrc = useStageMatchedModelImage(originalSrc, Boolean(originalSrc && !transparentSrc));
+  const visibleSrc = transparentSrc || matchedSrc || originalSrc;
   const imageAlt = alt || 'Wardrobe preview';
 
   return (
-    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''}`}>
+    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''} ${transparentSrc ? 'has-transparent-model' : 'match-stage-background'}`}>
       {visibleSrc ? (
         <button className="wardrobe-flat-model" type="button" onClick={onOpen} aria-label="Open wardrobe preview full screen">
           <OptimizedImage
@@ -4319,7 +4474,24 @@ function ClosetPage({ user, setUser }) {
   const previewAlt = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
   const visibleWardrobeStageMessage = message;
   const wardrobeStageMessageIsError = /error|missing|not enough|failed|could not|cannot|unable|timed out|timeout|select|upload|try again|no other/i.test(message);
-  const mobileWardrobeSections = wardrobeSections.filter((section) => ['Tops', 'Bottoms'].includes(section.label));
+  const mobileWardrobeSections = [
+    { label: 'Tops', icon: <TShirtIcon />, categories: ['tops', 'ethnic', 'activewear'] },
+    { label: 'Bottoms', icon: <PantsIcon />, categories: ['bottoms'] },
+    { label: 'Outerwear', icon: <JacketIcon />, categories: ['outerwear', 'suits'] },
+    { label: 'Shoes', icon: <ShoeIcon />, categories: ['shoes'] },
+    { label: 'Accessories', icon: <SparkleLineIcon />, categories: ['accessories'] },
+    { label: 'Glasses', icon: <GlassesIcon />, categories: ['accessories'], keywords: ['glass', 'glasses', 'goggle', 'goggles', 'sunglass', 'eyewear'] },
+    { label: 'Watches', icon: <WatchIcon />, categories: ['accessories'], keywords: ['watch', 'watches'] },
+    { label: 'Bags & Hats', icon: <BagIcon />, categories: ['accessories'], keywords: ['bag', 'bags', 'purse', 'cap', 'hat', 'hats'] }
+  ].map((section) => {
+    const matchingItems = closetItems.filter((item) => {
+      if (!section.categories.includes(item.category)) return false;
+      if (!section.keywords?.length) return true;
+      const itemText = [item.name, item.category, item.color, item.formality, ...(item.tags || []), ...(item.occasions || [])].filter(Boolean).join(' ').toLowerCase();
+      return section.keywords.some((keyword) => itemText.includes(keyword));
+    });
+    return { ...section, items: matchingItems.length ? matchingItems : closetItems.filter((item) => section.categories.includes(item.category)) };
+  });
   const activeMobileWardrobeSection = mobileWardrobeSections.find((section) => section.label === mobileWardrobePicker) || null;
   const wardrobeFallbackForSection = (section) => (
     section.label === 'Bottoms' ? asset('category-icons/jeans.png') : asset('category-icons/tops.png')
@@ -4370,32 +4542,48 @@ function ClosetPage({ user, setUser }) {
           <a className="wardrobe-add-button" href="/closet/add">+ Add New Item</a>
         </aside>
 
-        <section className="wardrobe-model-stage" aria-label="Wardrobe model preview" style={{ background: '#d7d7d5', backgroundImage: 'none' }}>
-          <div className="wardrobe-mobile-category-rail" aria-label="Wardrobe quick controls">
-            <button type="button" onClick={() => setStagePreviewMode('model')}>
-              <span>{bodyPhotoPreview ? <OptimizedImage src={bodyPhotoPreview} fallbackSrc={asset('wardrobe-default-model.png')} alt="" /> : <UserIcon />}</span>
-              <small>Model</small>
-            </button>
-            {mobileWardrobeSections.map((section) => {
+        <section className="wardrobe-model-stage" aria-label="Wardrobe model preview">
+          <div className="wardrobe-status-strip" aria-hidden="true">
+            <div><span>1:43</span><SettingsIcon /><InfoIcon /><ShieldIcon /></div>
+            <div><SignalIcon /><WifiIcon /><BatteryIcon /></div>
+          </div>
+          <div className="wardrobe-app-topbar" aria-label="Wardrobe app header">
+            <a className="wardrobe-app-brand" href="/home" aria-label="Lookmefy home"><img src={asset('lookmefy-logo.svg')} alt="" /><span>Lookmefy</span></a>
+            <div className="wardrobe-app-actions">
+              <a href="/search" aria-label="Search"><SearchIcon /></a>
+              <button type="button" aria-label="Wishlist" onClick={() => openRoute('/wishlist')}><HeartIcon /></button>
+              <button type="button" aria-label="Wardrobe items" onClick={() => openRoute('/closet/items')}><ClosetIcon /></button>
+            </div>
+          </div>
+          <div className="wardrobe-orbit wardrobe-orbit-left" aria-label="Wardrobe categories">
+            {mobileWardrobeSections.slice(0, 4).map((section) => {
               const selectedItem = section.items.find((item) => selectedIds.includes(item.id));
-              const previewItem = selectedItem || section.items[0];
               return (
                 <button className={selectedItem ? 'active' : ''} type="button" key={section.label} onClick={() => pickMobileWardrobeSection(section)}>
-                  <span>{previewItem ? <OptimizedImage src={previewItem.imageUrl} fallbackSrc={wardrobeFallbackForSection(section)} alt="" /> : section.icon}</span>
+                  <span>{section.icon}</span>
                   <small>{section.label}</small>
                 </button>
               );
             })}
-            <button type="button" onClick={() => applyAccessorySlot('cap', 'Cap')}>
-              <span><BagIcon /></span>
-              <small>Cap</small>
-            </button>
-            <button type="button" onClick={() => applyAccessorySlot('goggles', 'Sunglasses')}>
-              <span><EyeIcon /></span>
-              <small>Glasses</small>
+          </div>
+          <div className="wardrobe-orbit wardrobe-orbit-right" aria-label="Wardrobe accessory categories">
+            {mobileWardrobeSections.slice(4).map((section) => {
+              const selectedItem = section.items.find((item) => selectedIds.includes(item.id));
+              return (
+                <button className={selectedItem ? 'active' : ''} type="button" key={section.label} onClick={() => pickMobileWardrobeSection(section)}>
+                  <span>{section.icon}</span>
+                  <small>{section.label}</small>
+                </button>
+              );
+            })}
+          </div>
+          <div className="wardrobe-primary-actions">
+            <a className="wardrobe-mobile-add-item" href="/closet/add"><span>+</span> Add Item</a>
+            <button className="wardrobe-ai-outfit-button" type="button" onClick={() => generateOutfit(selectedIds, { title: 'My wardrobe look' })} disabled={generating || selectedIds.length === 0}>
+              <span><SparkleLineIcon /></span>
+              <small>{generating ? 'Creating' : 'AI Outfit'}</small>
             </button>
           </div>
-          <a className="wardrobe-mobile-add-item" href="/closet/add">+ Add Item</a>
           {!state.loading && closetItems.length === 0 && (
             <section className="wardrobe-empty-state" aria-labelledby="wardrobe-empty-title">
               <h2 id="wardrobe-empty-title">Your wardrobe is empty</h2>
@@ -9810,6 +9998,54 @@ function EyeIcon({ crossed = false }) {
 
 function TryOnIcon() {
   return <svg viewBox="0 0 24 24"><path d="M12 4 5 8v8l7 4 7-4V8l-7-4Z" /><path d="M9 13a3 3 0 0 0 6 0" /><path d="M9 9h.01" /><path d="M15 9h.01" /></svg>;
+}
+
+function TShirtIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M9 4h6l2 2 4 1.8-2 5.2-3-1.2V20H8v-8.2L5 13 3 7.8 7 6l2-2Z" /><path d="M9 4a3 3 0 0 0 6 0" /></svg>;
+}
+
+function PantsIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M8 4h8l1 16h-4l-1-9-1 9H7L8 4Z" /><path d="M8 8h8" /><path d="M12 8v3" /></svg>;
+}
+
+function JacketIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M8 4h8l3 4v12h-5l-2-8-2 8H5V8l3-4Z" /><path d="M9 4l3 5 3-5" /><path d="M7 11h3" /><path d="M14 11h3" /></svg>;
+}
+
+function ShoeIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M4 15c3 .2 5.4-.5 7-2.2l1.5 2.2H17c2 0 3.3 1 4 3H4v-3Z" /><path d="M7 15v-3" /><path d="M10 14l1.5-2" /></svg>;
+}
+
+function GlassesIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M4 12h5l1 1.5A2.8 2.8 0 0 1 7.6 18H6.4A2.8 2.8 0 0 1 4 13.5V12Z" /><path d="M15 12h5v1.5a2.8 2.8 0 0 1-2.4 4.5h-1.2a2.8 2.8 0 0 1-2.4-4.5L15 12Z" /><path d="M9 12h6" /><path d="M4 12l-1-2" /><path d="M20 12l1-2" /></svg>;
+}
+
+function WatchIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M9 2h6l1 5a6 6 0 0 1 0 10l-1 5H9l-1-5A6 6 0 0 1 8 7l1-5Z" /><circle cx="12" cy="12" r="4" /><path d="M12 9v3l2 1" /></svg>;
+}
+
+function SettingsIcon() {
+  return <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3" /><path d="M12 19v3" /><path d="M4.9 4.9 7 7" /><path d="m17 17 2.1 2.1" /><path d="M2 12h3" /><path d="M19 12h3" /><path d="M4.9 19.1 7 17" /><path d="M17 7l2.1-2.1" /></svg>;
+}
+
+function InfoIcon() {
+  return <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 11v6" /><path d="M12 7h.01" /></svg>;
+}
+
+function ShieldIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 7.8 7 10 4-2.2 7-5.5 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-5" /></svg>;
+}
+
+function SignalIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M4 19h2" /><path d="M8 19h2v-4H8v4Z" /><path d="M13 19h2v-8h-2v8Z" /><path d="M18 19h2V7h-2v12Z" /></svg>;
+}
+
+function WifiIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M4 9a12 12 0 0 1 16 0" /><path d="M7.5 12.5a7 7 0 0 1 9 0" /><path d="M10.5 16a3 3 0 0 1 3 0" /><path d="M12 19h.01" /></svg>;
+}
+
+function BatteryIcon() {
+  return <svg viewBox="0 0 24 24"><rect x="3" y="7" width="17" height="10" rx="2" /><path d="M22 11v2" /><path d="M6 10h10v4H6z" /></svg>;
 }
 
 function ClosetIcon() {
