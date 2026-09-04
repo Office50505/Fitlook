@@ -237,7 +237,6 @@ function nextPlannerDays(count = 7) {
 }
 
 const AI_PREVIEW_DISCLAIMER = 'AI previews can make mistakes. Check fit, colour, and product details before buying.';
-const DEFAULT_WARDROBE_MODEL_SRC = '/assets/wardrobe-default-model.png';
 
 function AiPreviewDisclaimer({ className = '' }) {
   return <p className={`ai-preview-disclaimer ${className}`.trim()}>{AI_PREVIEW_DISCLAIMER}</p>;
@@ -4554,12 +4553,11 @@ function RoomScene({ modelSource, alt, generating, user, onOpen, onEmpty }) {
   const isolation = useSubjectIsolation(modelSource, user);
   const transparentSrc = safeWardrobeImageUrl(isolation.transparentUrl);
   const originalSrc = safeWardrobeImageUrl(modelSource?.imageUrl);
-  const matchedSrc = useStageMatchedModelImage(originalSrc, Boolean(originalSrc && !transparentSrc));
-  const visibleSrc = transparentSrc || matchedSrc || originalSrc;
+  const visibleSrc = transparentSrc || originalSrc;
   const imageAlt = alt || 'Wardrobe preview';
 
   return (
-    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''} ${transparentSrc ? 'has-transparent-model' : 'match-stage-background'}`}>
+    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''} ${transparentSrc ? 'has-transparent-model' : 'has-uploaded-model'}`}>
       {visibleSrc ? (
         <button className="wardrobe-flat-model" type="button" onClick={onOpen} aria-label="Open wardrobe preview full screen">
           <OptimizedImage
@@ -4567,7 +4565,6 @@ function RoomScene({ modelSource, alt, generating, user, onOpen, onEmpty }) {
             src={visibleSrc}
             alt={imageAlt}
             eager
-            fallbackSrc={asset('wardrobe-default-model.png')}
             style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', objectPosition: 'center center' }}
           />
         </button>
@@ -4597,9 +4594,9 @@ function ClosetPage({ user, setUser }) {
   const [pose, setPose] = useState('front facing');
   const [lighting, setLighting] = useState('natural light');
   const [autoApply, setAutoApply] = useState(true);
-  const [stagePreviewMode, setStagePreviewMode] = useState(() => (
-    new URLSearchParams(window.location.search).get('preview') === 'latest' ? 'outfit' : 'model'
-  ));
+  const [stagePreviewMode, setStagePreviewMode] = useState('model');
+  const [activeOutfitId, setActiveOutfitId] = useState('');
+  const [activeWardrobeSectionLabel, setActiveWardrobeSectionLabel] = useState('Tops');
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
   const [chat, setChat] = useState([
@@ -4608,7 +4605,6 @@ function ClosetPage({ user, setUser }) {
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [mobileWardrobePicker, setMobileWardrobePicker] = useState(null);
   const generateInFlightRef = useRef(false);
-  const latestOutfitPreviewOpenedRef = useRef(false);
 
   const loadCloset = () => {
     if (!user) return;
@@ -4617,17 +4613,13 @@ function ClosetPage({ user, setUser }) {
       .then((data) => {
         const nextState = normalizeClosetData(data);
         setState({ ...nextState, loading: false, error: '' });
-        if (!latestOutfitPreviewOpenedRef.current && nextState.outfits[0]?.imageUrl) {
-          latestOutfitPreviewOpenedRef.current = true;
-          setStagePreviewMode('outfit');
-        }
       })
       .catch((err) => setState({ items: [], outfits: [], stats: {}, suggestions: [], loading: false, error: err.message }));
   };
 
   const processedBodyPhotoUrl = safeWardrobeImageUrl(user?.bodyPhotoUrl);
   const uploadedBodyPhotoUrl = safeWardrobeImageUrl(user?.bodyPhotoOriginalUrl);
-  const userBodyPhotoUrl = processedBodyPhotoUrl || uploadedBodyPhotoUrl;
+  const userBodyPhotoUrl = uploadedBodyPhotoUrl || processedBodyPhotoUrl;
 
   useEffect(() => {
     loadCloset();
@@ -4878,6 +4870,7 @@ function ClosetPage({ user, setUser }) {
       setState((current) => ({ ...current, outfits: data.outfit ? [data.outfit, ...(Array.isArray(current.outfits) ? current.outfits : [])] : (Array.isArray(current.outfits) ? current.outfits : []) }));
       setSelectedIds(ids);
       if (data.user) setUser(data.user);
+      setActiveOutfitId(data.outfit?.id || '');
       setStagePreviewMode('outfit');
       setMessage('Closet look is ready.');
     } catch (err) {
@@ -5009,12 +5002,13 @@ function ClosetPage({ user, setUser }) {
     generateOutfit(cardItems.map((item) => item.id).filter(Boolean), { title: card.title, occasion });
   };
 
-  const latestOutfitImage = safeWardrobeImageUrl(latestOutfit?.imageUrl);
+  const previewOutfit = closetOutfits.find((outfit) => outfit.id === activeOutfitId) || latestOutfit;
+  const latestOutfitImage = safeWardrobeImageUrl(previewOutfit?.imageUrl);
   const bodyPhotoPreview = userBodyPhotoUrl;
   const showingGeneratedOutfit = stagePreviewMode === 'outfit' && Boolean(latestOutfitImage);
   const modelPreview = showingGeneratedOutfit ? latestOutfitImage : bodyPhotoPreview;
-  const previewTitle = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Model';
-  const previewAlt = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
+  const previewTitle = showingGeneratedOutfit ? previewOutfit?.title || 'Generated wardrobe look' : 'Model';
+  const previewAlt = showingGeneratedOutfit ? previewOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
   const visibleWardrobeStageMessage = message;
   const wardrobeStageMessageIsError = /error|missing|not enough|failed|could not|cannot|unable|timed out|timeout|select|upload|try again|no other/i.test(message);
   const mobileWardrobeSections = [
@@ -5047,42 +5041,75 @@ function ClosetPage({ user, setUser }) {
     handleWardrobeItemClick(item);
     setMobileWardrobePicker(null);
   };
+  const wardrobeCollectionTabs = [
+    { label: 'All Items', value: 'all', categories: [] },
+    { label: 'Tops', value: 'tops', categories: ['tops', 'ethnic', 'activewear'] },
+    { label: 'Bottoms', value: 'bottoms', categories: ['bottoms'] },
+    { label: 'Outerwear', value: 'outerwear', categories: ['outerwear', 'suits'] },
+    { label: 'Shoes', value: 'shoes', categories: ['shoes'] }
+  ];
+  const activeCollection = wardrobeCollectionTabs.find((tab) => tab.value === filter) || wardrobeCollectionTabs[0];
+  const visibleCollectionItems = sortedClosetItems.filter((item) => (
+    activeCollection.value === 'all' || activeCollection.categories.includes(item.category)
+  ));
+  const savedWardrobeOutfits = closetOutfits.filter((outfit) => outfit?.id && outfit?.imageUrl).slice(0, 4);
+  const randomizeWardrobeSelection = () => {
+    const randomItems = closetComboSlots.map((slot) => {
+      const options = closetItems.filter((item) => slot.categories.includes(item.category));
+      return options.length ? options[Math.floor(Math.random() * options.length)] : null;
+    }).filter(Boolean);
+    if (!randomItems.length) {
+      setMessage('Add wardrobe items before creating a random combination.');
+      return;
+    }
+    applyComboItems(randomItems);
+    setStagePreviewMode('model');
+    setMessage('Created a combination using only items from your wardrobe.');
+  };
+  const shareWardrobePreview = async () => {
+    const shareData = {
+      title: previewTitle,
+      text: showingGeneratedOutfit ? `My Lookmefy outfit: ${previewTitle}` : 'My Lookmefy wardrobe',
+      url: window.location.href
+    };
+    try {
+      if (navigator.share) await navigator.share(shareData);
+      else {
+        await navigator.clipboard.writeText(shareData.url);
+        setMessage('Wardrobe link copied.');
+      }
+    } catch (error) {
+      if (error?.name !== 'AbortError') setMessage('Could not share this wardrobe preview.');
+    }
+  };
   const modelSource = {
     imageUrl: modelPreview,
-    transparentImageUrl: showingGeneratedOutfit ? latestOutfit?.transparentImageUrl || '' : '',
-    imageProcessing: showingGeneratedOutfit ? latestOutfit?.imageProcessing || null : null
+    transparentImageUrl: showingGeneratedOutfit ? previewOutfit?.transparentImageUrl || '' : '',
+    imageProcessing: showingGeneratedOutfit ? previewOutfit?.imageProcessing || null : null
   };
   return (
     <main className="closet-page wardrobe-studio-page">
       <div className="wardrobe-studio-shell">
-        <aside className="wardrobe-sidebar" aria-label="My wardrobe">
-          <div className="wardrobe-sidebar-head">
-            <h1>My Wardrobe</h1>
-            <button type="button" aria-label="Search wardrobe" onClick={() => openRoute('/closet/items')}><SearchIcon /></button>
-          </div>
-
-          <div className="wardrobe-category-stack">
-            {wardrobeSections.map((section) => (
-              <section className="wardrobe-category-panel" key={section.label}>
-                <button className="wardrobe-category-toggle" type="button" onClick={() => setFilter(section.categories[0])} aria-label={`Filter ${section.label}`}>
-                  <span>{section.icon}</span>
-                  <strong>{section.label}</strong>
-                  <small>⌄</small>
-                </button>
-                <div className="wardrobe-thumb-grid">
-                  {section.items.length ? section.items.slice(0, 3).map((item) => (
-                    <button className={selectedIds.includes(item.id) ? 'active' : ''} type="button" key={item.id} onClick={() => handleWardrobeItemClick(item)} title={item.name}>
-                      <img src={item.imageUrl} alt={item.name} />
-                    </button>
-                  )) : (
-                    <a className="wardrobe-empty-thumb" href="/closet/add">Add</a>
-                  )}
-                </div>
-              </section>
+        <aside className="wardrobe-sidebar" aria-label="Wardrobe categories">
+          <nav className="wardrobe-reference-category-rail" aria-label="Choose wardrobe category">
+            {mobileWardrobeSections.map((section) => (
+              <button
+                className={activeWardrobeSectionLabel === section.label ? 'active' : ''}
+                type="button"
+                key={section.label}
+                onClick={() => setActiveWardrobeSectionLabel(section.label)}
+                aria-pressed={activeWardrobeSectionLabel === section.label}
+              >
+                <span>{section.icon}</span>
+                <strong>{section.label}</strong>
+              </button>
             ))}
-          </div>
-
-          <a className="wardrobe-add-button" href="/closet/add">+ Add New Item</a>
+          </nav>
+          <button className="wardrobe-reference-ai-card" type="button" onClick={() => askForSuggestions('today casual')}>
+            <span><SparkleLineIcon /></span>
+            <span><strong>AI Outfit</strong><small>Get outfit suggestions with AI</small></span>
+            <ChevronRightIcon />
+          </button>
         </aside>
 
         <section className="wardrobe-model-stage" aria-label="Wardrobe model preview">
@@ -5127,14 +5154,13 @@ function ClosetPage({ user, setUser }) {
               <small>{generating ? 'Creating' : 'AI Outfit'}</small>
             </button>
           </div>
-          {!state.loading && closetItems.length === 0 && (
-            <section className="wardrobe-empty-state" aria-labelledby="wardrobe-empty-title">
-              <h2 id="wardrobe-empty-title">Your wardrobe is empty</h2>
-              <p>Add a garment to start creating AI looks.</p>
-              <a className="button" href="/closet/add">Add First Item</a>
-              <span>Use garment-only photos with the full item visible on a plain, well-lit background.</span>
-            </section>
-          )}
+          <div className="wardrobe-reference-copy" aria-hidden="true"><strong>Your Style,</strong><span>Your Space.</span></div>
+          <div className="wardrobe-reference-actions" aria-label="Wardrobe preview actions">
+            <button type="button" onClick={() => { clearWardrobeSelection(); setStagePreviewMode('model'); }}><span><ResetIcon /></span><small>Reset</small></button>
+            <button type="button" onClick={randomizeWardrobeSelection}><span><ShuffleIcon /></span><small>Random</small></button>
+            <button type="button" onClick={() => generateOutfit(selectedIds, { title: 'My wardrobe look' })} disabled={generating || selectedIds.length === 0}><span><UserIcon /></span><small>{generating ? 'Creating' : 'Try On'}</small></button>
+            <button type="button" onClick={shareWardrobePreview}><span><ShareIcon /></span><small>Share</small></button>
+          </div>
           {activeMobileWardrobeSection && (
             <div className="wardrobe-mobile-picker-backdrop" role="presentation" onClick={() => setMobileWardrobePicker(null)}>
               <section className="wardrobe-mobile-picker" aria-label={`Choose ${activeMobileWardrobeSection.label}`} onClick={(event) => event.stopPropagation()}>
@@ -5175,7 +5201,7 @@ function ClosetPage({ user, setUser }) {
 
           <div className="wardrobe-model-tools left">
             <button type="button" onClick={() => setStagePreviewMode('model')}>
-              <span>{bodyPhotoPreview ? <OptimizedImage src={bodyPhotoPreview} fallbackSrc={asset('wardrobe-default-model.png')} alt="" /> : <UserIcon />}</span>
+              <span>{bodyPhotoPreview ? <OptimizedImage src={bodyPhotoPreview} alt="" /> : <UserIcon />}</span>
               <small>Model</small>
             </button>
             <button type="button" onClick={() => applyAccessorySlot('cap', 'Cap')}>
@@ -5221,38 +5247,48 @@ function ClosetPage({ user, setUser }) {
           </div>
         </section>
 
-        <aside className="wardrobe-recommendations" aria-label="AI recommendations">
-          <div className="wardrobe-recommendations-head">
-            <h2><SparkleLineIcon /> Recommendations</h2>
-            <button className="wardrobe-refresh-button" type="button" onClick={() => askForSuggestions('today casual')}>Refresh</button>
-          </div>
-          <div className="wardrobe-recommendation-tabs">
-            {closetOccasions.slice(0, 4).map((idea, index) => (
-              <button className={occasion === idea ? 'active' : ''} type="button" key={idea} onClick={() => askForSuggestions(idea)}>{idea}</button>
-            ))}
-          </div>
-
-          <div className="wardrobe-recommendation-list">
-            {wardrobeRecommendationCards.length ? wardrobeRecommendationCards.map((card) => (
-              <article className="wardrobe-recommendation-card combo" key={card.id}>
-                <button className="wardrobe-recommendation-combo" type="button" onClick={() => tryRecommendedLook(card)}>
-                  <span className="wardrobe-combo-hero"><img src={card.items[0].imageUrl} alt={card.items[0].name} /></span>
-                  {card.items.length > 1 && <span className="wardrobe-combo-strip">
-                    {card.items.slice(1, 4).map((item) => <img key={`${card.id}-${item.id}`} src={item.imageUrl} alt={item.name} />)}
-                  </span>}
-                  <small>{card.items.length} wardrobe {card.items.length === 1 ? 'piece' : 'pieces'} · {occasion}</small>
-                  <strong>{card.title}</strong>
-                  {card.reason && <span className="wardrobe-recommendation-reason">{card.reason}</span>}
-                  <em>Try this look</em>
-                </button>
-              </article>
-            )) : (
-              <article className="wardrobe-recommendation-card empty">
-                <p>Add a few wardrobe items to unlock outfit recommendations.</p>
-                <a href="/closet/add">Add New Item</a>
-              </article>
+        <aside className="wardrobe-recommendations" aria-label="My wardrobe items">
+          <section className="wardrobe-library-panel">
+            <header className="wardrobe-library-head">
+              <h1>My Wardrobe</h1>
+              <a href="/closet/add"><span aria-hidden="true">+</span> Add Item</a>
+            </header>
+            <div className="wardrobe-library-tabs" role="tablist" aria-label="Filter wardrobe items">
+              {wardrobeCollectionTabs.map((tab) => (
+                <button className={activeCollection.value === tab.value ? 'active' : ''} type="button" role="tab" aria-selected={activeCollection.value === tab.value} key={tab.value} onClick={() => setFilter(tab.value)}>{tab.label}</button>
+              ))}
+            </div>
+            {state.loading ? (
+              <p className="wardrobe-library-status" role="status">Loading your wardrobe…</p>
+            ) : visibleCollectionItems.length ? (
+              <div className="wardrobe-library-grid">
+                {visibleCollectionItems.slice(0, 16).map((item) => (
+                  <button className={selectedIds.includes(item.id) ? 'active' : ''} type="button" key={item.id} onClick={() => handleWardrobeItemClick(item)} title={item.name} aria-pressed={selectedIds.includes(item.id)}>
+                    <OptimizedImage src={item.imageUrl} alt={item.name} />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="wardrobe-library-empty"><strong>No items here yet</strong><a href="/closet/add">Add your first item</a></div>
             )}
-          </div>
+            <a className="wardrobe-library-view-all" href="/closet/items"><span>View All Items</span><ChevronRightIcon /></a>
+          </section>
+
+          <section className="wardrobe-saved-panel" aria-labelledby="saved-outfits-title">
+            <header><h2 id="saved-outfits-title">Saved Outfits</h2><a href="/closet/items">See All</a></header>
+            {savedWardrobeOutfits.length ? (
+              <div className="wardrobe-saved-grid">
+                {savedWardrobeOutfits.map((outfit) => (
+                  <button type="button" key={outfit.id} onClick={() => { setActiveOutfitId(outfit.id); setStagePreviewMode('outfit'); }} title={outfit.title}>
+                    <OptimizedImage src={outfit.imageUrl} alt={outfit.title || 'Saved wardrobe outfit'} />
+                    <HeartIcon />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="wardrobe-saved-empty">Generated looks you save will appear here.</p>
+            )}
+          </section>
         </aside>
       </div>
       {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
@@ -11169,6 +11205,22 @@ function MenuIcon() {
 
 function ArrowLeftIcon() {
   return <svg viewBox="0 0 24 24"><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></svg>;
+}
+
+function ChevronRightIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>;
+}
+
+function ResetIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6h6" /><path d="M5.5 15a8 8 0 1 0 .5-7.5L4 10" /></svg>;
+}
+
+function ShuffleIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3h5v5" /><path d="m21 3-6.5 6.5a4 4 0 0 1-5.7 0L3 4" /><path d="M16 16h5v5" /><path d="m21 21-6.5-6.5a4 4 0 0 0-5.7 0L3 20" /></svg>;
+}
+
+function ShareIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12" /><path d="m7 8 5-5 5 5" /><path d="M5 13v7h14v-7" /></svg>;
 }
 
 function CloseIcon() {
