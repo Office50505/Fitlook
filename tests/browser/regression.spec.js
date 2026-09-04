@@ -178,6 +178,13 @@ test('rendered app covers auth, search, product, account, wardrobe, credits, and
 
   await page.goto('/closet');
   await expectOneMain(page);
+  if (testInfo.project.name === 'desktop') {
+    await expect(page.locator('.wardrobe-sidebar-workspace')).toBeVisible();
+    await expect(page.locator('.wardrobe-items-panel')).toBeVisible();
+    await expect(page.locator('.wardrobe-recommendations')).toBeVisible();
+    await expect(page.locator('.wardrobe-orbit')).toBeHidden();
+    await expect(page.locator('.wardrobe-reference-actions')).toHaveCount(0);
+  }
   await page.screenshot({ path: `${screenshotDir}/${testInfo.project.name}-wardrobe.png`, fullPage: false });
 
   await page.goto('/tokens');

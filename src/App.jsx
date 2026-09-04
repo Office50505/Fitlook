@@ -4205,140 +4205,8 @@ function inspectPreviewImage(src) {
   });
 }
 
-function stageMatchedModelImage(src, targetRgb = [215, 215, 213]) {
-  return new Promise((resolve, reject) => {
-    if (!src) {
-      reject(new Error('Model image URL is missing'));
-      return;
-    }
-    const image = new Image();
-    if (!/^(?:data:|blob:)/i.test(src)) image.crossOrigin = 'anonymous';
-    image.onload = () => {
-      const naturalWidth = image.naturalWidth || image.width || 0;
-      const naturalHeight = image.naturalHeight || image.height || 0;
-      if (!naturalWidth || !naturalHeight) {
-        reject(new Error('Model image loaded without dimensions'));
-        return;
-      }
-
-      const maxSide = 1200;
-      const scale = Math.min(1, maxSide / Math.max(naturalWidth, naturalHeight));
-      const width = Math.max(1, Math.round(naturalWidth * scale));
-      const height = Math.max(1, Math.round(naturalHeight * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const context = canvas.getContext('2d', { willReadFrequently: true });
-      context.drawImage(image, 0, 0, width, height);
-
-      const imageData = context.getImageData(0, 0, width, height);
-      const data = imageData.data;
-      const cornerSize = Math.max(10, Math.round(Math.min(width, height) * 0.055));
-      const samples = [];
-      const addSample = (x, y) => {
-        const index = (y * width + x) * 4;
-        if (data[index + 3] > 240) samples.push([data[index], data[index + 1], data[index + 2]]);
-      };
-
-      for (let y = 0; y < cornerSize; y += 1) {
-        for (let x = 0; x < cornerSize; x += 1) {
-          addSample(x, y);
-          addSample(width - 1 - x, y);
-          addSample(x, height - 1 - y);
-          addSample(width - 1 - x, height - 1 - y);
-        }
-      }
-
-      const backgroundRgb = samples.length
-        ? samples.reduce((sum, rgb) => [sum[0] + rgb[0], sum[1] + rgb[1], sum[2] + rgb[2]], [0, 0, 0]).map((value) => value / samples.length)
-        : [238, 238, 236];
-      const threshold = 78;
-      const visited = new Uint8Array(width * height);
-      const stack = [];
-      const push = (x, y) => {
-        if (x < 0 || y < 0 || x >= width || y >= height) return;
-        const pixel = y * width + x;
-        if (visited[pixel]) return;
-        visited[pixel] = 1;
-        stack.push(pixel);
-      };
-      const isBackgroundPixel = (pixel) => {
-        const index = pixel * 4;
-        if (data[index + 3] < 220) return true;
-        const dr = data[index] - backgroundRgb[0];
-        const dg = data[index + 1] - backgroundRgb[1];
-        const db = data[index + 2] - backgroundRgb[2];
-        return Math.sqrt((dr * dr) + (dg * dg) + (db * db)) <= threshold;
-      };
-
-      for (let x = 0; x < width; x += 1) {
-        push(x, 0);
-        push(x, height - 1);
-      }
-      for (let y = 1; y < height - 1; y += 1) {
-        push(0, y);
-        push(width - 1, y);
-      }
-
-      while (stack.length) {
-        const pixel = stack.pop();
-        if (!isBackgroundPixel(pixel)) continue;
-        const index = pixel * 4;
-        data[index] = targetRgb[0];
-        data[index + 1] = targetRgb[1];
-        data[index + 2] = targetRgb[2];
-        data[index + 3] = 255;
-        const x = pixel % width;
-        const y = Math.floor(pixel / width);
-        push(x + 1, y);
-        push(x - 1, y);
-        push(x, y + 1);
-        push(x, y - 1);
-      }
-
-      context.putImageData(imageData, 0, 0);
-      canvas.toBlob((blob) => {
-        if (blob) resolve(URL.createObjectURL(blob));
-        else reject(new Error('Could not prepare stage-matched model image'));
-      }, 'image/png');
-    };
-    image.onerror = () => reject(new Error('Model image could not be loaded for background matching'));
-    image.src = src;
-  });
-}
-
-function useStageMatchedModelImage(src, enabled) {
-  const [matchedSrc, setMatchedSrc] = useState('');
-
-  useEffect(() => {
-    if (!src || !enabled) {
-      setMatchedSrc('');
-      return undefined;
-    }
-    let active = true;
-    let objectUrl = '';
-    setMatchedSrc('');
-    stageMatchedModelImage(src)
-      .then((url) => {
-        objectUrl = url;
-        if (active) setMatchedSrc(url);
-        else URL.revokeObjectURL(url);
-      })
-      .catch(() => {
-        if (active) setMatchedSrc('');
-      });
-    return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [src, enabled]);
-
-  return matchedSrc;
-}
-
 function useSubjectIsolation(modelSource, user) {
   const sourceUrl = modelSource?.imageUrl || '';
-  const sourceUploadPath = uploadPathnameFromClientUrl(sourceUrl);
   const providedTransparent = modelSource?.transparentImageUrl || '';
   const [retryKey, setRetryKey] = useState(0);
   const [state, setState] = useState({
@@ -4394,7 +4262,7 @@ function useSubjectIsolation(modelSource, user) {
         active = false;
       };
     }
-    if (!user || !sourceUploadPath) {
+    if (!user || !sourceUrl.startsWith('/uploads/')) {
       setState({ status: 'failed', transparentUrl: '', error: 'No saved source image is available for cutout processing.', errorCode: 'SOURCE_UNAVAILABLE', processing: modelSource?.imageProcessing || null, outputLoaded: false, alphaDetected: null, cacheHit: false });
       return () => {
         active = false;
@@ -4405,7 +4273,7 @@ function useSubjectIsolation(modelSource, user) {
     setState((current) => ({ ...current, status: 'requesting', transparentUrl: current.transparentUrl || '', error: '', errorCode: '' }));
     api('/images/subject-isolation', {
       method: 'POST',
-      body: JSON.stringify({ imageUrl: sourceUploadPath }),
+      body: JSON.stringify({ imageUrl: sourceUrl }),
       timeout: 120000,
       signal: controller.signal
     })
@@ -4438,7 +4306,7 @@ function useSubjectIsolation(modelSource, user) {
       active = false;
       controller.abort();
     };
-  }, [sourceUrl, sourceUploadPath, providedTransparent, user?.id, retryKey]);
+  }, [sourceUrl, providedTransparent, user?.id, retryKey]);
 
   return { ...state, retry: () => setRetryKey((current) => current + 1), sourceUrl };
 }
@@ -4548,23 +4416,31 @@ function CutoutFallbackNotice({ isolation, originalSrc, onRetry }) {
   );
 }
 
-function RoomScene({ modelSource, alt, generating, user, onOpen, onEmpty }) {
-  const isolation = useSubjectIsolation(modelSource, user);
-  const transparentSrc = safeWardrobeImageUrl(isolation.transparentUrl);
-  const originalSrc = safeWardrobeImageUrl(modelSource?.imageUrl);
-  const visibleSrc = transparentSrc || originalSrc;
+function RoomScene({ modelSource, alt, generating, onOpen, onEmpty, onMediaLoad }) {
+  const visibleSrc = safeWardrobeImageUrl(modelSource?.imageUrl);
   const imageAlt = alt || 'Wardrobe preview';
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [visibleSrc]);
 
   return (
-    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''} ${transparentSrc ? 'has-transparent-model' : 'has-uploaded-model'}`}>
-      {visibleSrc ? (
+    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''}`}>
+      {visibleSrc && !imageFailed ? (
         <button className="wardrobe-flat-model" type="button" onClick={onOpen} aria-label="Open wardrobe preview full screen">
           <OptimizedImage
             className="wardrobe-flat-image"
             src={visibleSrc}
             alt={imageAlt}
             eager
-            style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', objectPosition: 'center center' }}
+            fallbackSrc=""
+            onError={() => setImageFailed(true)}
+            onLoad={(event) => {
+              const { naturalWidth, naturalHeight } = event.currentTarget;
+              if (naturalWidth > 0 && naturalHeight > 0) onMediaLoad?.(naturalWidth / naturalHeight);
+            }}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center center' }}
           />
         </button>
       ) : (
@@ -4584,6 +4460,10 @@ function ClosetPage({ user, setUser }) {
   const [comboSlots, setComboSlots] = useState({});
   const [activeWardrobeKey, setActiveWardrobeKey] = useState('topwear');
   const [filter, setFilter] = useState('all');
+  const [recommendationFilter, setRecommendationFilter] = useState('all');
+  const [recommendationRefreshIndex, setRecommendationRefreshIndex] = useState(0);
+  const [activeWardrobeCategory, setActiveWardrobeCategory] = useState('tops');
+  const [wardrobeModelAspect, setWardrobeModelAspect] = useState(0.74);
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState('');
   const [occasion, setOccasion] = useState('today casual');
@@ -4593,9 +4473,11 @@ function ClosetPage({ user, setUser }) {
   const [pose, setPose] = useState('front facing');
   const [lighting, setLighting] = useState('natural light');
   const [autoApply, setAutoApply] = useState(true);
-  const [stagePreviewMode, setStagePreviewMode] = useState('model');
+  const [stagePreviewMode, setStagePreviewMode] = useState(() => (
+    new URLSearchParams(window.location.search).get('preview') === 'latest' ? 'outfit' : 'model'
+  ));
   const [activeOutfitId, setActiveOutfitId] = useState('');
-  const [activeWardrobeSectionLabel, setActiveWardrobeSectionLabel] = useState('Tops');
+  const [activeRecommendationId, setActiveRecommendationId] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
   const [chat, setChat] = useState([
@@ -4604,6 +4486,7 @@ function ClosetPage({ user, setUser }) {
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [mobileWardrobePicker, setMobileWardrobePicker] = useState(null);
   const generateInFlightRef = useRef(false);
+  const latestOutfitPreviewOpenedRef = useRef(false);
 
   const loadCloset = () => {
     if (!user) return;
@@ -4612,13 +4495,22 @@ function ClosetPage({ user, setUser }) {
       .then((data) => {
         const nextState = normalizeClosetData(data);
         setState({ ...nextState, loading: false, error: '' });
+        if (
+          new URLSearchParams(window.location.search).get('preview') === 'latest'
+          && !latestOutfitPreviewOpenedRef.current
+          && nextState.outfits[0]?.imageUrl
+        ) {
+          latestOutfitPreviewOpenedRef.current = true;
+          setActiveOutfitId(nextState.outfits[0].id);
+          setStagePreviewMode('outfit');
+        }
       })
       .catch((err) => setState({ items: [], outfits: [], stats: {}, suggestions: [], loading: false, error: err.message }));
   };
 
   const processedBodyPhotoUrl = safeWardrobeImageUrl(user?.bodyPhotoUrl);
   const uploadedBodyPhotoUrl = safeWardrobeImageUrl(user?.bodyPhotoOriginalUrl);
-  const userBodyPhotoUrl = uploadedBodyPhotoUrl || processedBodyPhotoUrl;
+  const userBodyPhotoUrl = processedBodyPhotoUrl || uploadedBodyPhotoUrl;
 
   useEffect(() => {
     loadCloset();
@@ -4655,8 +4547,7 @@ function ClosetPage({ user, setUser }) {
   const filteredItems = closetItems.filter((item) => filter === 'all' || item.category === filter);
   const plannerDays = nextPlannerDays(7);
   const plannedByDay = new Map(closetOutfits.filter((outfit) => outfit.plannedFor).map((outfit) => [dateInputValue(outfit.plannedFor), outfit]));
-  const latestOutfit = closetOutfits[0] || null;
-  const mainPreview = latestOutfit?.imageUrl || userBodyPhotoUrl || asset('hero2.png');
+  const latestOutfit = closetOutfits.find((outfit) => outfit.id === activeOutfitId) || closetOutfits[0] || null;
   const wardrobeSlots = [
     { key: 'topwear', label: 'Topwear', helper: 'Shirts, tops, kurtas', short: 'To', categories: ['tops', 'outerwear', 'ethnic'] },
     { key: 'bottomwear', label: 'Bottomwear', helper: 'Pants, denim, skirts', short: 'Bo', categories: ['bottoms'] },
@@ -4869,7 +4760,7 @@ function ClosetPage({ user, setUser }) {
       setState((current) => ({ ...current, outfits: data.outfit ? [data.outfit, ...(Array.isArray(current.outfits) ? current.outfits : [])] : (Array.isArray(current.outfits) ? current.outfits : []) }));
       setSelectedIds(ids);
       if (data.user) setUser(data.user);
-      setActiveOutfitId(data.outfit?.id || '');
+      if (data.outfit?.id) setActiveOutfitId(data.outfit.id);
       setStagePreviewMode('outfit');
       setMessage('Closet look is ready.');
     } catch (err) {
@@ -4907,6 +4798,7 @@ function ClosetPage({ user, setUser }) {
 
   const handleWardrobeItemClick = (item) => {
     if (!item?.id) return;
+    setActiveRecommendationId('');
     const matchedSlot = matchedComboSlot(item);
     if (!matchedSlot) {
       toggleSelected(item);
@@ -4918,6 +4810,7 @@ function ClosetPage({ user, setUser }) {
   };
 
   const applyAccessorySlot = (slotKey, label) => {
+    setActiveRecommendationId('');
     const slot = wardrobeRail.find((entry) => entry.key === slotKey);
     setActiveWardrobeKey(slotKey);
     if (!slot?.item) {
@@ -4930,6 +4823,7 @@ function ClosetPage({ user, setUser }) {
   };
 
   const clearWardrobeSelection = () => {
+    setActiveRecommendationId('');
     setComboSlots({});
     setSelectedIds([]);
     setMessage('Selection cleared.');
@@ -4955,79 +4849,68 @@ function ClosetPage({ user, setUser }) {
   const dressItems = sortedClosetItems.filter((item) => ['dresses', 'ethnic', 'suits'].includes(item.category));
   const generatedWardrobeCombos = [
     ...dressItems.slice(0, 6).map((dress, index) => ({
-      id: `dress-look-${dress.id}-${index}`,
+      id: `dress-look-${dress.id}-${index}-${recommendationRefreshIndex}`,
       title: `${occasion || 'Today'} dress pairing`,
       reason: `Picked for ${occasion || 'today'} from your wardrobe.`,
       items: uniqueClosetItems([
         dress,
-        closetItemsForCategories(['shoes'], index),
-        closetItemsForCategories(['outerwear', 'suits'], index),
-        closetItemsForCategories(['accessories'], index)
+        closetItemsForCategories(['shoes'], index + recommendationRefreshIndex),
+        closetItemsForCategories(['outerwear', 'suits'], index + recommendationRefreshIndex),
+        closetItemsForCategories(['accessories'], index + recommendationRefreshIndex)
       ])
     })),
     ...Array.from({ length: 6 }).map((_, index) => ({
-      id: `wardrobe-look-${index}`,
-      title: `${closetOccasions[index] || occasion || 'Today'} outfit pair`,
-      reason: `Recommended for ${closetOccasions[index] || occasion || 'today'}.`,
+      id: `wardrobe-look-${index}-${recommendationRefreshIndex}`,
+      title: `${closetOccasions[(index + recommendationRefreshIndex) % closetOccasions.length] || occasion || 'Today'} outfit pair`,
+      reason: `Recommended for ${closetOccasions[(index + recommendationRefreshIndex) % closetOccasions.length] || occasion || 'today'}.`,
       items: uniqueClosetItems([
-        closetItemsForCategories(['tops', 'ethnic'], index),
-        closetItemsForCategories(['bottoms'], index),
-        closetItemsForCategories(['outerwear', 'suits'], index),
-        closetItemsForCategories(['shoes'], index),
-        closetItemsForCategories(['accessories'], index)
+        closetItemsForCategories(['tops', 'ethnic'], index + recommendationRefreshIndex),
+        closetItemsForCategories(['bottoms'], index + recommendationRefreshIndex),
+        closetItemsForCategories(['outerwear', 'suits'], index + recommendationRefreshIndex),
+        closetItemsForCategories(['shoes'], index + recommendationRefreshIndex),
+        closetItemsForCategories(['accessories'], index + recommendationRefreshIndex)
       ])
     }))
   ].filter((card) => card.items.length > 0);
-  const recommendationCombos = closetSuggestions.length
-    ? closetSuggestions
-      .slice(0, 6)
-      .map((suggestion, index) => ({
-        id: suggestion.key || suggestion.title || `suggestion-${index}`,
-        title: suggestion.title || closetOccasions[index] || 'Recommended look',
-        reason: suggestion.reason || `Recommended for ${occasion || 'today'}.`,
-        items: (Array.isArray(suggestion.items) ? suggestion.items : []).filter((item) => item?.imageUrl)
-      }))
-      .filter((card) => card.items.length > 0)
-    : generatedWardrobeCombos;
-  const wardrobeRecommendationCards = recommendationCombos.slice(0, 10);
+  const suggestionRecommendationCombos = closetSuggestions
+    .slice(0, 6)
+    .map((suggestion, index) => ({
+      id: suggestion.key || suggestion.title || `suggestion-${index}`,
+      title: suggestion.title || closetOccasions[index] || 'Recommended look',
+      reason: suggestion.reason || `Recommended for ${occasion || 'today'}.`,
+      items: (Array.isArray(suggestion.items) ? suggestion.items : []).filter((item) => item?.imageUrl)
+    }))
+    .filter((card) => card.items.length > 0);
+  const recommendationCombos = [...suggestionRecommendationCombos, ...generatedWardrobeCombos];
+  const recommendationRotationStart = recommendationCombos.length
+    ? (recommendationRefreshIndex * 3) % recommendationCombos.length
+    : 0;
+  const wardrobeRecommendationCards = [
+    ...recommendationCombos.slice(recommendationRotationStart),
+    ...recommendationCombos.slice(0, recommendationRotationStart)
+  ];
 
-  const tryRecommendedLook = (card) => {
+  const selectRecommendedLook = (card) => {
     const cardItems = Array.isArray(card?.items) ? card.items.filter((item) => item?.id) : [];
     if (!cardItems.length) {
       askForSuggestions();
       return;
     }
     applyComboItems(cardItems);
-    generateOutfit(cardItems.map((item) => item.id).filter(Boolean), { title: card.title, occasion });
+    setActiveRecommendationId(card.id);
+    setStagePreviewMode('model');
+    setMessage(`${card.title} selected. Choose Try On to preview it on your photo.`);
   };
 
-  const previewOutfit = closetOutfits.find((outfit) => outfit.id === activeOutfitId) || latestOutfit;
-  const latestOutfitImage = safeWardrobeImageUrl(previewOutfit?.imageUrl);
+  const latestOutfitImage = safeWardrobeImageUrl(latestOutfit?.imageUrl);
   const bodyPhotoPreview = userBodyPhotoUrl;
   const showingGeneratedOutfit = stagePreviewMode === 'outfit' && Boolean(latestOutfitImage);
   const modelPreview = showingGeneratedOutfit ? latestOutfitImage : bodyPhotoPreview;
-  const previewTitle = showingGeneratedOutfit ? previewOutfit?.title || 'Generated wardrobe look' : 'Model';
-  const previewAlt = showingGeneratedOutfit ? previewOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
+  const previewTitle = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Model';
+  const previewAlt = showingGeneratedOutfit ? latestOutfit?.title || 'Generated wardrobe look' : 'Current wardrobe model';
   const visibleWardrobeStageMessage = message;
   const wardrobeStageMessageIsError = /error|missing|not enough|failed|could not|cannot|unable|timed out|timeout|select|upload|try again|no other/i.test(message);
-  const mobileWardrobeSections = [
-    { label: 'Tops', icon: <TShirtIcon />, categories: ['tops', 'ethnic', 'activewear'] },
-    { label: 'Bottoms', icon: <PantsIcon />, categories: ['bottoms'] },
-    { label: 'Outerwear', icon: <JacketIcon />, categories: ['outerwear', 'suits'] },
-    { label: 'Shoes', icon: <ShoeIcon />, categories: ['shoes'] },
-    { label: 'Accessories', icon: <SparkleLineIcon />, categories: ['accessories'] },
-    { label: 'Glasses', icon: <GlassesIcon />, categories: ['accessories'], keywords: ['glass', 'glasses', 'goggle', 'goggles', 'sunglass', 'eyewear'] },
-    { label: 'Watches', icon: <WatchIcon />, categories: ['accessories'], keywords: ['watch', 'watches'] },
-    { label: 'Bags & Hats', icon: <BagIcon />, categories: ['accessories'], keywords: ['bag', 'bags', 'purse', 'cap', 'hat', 'hats'] }
-  ].map((section) => {
-    const matchingItems = closetItems.filter((item) => {
-      if (!section.categories.includes(item.category)) return false;
-      if (!section.keywords?.length) return true;
-      const itemText = [item.name, item.category, item.color, item.formality, ...(item.tags || []), ...(item.occasions || [])].filter(Boolean).join(' ').toLowerCase();
-      return section.keywords.some((keyword) => itemText.includes(keyword));
-    });
-    return { ...section, items: matchingItems.length ? matchingItems : closetItems.filter((item) => section.categories.includes(item.category)) };
-  });
+  const mobileWardrobeSections = wardrobeSections.filter((section) => ['Tops', 'Bottoms'].includes(section.label));
   const activeMobileWardrobeSection = mobileWardrobeSections.find((section) => section.label === mobileWardrobePicker) || null;
   const wardrobeFallbackForSection = (section) => (
     section.label === 'Bottoms' ? asset('category-icons/jeans.png') : asset('category-icons/tops.png')
@@ -5040,184 +4923,221 @@ function ClosetPage({ user, setUser }) {
     handleWardrobeItemClick(item);
     setMobileWardrobePicker(null);
   };
-  const wardrobeCollectionTabs = [
-    { label: 'All Items', value: 'all', categories: [] },
-    { label: 'Tops', value: 'tops', categories: ['tops', 'ethnic', 'activewear'] },
-    { label: 'Bottoms', value: 'bottoms', categories: ['bottoms'] },
-    { label: 'Outerwear', value: 'outerwear', categories: ['outerwear', 'suits'] },
-    { label: 'Shoes', value: 'shoes', categories: ['shoes'] }
-  ];
-  const activeCollection = wardrobeCollectionTabs.find((tab) => tab.value === filter) || wardrobeCollectionTabs[0];
-  const visibleCollectionItems = sortedClosetItems.filter((item) => (
-    activeCollection.value === 'all' || activeCollection.categories.includes(item.category)
-  ));
-  const savedWardrobeOutfits = closetOutfits.filter((outfit) => outfit?.id && outfit?.imageUrl).slice(0, 4);
-  const randomizeWardrobeSelection = () => {
-    const randomItems = closetComboSlots.map((slot) => {
-      const options = closetItems.filter((item) => slot.categories.includes(item.category));
-      return options.length ? options[Math.floor(Math.random() * options.length)] : null;
-    }).filter(Boolean);
-    if (!randomItems.length) {
-      setMessage('Add wardrobe items before creating a random combination.');
-      return;
-    }
-    applyComboItems(randomItems);
-    setStagePreviewMode('model');
-    setMessage('Created a combination using only items from your wardrobe.');
-  };
-  const shareWardrobePreview = async () => {
-    const shareData = {
-      title: previewTitle,
-      text: showingGeneratedOutfit ? `My Lookmefy outfit: ${previewTitle}` : 'My Lookmefy wardrobe',
-      url: window.location.href
-    };
-    try {
-      if (navigator.share) await navigator.share(shareData);
-      else {
-        await navigator.clipboard.writeText(shareData.url);
-        setMessage('Wardrobe link copied.');
-      }
-    } catch (error) {
-      if (error?.name !== 'AbortError') setMessage('Could not share this wardrobe preview.');
-    }
-  };
   const modelSource = {
     imageUrl: modelPreview,
-    transparentImageUrl: showingGeneratedOutfit ? previewOutfit?.transparentImageUrl || '' : '',
-    imageProcessing: showingGeneratedOutfit ? previewOutfit?.imageProcessing || null : null
+    transparentImageUrl: showingGeneratedOutfit ? latestOutfit?.transparentImageUrl || '' : '',
+    imageProcessing: showingGeneratedOutfit ? latestOutfit?.imageProcessing || null : null
   };
+
+  const wardrobeTabs = [
+    { key: 'all', label: 'All Looks' },
+    { key: 'casual', label: 'Casual', prompt: 'today casual' },
+    { key: 'party', label: 'Party', prompt: 'party' },
+    { key: 'office', label: 'Office', prompt: 'office meeting' },
+    { key: 'wedding', label: 'Wedding', prompt: 'wedding function' }
+  ];
+  const wardrobeAccessoryPatterns = {
+    glasses: /glass|goggle|sunglass|eyewear/,
+    watches: /watch|smartwatch/,
+    'bags-hats': /bag|handbag|purse|tote|clutch|cap|hat|beanie/
+  };
+  const wardrobeDrawerItemText = (item) => [
+    item?.name,
+    item?.category,
+    item?.color,
+    item?.formality,
+    ...(Array.isArray(item?.tags) ? item.tags : [])
+  ].filter(Boolean).join(' ').toLowerCase();
+  const wardrobeItemMatchesDrawerCategory = (item, categoryKey) => {
+    const itemText = wardrobeDrawerItemText(item);
+    if (wardrobeAccessoryPatterns[categoryKey]) return wardrobeAccessoryPatterns[categoryKey].test(itemText);
+    if (categoryKey === 'accessories') {
+      return item.category === 'accessories'
+        && !Object.values(wardrobeAccessoryPatterns).some((pattern) => pattern.test(itemText));
+    }
+    if (categoryKey === 'tops') return ['tops', 'dresses', 'ethnic', 'activewear'].includes(item.category);
+    if (categoryKey === 'outerwear') return ['outerwear', 'suits'].includes(item.category);
+    return item.category === categoryKey;
+  };
+  const wardrobeCategoryMenu = [
+    { key: 'tops', label: 'Tops', icon: 'tops' },
+    { key: 'bottoms', label: 'Bottoms', icon: 'bottoms' },
+    { key: 'outerwear', label: 'Outerwear', icon: 'outerwear' },
+    { key: 'shoes', label: 'Shoes', icon: 'shoes' },
+    { key: 'accessories', label: 'Accessories', icon: 'accessories' },
+    { key: 'glasses', label: 'Glasses', icon: 'glasses' },
+    { key: 'watches', label: 'Watches', icon: 'watches' },
+    { key: 'bags-hats', label: 'Bags & Hats', icon: 'bags' }
+  ].map((category) => ({
+    ...category,
+    items: sortedClosetItems.filter((item) => wardrobeItemMatchesDrawerCategory(item, category.key))
+  }));
+  const activeWardrobeDrawer = wardrobeCategoryMenu.find((category) => category.key === activeWardrobeCategory)
+    || wardrobeCategoryMenu[0];
+  const recommendationOccasionPatterns = {
+    casual: /casual|daily|everyday|relax|college|weekend|comfort/,
+    party: /party|celebrat|cocktail|club|evening|night out/,
+    office: /office|work|meeting|business|interview|professional|corporate/,
+    wedding: /wedding|ceremony|ethnic|traditional|festive|function/
+  };
+  const recommendationOccasionText = (card) => {
+    const itemDetails = (Array.isArray(card?.items) ? card.items : []).flatMap((item) => [
+      item?.name,
+      item?.formality,
+      ...(Array.isArray(item?.tags) ? item.tags : []),
+      ...(Array.isArray(item?.occasions) ? item.occasions : [])
+    ]);
+    return [card?.title, card?.reason, ...itemDetails].filter(Boolean).join(' ').toLowerCase();
+  };
+  const matchesRecommendationOccasion = (card, nextFilter) => (
+    nextFilter === 'all' || recommendationOccasionPatterns[nextFilter]?.test(recommendationOccasionText(card))
+  );
+  const recommendationItemOrder = {
+    tops: 0,
+    dresses: 0,
+    ethnic: 0,
+    suits: 0,
+    bottoms: 1,
+    shoes: 2,
+    outerwear: 3,
+    accessories: 4
+  };
+  const recommendationPieceLabels = {
+    tops: 'Top',
+    dresses: 'Dress',
+    ethnic: 'Main piece',
+    suits: 'Suit',
+    bottoms: 'Bottom',
+    shoes: 'Shoes',
+    outerwear: 'Layer',
+    accessories: 'Accessory'
+  };
+  const recommendationDisplayItems = (card) => (Array.isArray(card?.items) ? card.items : [])
+    .filter((item) => item?.id && safeWardrobeImageUrl(item.imageUrl))
+    .sort((first, second) => (recommendationItemOrder[first.category] ?? 5) - (recommendationItemOrder[second.category] ?? 5))
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.category === item.category) === index)
+    .slice(0, 3);
+  const visibleRecommendedOutfits = wardrobeRecommendationCards.filter((card) => {
+    return matchesRecommendationOccasion(card, recommendationFilter);
+  });
+  const chooseRecommendationFilter = (tab) => {
+    setRecommendationFilter(tab.key);
+    setRecommendationRefreshIndex(0);
+    setActiveRecommendationId('');
+    if (tab.prompt) askForSuggestions(tab.prompt);
+  };
+  const refreshRecommendedOutfits = () => {
+    setRecommendationRefreshIndex((current) => current + 1);
+    setActiveRecommendationId('');
+    setStagePreviewMode('model');
+    setMessage('');
+  };
+  const chooseWardrobeCategory = (key) => {
+    setActiveWardrobeCategory(key);
+    setFilter(key);
+  };
+  const tryOnWardrobeLook = () => {
+    const defaultIds = wardrobeRail.map((slot) => slot.item?.id).filter(Boolean);
+    const ids = selectedIds.length ? selectedIds : [...new Set(defaultIds)];
+    if (!ids.length) {
+      setMessage('Add wardrobe items before trying on a look.');
+      return;
+    }
+    generateOutfit(ids, { title: 'My wardrobe look' });
+  };
+  const openSavedOutfit = (outfit) => {
+    if (!safeWardrobeImageUrl(outfit?.imageUrl)) return;
+    setActiveOutfitId(outfit.id);
+    setStagePreviewMode('outfit');
+  };
+  const updateWardrobeModelAspect = (aspect) => {
+    if (!Number.isFinite(aspect) || aspect <= 0) return;
+    const safeAspect = Math.min(1.4, Math.max(0.45, aspect));
+    setWardrobeModelAspect((current) => Math.abs(current - safeAspect) < 0.001 ? current : safeAspect);
+  };
+
   return (
     <main className="closet-page wardrobe-studio-page">
-      <div className="wardrobe-studio-shell">
+      <div className="wardrobe-studio-shell" style={{ '--wardrobe-model-aspect': wardrobeModelAspect }}>
         <aside className="wardrobe-sidebar" aria-label="Wardrobe categories">
-          <nav className="wardrobe-reference-category-rail" aria-label="Choose wardrobe category">
-            {mobileWardrobeSections.map((section) => (
-              <button
-                className={activeWardrobeSectionLabel === section.label ? 'active' : ''}
-                type="button"
-                key={section.label}
-                onClick={() => setActiveWardrobeSectionLabel(section.label)}
-                aria-pressed={activeWardrobeSectionLabel === section.label}
-              >
-                <span>{section.icon}</span>
-                <strong>{section.label}</strong>
-              </button>
-            ))}
-          </nav>
-          <button className="wardrobe-reference-ai-card" type="button" onClick={() => askForSuggestions('today casual')}>
-            <span><SparkleLineIcon /></span>
-            <span><strong>AI Outfit</strong><small>Get outfit suggestions with AI</small></span>
-            <ChevronRightIcon />
-          </button>
+          <div className="wardrobe-sidebar-workspace">
+            <section className="wardrobe-category-drawer" id="wardrobe-category-drawer" aria-live="polite">
+              <header>
+                <div>
+                  <h2>{activeWardrobeDrawer.label}</h2>
+                  <span>{activeWardrobeDrawer.items.length} {activeWardrobeDrawer.items.length === 1 ? 'item' : 'items'}</span>
+                </div>
+                <a href="/closet/add" aria-label={`Add ${activeWardrobeDrawer.label.toLowerCase()}`}>＋ Add</a>
+              </header>
+
+              {state.loading ? (
+                <div className="wardrobe-drawer-empty"><span>Loading wardrobe…</span></div>
+              ) : activeWardrobeDrawer.items.length ? (
+                <div className="wardrobe-drawer-grid">
+                  {activeWardrobeDrawer.items.map((item) => {
+                    const isSelected = selectedIds.includes(item.id);
+                    return (
+                      <button
+                        className={isSelected ? 'active' : ''}
+                        type="button"
+                        key={item.id}
+                        aria-label={`${isSelected ? 'Remove' : 'Select'} ${item.name}`}
+                        aria-pressed={isSelected}
+                        onClick={() => handleWardrobeItemClick(item)}
+                      >
+                        <span className="wardrobe-drawer-image">
+                          <OptimizedImage src={safeWardrobeImageUrl(item.imageUrl)} alt={item.name} />
+                        </span>
+                        <small>{item.name}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="wardrobe-drawer-empty">
+                  <strong>No {activeWardrobeDrawer.label.toLowerCase()} yet</strong>
+                  <span>Upload an item to see it here.</span>
+                  <a href="/closet/add">Add item</a>
+                </div>
+              )}
+            </section>
+
+            <nav className="wardrobe-category-menu" aria-label="Choose a wardrobe category">
+              {wardrobeCategoryMenu.map((category) => (
+                <button
+                  className={activeWardrobeCategory === category.key ? 'active' : ''}
+                  type="button"
+                  key={category.key}
+                  onClick={() => chooseWardrobeCategory(category.key)}
+                  aria-controls="wardrobe-category-drawer"
+                  aria-pressed={activeWardrobeCategory === category.key}
+                >
+                  <WardrobeCategoryIcon name={category.icon} />
+                  <span>{category.label}</span>
+                  <small>{category.items.length}</small>
+                </button>
+              ))}
+            </nav>
+          </div>
+          <div className="wardrobe-try-on-area">
+            <button
+              className="wardrobe-try-on-button"
+              type="button"
+              onClick={tryOnWardrobeLook}
+              disabled={generating || closetItems.length === 0}
+            >
+              <TryOnIcon />
+              <span>{generating ? 'Creating look…' : 'Try On'}</span>
+            </button>
+            <WardrobeTryOnNotices
+              showDisclaimer={showingGeneratedOutfit && !generating}
+              message={!generating ? visibleWardrobeStageMessage : ''}
+              isError={wardrobeStageMessageIsError}
+            />
+          </div>
         </aside>
 
         <section className="wardrobe-model-stage" aria-label="Wardrobe model preview">
-          <div className="wardrobe-status-strip" aria-hidden="true">
-            <div><span>1:43</span><SettingsIcon /><InfoIcon /><ShieldIcon /></div>
-            <div><SignalIcon /><WifiIcon /><BatteryIcon /></div>
-          </div>
-          <div className="wardrobe-app-topbar" aria-label="Wardrobe app header">
-            <a className="wardrobe-app-brand" href="/home" aria-label="Lookmefy home"><img src={asset('lookmefy-logo.svg')} alt="" /><span>Lookmefy</span></a>
-            <div className="wardrobe-app-actions">
-              <a href="/search" aria-label="Search"><SearchIcon /></a>
-              <button type="button" aria-label="Wishlist" onClick={() => openRoute('/wishlist')}><HeartIcon /></button>
-              <button type="button" aria-label="Wardrobe items" onClick={() => openRoute('/closet/items')}><ClosetIcon /></button>
-            </div>
-          </div>
-          <div className="wardrobe-orbit wardrobe-orbit-left" aria-label="Wardrobe categories">
-            {mobileWardrobeSections.slice(0, 4).map((section) => {
-              const selectedItem = section.items.find((item) => selectedIds.includes(item.id));
-              return (
-                <button className={selectedItem ? 'active' : ''} type="button" key={section.label} onClick={() => pickMobileWardrobeSection(section)}>
-                  <span>{section.icon}</span>
-                  <small>{section.label}</small>
-                </button>
-              );
-            })}
-          </div>
-          <div className="wardrobe-orbit wardrobe-orbit-right" aria-label="Wardrobe accessory categories">
-            {mobileWardrobeSections.slice(4).map((section) => {
-              const selectedItem = section.items.find((item) => selectedIds.includes(item.id));
-              return (
-                <button className={selectedItem ? 'active' : ''} type="button" key={section.label} onClick={() => pickMobileWardrobeSection(section)}>
-                  <span>{section.icon}</span>
-                  <small>{section.label}</small>
-                </button>
-              );
-            })}
-          </div>
-          <div className="wardrobe-primary-actions">
-            <a className="wardrobe-mobile-add-item" href="/closet/add"><span>+</span> Add Item</a>
-            <button className="wardrobe-ai-outfit-button" type="button" onClick={() => generateOutfit(selectedIds, { title: 'My wardrobe look' })} disabled={generating || selectedIds.length === 0}>
-              <span><SparkleLineIcon /></span>
-              <small>{generating ? 'Creating' : 'AI Outfit'}</small>
-            </button>
-          </div>
-          <div className="wardrobe-reference-copy" aria-hidden="true"><strong>Your Style,</strong><span>Your Space.</span></div>
-          <div className="wardrobe-reference-actions" aria-label="Wardrobe preview actions">
-            <button type="button" onClick={() => { clearWardrobeSelection(); setStagePreviewMode('model'); }}><span><ResetIcon /></span><small>Reset</small></button>
-            <button type="button" onClick={randomizeWardrobeSelection}><span><ShuffleIcon /></span><small>Random</small></button>
-            <button type="button" onClick={() => generateOutfit(selectedIds, { title: 'My wardrobe look' })} disabled={generating || selectedIds.length === 0}><span><UserIcon /></span><small>{generating ? 'Creating' : 'Try On'}</small></button>
-            <button type="button" onClick={shareWardrobePreview}><span><ShareIcon /></span><small>Share</small></button>
-          </div>
-          {activeMobileWardrobeSection && (
-            <div className="wardrobe-mobile-picker-backdrop" role="presentation" onClick={() => setMobileWardrobePicker(null)}>
-              <section className="wardrobe-mobile-picker" aria-label={`Choose ${activeMobileWardrobeSection.label}`} onClick={(event) => event.stopPropagation()}>
-                <header>
-                  <div>
-                    <small>Choose item</small>
-                    <strong>{activeMobileWardrobeSection.label}</strong>
-                  </div>
-                  <a href="/closet/add">+ Add</a>
-                  <button type="button" aria-label="Close picker" onClick={() => setMobileWardrobePicker(null)}>×</button>
-                </header>
-                {activeMobileWardrobeSection.items.length ? (
-                  <div className="wardrobe-mobile-picker-list">
-                    {activeMobileWardrobeSection.items.map((item) => {
-                      const isSelected = selectedIds.includes(item.id);
-                      return (
-                        <button className={isSelected ? 'active' : ''} type="button" key={item.id} onClick={() => chooseMobileWardrobeItem(item)}>
-                          <span><OptimizedImage src={item.imageUrl} fallbackSrc={wardrobeFallbackForSection(activeMobileWardrobeSection)} alt="" /></span>
-                          <div>
-                            <strong>{item.name || activeMobileWardrobeSection.label}</strong>
-                            <small>{[item.color, item.formality, item.season].filter(Boolean).join(' · ') || item.category}</small>
-                          </div>
-                          <em>{isSelected ? 'Selected' : 'Pick'}</em>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="wardrobe-mobile-picker-empty">
-                    <strong>No {activeMobileWardrobeSection.label.toLowerCase()} added yet</strong>
-                    <p>Add one item first, then come back to build your look.</p>
-                    <a href="/closet/add">Add {activeMobileWardrobeSection.label}</a>
-                  </div>
-                )}
-              </section>
-            </div>
-          )}
-
-          <div className="wardrobe-model-tools left">
-            <button type="button" onClick={() => setStagePreviewMode('model')}>
-              <span>{bodyPhotoPreview ? <OptimizedImage src={bodyPhotoPreview} alt="" /> : <UserIcon />}</span>
-              <small>Model</small>
-            </button>
-            <button type="button" onClick={() => applyAccessorySlot('cap', 'Cap')}>
-              <span><BagIcon /></span>
-              <small>Cap</small>
-            </button>
-            <button type="button" onClick={() => applyAccessorySlot('goggles', 'Sunglasses')}>
-              <span><EyeIcon /></span>
-              <small>Sunglasses</small>
-            </button>
-          </div>
-
-          <div className="wardrobe-model-tools right">
-            <button type="button" onClick={undoWardrobeSelection} aria-label="Undo selection"><span>↶</span><small>Undo</small></button>
-            <button type="button" onClick={clearWardrobeSelection} aria-label="Clear selection"><span>⌫</span><small>Clear</small></button>
-          </div>
-
           <div className="wardrobe-model-frame">
             <RoomScene
               key={`${stagePreviewMode}:${modelPreview}`}
@@ -5225,67 +5145,117 @@ function ClosetPage({ user, setUser }) {
               alt={previewAlt}
               generating={generating}
               user={user}
+              onMediaLoad={updateWardrobeModelAspect}
               onOpen={() => modelPreview ? setFullscreenImage({ src: modelPreview, alt: previewAlt, title: previewTitle }) : openRoute('/profile')}
               onEmpty={() => openRoute('/profile')}
             />
           </div>
-
-          {showingGeneratedOutfit && !generating && <AiPreviewDisclaimer className="wardrobe-ai-disclaimer" />}
-          {!generating && visibleWardrobeStageMessage && (
-            <p className={`wardrobe-stage-message ${wardrobeStageMessageIsError ? 'error-message' : ''}`} role="status">
-              {visibleWardrobeStageMessage}
-            </p>
-          )}
-
-          <div className="wardrobe-stage-actions">
-            <button className="wardrobe-generate-button" type="button" onClick={() => generateOutfit(selectedIds, { title: 'My wardrobe look' })} disabled={generating || selectedIds.length === 0}>
-              <SparkleLineIcon />
-              <span>{generating ? 'Generating...' : 'Generate Look'}</span>
+          <div className="wardrobe-stage-try-on-area">
+            <button
+              className="wardrobe-try-on-button wardrobe-stage-try-on-button"
+              type="button"
+              onClick={tryOnWardrobeLook}
+              disabled={generating || closetItems.length === 0}
+            >
+              <TryOnIcon />
+              <span>{generating ? 'Creating look…' : 'Try On'}</span>
             </button>
-            <button className="wardrobe-heart-button" type="button" onClick={() => latestOutfitImage ? setFullscreenImage({ src: latestOutfitImage, alt: latestOutfit.title, title: latestOutfit.title }) : setMessage('Generate a look first to preview it.') } aria-label="Open latest look"><HeartIcon /></button>
+            <WardrobeTryOnNotices
+              showDisclaimer={showingGeneratedOutfit && !generating}
+              message={!generating ? visibleWardrobeStageMessage : ''}
+              isError={wardrobeStageMessageIsError}
+            />
           </div>
         </section>
 
-        <aside className="wardrobe-recommendations" aria-label="My wardrobe items">
-          <section className="wardrobe-library-panel">
-            <header className="wardrobe-library-head">
-              <h1>My Wardrobe</h1>
-              <a href="/closet/add"><span aria-hidden="true">+</span> Add Item</a>
-            </header>
-            <div className="wardrobe-library-tabs" role="tablist" aria-label="Filter wardrobe items">
-              {wardrobeCollectionTabs.map((tab) => (
-                <button className={activeCollection.value === tab.value ? 'active' : ''} type="button" role="tab" aria-selected={activeCollection.value === tab.value} key={tab.value} onClick={() => setFilter(tab.value)}>{tab.label}</button>
+        <aside className="wardrobe-recommendations" aria-label="Wardrobe recommendations">
+          <section className="wardrobe-items-panel">
+            <div className="wardrobe-panel-heading">
+              <h1>Recommendations</h1>
+              <a href="/closet/add"><span>＋</span> Add Item</a>
+            </div>
+            <div className="wardrobe-item-tabs" role="tablist" aria-label="Recommendation filters">
+              {wardrobeTabs.map((tab) => (
+                <button
+                  className={recommendationFilter === tab.key ? 'active' : ''}
+                  type="button"
+                  role="tab"
+                  aria-selected={recommendationFilter === tab.key}
+                  key={tab.key}
+                  onClick={() => chooseRecommendationFilter(tab)}
+                >{tab.label}</button>
               ))}
             </div>
             {state.loading ? (
-              <p className="wardrobe-library-status" role="status">Loading your wardrobe…</p>
-            ) : visibleCollectionItems.length ? (
-              <div className="wardrobe-library-grid">
-                {visibleCollectionItems.slice(0, 16).map((item) => (
-                  <button className={selectedIds.includes(item.id) ? 'active' : ''} type="button" key={item.id} onClick={() => handleWardrobeItemClick(item)} title={item.name} aria-pressed={selectedIds.includes(item.id)}>
-                    <OptimizedImage src={item.imageUrl} alt={item.name} />
-                  </button>
-                ))}
+              <div className="wardrobe-panel-empty">Loading your wardrobe…</div>
+            ) : visibleRecommendedOutfits.length ? (
+              <div className="wardrobe-reference-grid wardrobe-outfit-recommendation-grid">
+                {visibleRecommendedOutfits.slice(0, 3).map((card) => {
+                  const cardItems = recommendationDisplayItems(card);
+                  const isSelected = activeRecommendationId === card.id;
+                  return (
+                    <button
+                      className={isSelected ? 'active' : ''}
+                      type="button"
+                      key={card.id}
+                      aria-label={`${card.title}. ${card.reason || `${cardItems.length} wardrobe pieces`}`}
+                      aria-pressed={isSelected}
+                      onClick={() => selectRecommendedLook(card)}
+                    >
+                      <span className={`wardrobe-outfit-collage item-count-${cardItems.length}`}>
+                        {cardItems.map((item) => (
+                          <span className="wardrobe-outfit-piece" key={`${card.id}-${item.id}`}>
+                            <span className="wardrobe-outfit-piece-label">{recommendationPieceLabels[item.category] || 'Piece'}</span>
+                            <OptimizedImage src={safeWardrobeImageUrl(item.imageUrl)} alt={item.name} />
+                          </span>
+                        ))}
+                      </span>
+                      <span className="wardrobe-outfit-card-copy">
+                        <strong>{card.title}</strong>
+                        <small>{card.reason || `${cardItems.length} wardrobe pieces`}</small>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
-              <div className="wardrobe-library-empty"><strong>No items here yet</strong><a href="/closet/add">Add your first item</a></div>
+              <div className="wardrobe-panel-empty">
+                <strong>No recommendations yet</strong>
+                <span>Add wardrobe photos to receive outfit recommendations.</span>
+              </div>
             )}
-            <a className="wardrobe-library-view-all" href="/closet/items"><span>View All Items</span><ChevronRightIcon /></a>
+            <button className="wardrobe-refresh-recommendations" type="button" onClick={refreshRecommendedOutfits}>
+              <span className="wardrobe-refresh-icon"><ResetIcon /></span>
+              <span className="wardrobe-refresh-copy">
+                <strong>Refresh</strong>
+              </span>
+            </button>
           </section>
 
-          <section className="wardrobe-saved-panel" aria-labelledby="saved-outfits-title">
-            <header><h2 id="saved-outfits-title">Saved Outfits</h2><a href="/closet/items">See All</a></header>
-            {savedWardrobeOutfits.length ? (
-              <div className="wardrobe-saved-grid">
-                {savedWardrobeOutfits.map((outfit) => (
-                  <button type="button" key={outfit.id} onClick={() => { setActiveOutfitId(outfit.id); setStagePreviewMode('outfit'); }} title={outfit.title}>
-                    <OptimizedImage src={outfit.imageUrl} alt={outfit.title || 'Saved wardrobe outfit'} />
-                    <HeartIcon />
-                  </button>
+          <section className="wardrobe-saved-panel">
+            <div className="wardrobe-saved-heading">
+              <h2>Saved Outfits</h2>
+              <a href="/generation-history">See All</a>
+            </div>
+            {closetOutfits.length ? (
+              <div className="wardrobe-saved-list">
+                {closetOutfits.slice(0, 4).map((outfit, index) => (
+                  <article className={activeOutfitId === outfit.id && stagePreviewMode === 'outfit' ? 'active' : ''} key={outfit.id}>
+                    <button className="wardrobe-saved-image" type="button" onClick={() => openSavedOutfit(outfit)} aria-label={`Preview ${outfit.title}`}>
+                      <OptimizedImage src={safeWardrobeImageUrl(outfit.imageUrl)} alt={outfit.title} />
+                    </button>
+                    <div>
+                      <button type="button" onClick={() => setMessage(`${outfit.title} is saved.`)} aria-label={`Favorite ${outfit.title}`}><HeartIcon /></button>
+                      <button type="button" onClick={() => setFullscreenImage({ src: safeWardrobeImageUrl(outfit.imageUrl), alt: outfit.title, title: outfit.title })} aria-label={`More options for ${outfit.title}`}><MoreIcon /></button>
+                    </div>
+                  </article>
                 ))}
               </div>
             ) : (
-              <p className="wardrobe-saved-empty">Generated looks you save will appear here.</p>
+              <div className="wardrobe-saved-empty">
+                <span><HeartIcon /></span>
+                <p>Your generated outfits will appear here.</p>
+              </div>
             )}
           </section>
         </aside>
