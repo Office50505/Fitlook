@@ -241,6 +241,22 @@ function AiPreviewDisclaimer({ className = '' }) {
   return <p className={`ai-preview-disclaimer ${className}`.trim()}>{AI_PREVIEW_DISCLAIMER}</p>;
 }
 
+function WardrobeTryOnNotices({ showDisclaimer = false, message = '', isError = false }) {
+  const visibleMessage = String(message || '').trim();
+  if (!showDisclaimer && !visibleMessage) return null;
+
+  return (
+    <div className="wardrobe-try-on-notices" aria-live="polite" aria-atomic="true">
+      {showDisclaimer ? <AiPreviewDisclaimer className="wardrobe-panel-disclaimer" /> : null}
+      {visibleMessage ? (
+        <p className={`wardrobe-panel-message ${isError ? 'error-message' : ''}`} role="status">
+          {visibleMessage}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1.65, disableZoom = false, onError, onOpen }) {
   const [zooming, setZooming] = useState(false);
   const [origin, setOrigin] = useState({ x: 50, y: 50 });
@@ -11053,6 +11069,17 @@ function BagIcon() {
 
 function TagIcon() {
   return <svg viewBox="0 0 24 24"><path d="M20 13 13 20a2 2 0 0 1-2.8 0L4 13.8V4h9.8L20 10.2a2 2 0 0 1 0 2.8Z" /><path d="M8 8h.01" /></svg>;
+}
+
+function WardrobeCategoryIcon({ name }) {
+  if (name === 'tops') return <svg viewBox="0 0 32 32"><path d="M11 6 6 8l-3 6 5 2v11h16V16l5-2-3-6-5-2c-.7 2.2-2.3 3.5-5 3.5S11.7 8.2 11 6Z" /></svg>;
+  if (name === 'bottoms') return <svg viewBox="0 0 32 32"><path d="M10 4h12l2 24h-7l-1-15-1 15H8l2-24Z" /><path d="M10 9h12" /></svg>;
+  if (name === 'outerwear') return <svg viewBox="0 0 32 32"><path d="m12 5-6 3-3 8 5 2 2-5v15h12V13l2 5 5-2-3-8-6-3-4 5-4-5Z" /><path d="M16 10v18M12 5l4 5 4-5" /></svg>;
+  if (name === 'shoes') return <svg viewBox="0 0 32 32"><path d="M5 13c3 4 6 6 10 7l6-2c2 2 4 3 7 4v4H7c-3 0-4-2-3-5l1-8Z" /><path d="m10 17 2-3m2 5 2-3" /></svg>;
+  if (name === 'accessories') return <svg viewBox="0 0 32 32"><path d="m10 3 1.5 5.5L17 10l-5.5 1.5L10 17l-1.5-5.5L3 10l5.5-1.5L10 3Zm12 8 1.4 4.6L28 17l-4.6 1.4L22 23l-1.4-4.6L16 17l4.6-1.4L22 11Zm-10 9 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z" /></svg>;
+  if (name === 'glasses') return <svg viewBox="0 0 32 32"><path d="M3 12h4m18 0h4M13 13l3-1 3 1" /><path d="M7 11h6v4a5 5 0 0 1-10 0v-1a3 3 0 0 1 3-3h1Zm12 0h6a3 3 0 0 1 3 3v1a5 5 0 0 1-10 0v-4h1Z" /></svg>;
+  if (name === 'watches') return <svg viewBox="0 0 32 32"><path d="m12 3-2 6m10-6 2 6m-10 20-2-6m10 6 2-6" /><rect x="8" y="8" width="16" height="16" rx="5" /><path d="M16 12v5l3 2" /></svg>;
+  return <svg viewBox="0 0 32 32"><path d="M8 10h16l2 18H6l2-18Z" /><path d="M12 10V8a4 4 0 0 1 8 0v2" /></svg>;
 }
 
 function GlobeIcon() {
