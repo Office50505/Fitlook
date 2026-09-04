@@ -25,7 +25,6 @@ const PRODUCT_CACHE_TTL_MS = 30_000;
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const AUTH_TOKEN_KEY = 'fitlook_token';
 const MEDIA_TOKEN_KEY = 'fitlook_media_token';
-const ENABLE_TEST_OTP_HELPER = import.meta.env.DEV && import.meta.env.VITE_ENABLE_TEST_OTP_HELPER !== 'false';
 const APP_STORE_URL = safeExternalStoreUrl(import.meta.env.VITE_APP_STORE_URL);
 const PLAY_STORE_URL = safeExternalStoreUrl(import.meta.env.VITE_PLAY_STORE_URL);
 const productListCache = new Map();
@@ -10093,9 +10092,6 @@ function ForgotPasswordPage() {
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState('');
   const [loading, setLoading] = useState(false);
-  const [localOtpLoading, setLocalOtpLoading] = useState(false);
-  const [localTestOtp, setLocalTestOtp] = useState('');
-  const [localOtpIssue, setLocalOtpIssue] = useState('');
   const shouldAutoFocusAuthField = typeof window !== 'undefined'
     && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches
     && window.innerWidth > 700;
@@ -10110,30 +10106,6 @@ function ForgotPasswordPage() {
       });
     } catch {
       // Reset completion remains server-authoritative.
-    }
-  };
-
-  const fetchLocalTestOtp = async (session, phone, { fill = false } = {}) => {
-    if (!ENABLE_TEST_OTP_HELPER || !session || !phone || localOtpLoading) return '';
-    setLocalOtpLoading(true);
-    setLocalOtpIssue('');
-    try {
-      const params = new URLSearchParams({ purpose: 'password-reset', phone, otpSession: session });
-      const data = await api(`/auth/test-otp?${params.toString()}`, { retry: 0 });
-      const otp = String(data.otp || '').replace(/\D/g, '').slice(0, 6);
-      setLocalTestOtp(otp);
-      if (fill) setOtpValue(otp);
-      if (!otp) setLocalOtpIssue('No local test OTP was returned for this request.');
-      return otp;
-    } catch (error) {
-      setLocalTestOtp('');
-      const detail = error?.message && !/not found/i.test(error.message)
-        ? ` ${error.message}`
-        : ' Enable mock OTP delivery and ENABLE_TEST_OTP_HELPER on the server.';
-      setLocalOtpIssue(`Local test OTP is unavailable.${detail}`);
-      return '';
-    } finally {
-      setLocalOtpLoading(false);
     }
   };
 
@@ -10158,11 +10130,8 @@ function ForgotPasswordPage() {
       setOtpSession(nextSession);
       setPhoneValue(nextPhone);
       setOtpValue('');
-      setLocalTestOtp('');
-      setLocalOtpIssue('');
       setStep('otp');
-      const testOtp = await fetchLocalTestOtp(nextSession, nextPhone);
-      setMessage(testOtp ? `OTP sent. Test code: ${testOtp}` : data.message || 'OTP sent.');
+      setMessage(data.message || 'OTP sent.');
       setMessageTone('success');
     } catch (error) {
       setMessage(error.message);
@@ -10199,8 +10168,8 @@ function ForgotPasswordPage() {
   const resetPassword = async (event) => {
     event.preventDefault();
     if (loading) return;
-    if (newPassword.length < 12) {
-      setMessage('Password must be at least 12 characters.');
+    if (newPassword.length < 8) {
+      setMessage('Password must be at least 8 characters.');
       setMessageTone('error');
       return;
     }
@@ -10233,8 +10202,6 @@ function ForgotPasswordPage() {
     setStep('phone');
     setOtpSession('');
     setOtpValue('');
-    setLocalTestOtp('');
-    setLocalOtpIssue('');
     setMessage('');
     setMessageTone('');
     if (session) void cancelReset(session, phone);
@@ -10267,16 +10234,6 @@ function ForgotPasswordPage() {
           {step === 'otp' && (
             <form className="auth-login-form auth-reset-form" onSubmit={verifyOtp} aria-busy={loading}>
               <OtpCodeFields idPrefix="password-reset-otp" value={otpValue} onChange={setOtpValue} disabled={loading} />
-              {ENABLE_TEST_OTP_HELPER && (
-                <div className="signup-test-otp-panel" role="status" aria-live="polite">
-                  <p className={`signup-test-otp ${localOtpIssue && !localTestOtp ? 'signup-test-otp-error' : ''}`}>
-                    {localTestOtp ? <>Test OTP: <strong>{localTestOtp}</strong></> : localOtpLoading ? 'Getting test OTP...' : localOtpIssue || 'Test OTP appears here when local mock delivery is enabled.'}
-                  </p>
-                  <button className="signup-test-otp-action" type="button" disabled={localOtpLoading || !otpSession} onClick={() => fetchLocalTestOtp(otpSession, phoneValue, { fill: true })}>
-                    {localTestOtp ? 'Fill OTP' : localOtpLoading ? 'Checking...' : 'Show test OTP'}
-                  </button>
-                </div>
-              )}
               <button className="signup-submit-button signup-otp-button" type="submit" disabled={loading || otpValue.length < 6}>{loading ? 'Verifying...' : 'Verify OTP'}</button>
               <div className="auth-reset-actions">
                 <button type="button" onClick={requestOtp} disabled={loading}>Resend OTP</button>
@@ -10287,8 +10244,8 @@ function ForgotPasswordPage() {
 
           {step === 'password' && (
             <form className="auth-login-form auth-reset-form" onSubmit={resetPassword} aria-busy={loading}>
-              <AuthInputField label="New password" name="newPassword" type="password" required minLength="12" maxLength="72" autoComplete="new-password" placeholder="At least 12 characters" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
-              <AuthInputField label="Confirm password" name="confirmPassword" type="password" required minLength="12" maxLength="72" autoComplete="new-password" placeholder="Repeat your password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+              <AuthInputField label="New password" name="newPassword" type="password" required minLength="8" maxLength="72" autoComplete="new-password" placeholder="At least 8 characters" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+              <AuthInputField label="Confirm password" name="confirmPassword" type="password" required minLength="8" maxLength="72" autoComplete="new-password" placeholder="Repeat your password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
               <button className="signup-submit-button signup-otp-button" type="submit" disabled={loading || !newPassword || !confirmPassword}>{loading ? 'Resetting...' : 'Reset Password'}</button>
             </form>
           )}
@@ -10312,9 +10269,6 @@ function AuthPage({ mode, setUser }) {
   const [otpValue, setOtpValue] = useState('');
   const [otpSession, setOtpSession] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
-  const [localOtpLoading, setLocalOtpLoading] = useState(false);
-  const [localTestOtp, setLocalTestOtp] = useState('');
-  const [localOtpIssue, setLocalOtpIssue] = useState('');
   const [bodyPhotoFile, setBodyPhotoFile] = useState(null);
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState('');
   const [profilePhotoMode, setProfilePhotoMode] = useState('ai-full-body');
@@ -10333,12 +10287,9 @@ function AuthPage({ mode, setUser }) {
     setCapsLock(false);
     setIsSubmitting(false);
     setOtpLoading(false);
-    setLocalOtpLoading(false);
     setPhoneValue(loginIdentifier);
     setOtpValue('');
     setOtpSession('');
-    setLocalTestOtp('');
-    setLocalOtpIssue('');
     setSignupPassword('');
     setSignupConfirmPassword('');
     if (mode === 'signup') {
@@ -10375,8 +10326,6 @@ function AuthPage({ mode, setUser }) {
     const phone = phoneValue;
     setOtpSession('');
     setOtpValue('');
-    setLocalTestOtp('');
-    setLocalOtpIssue('');
     setMessage('');
     if (session) void cancelOtpSession(purpose, session, phone);
   };
@@ -10387,8 +10336,6 @@ function AuthPage({ mode, setUser }) {
     setPhoneValue(normalizePhoneEntry(nextPhone));
     setOtpSession('');
     setOtpValue('');
-    setLocalTestOtp('');
-    setLocalOtpIssue('');
     if (session) void cancelOtpSession(purpose, session, phone);
   };
 
@@ -10396,52 +10343,6 @@ function AuthPage({ mode, setUser }) {
     const identifier = error?.identifier || error?.data?.identifier || fallbackIdentifier;
     window.history.pushState({}, '', loginHrefForIdentifier(identifier));
     window.dispatchEvent(new PopStateEvent('popstate'));
-  };
-
-  const fetchLocalTestOtp = async (purpose, session = otpSession, phone = phoneValue, { fill = false } = {}) => {
-    if (!ENABLE_TEST_OTP_HELPER || !session || !phone || localOtpLoading) return '';
-    setLocalOtpLoading(true);
-    setLocalOtpIssue('');
-    try {
-      const params = new URLSearchParams({ purpose, phone, otpSession: session });
-      const data = await api(`/auth/test-otp?${params.toString()}`, { retry: 0 });
-      const otp = String(data.otp || '').replace(/\D/g, '').slice(0, 6);
-      setLocalTestOtp(otp);
-      if (fill) setOtpValue(otp);
-      if (!otp) setLocalOtpIssue('No local test OTP was returned for this request.');
-      return otp;
-    } catch (err) {
-      setLocalTestOtp('');
-      const detail = err?.message && !/not found/i.test(err.message)
-        ? ` ${err.message}`
-        : ' Enable mock OTP delivery and ENABLE_TEST_OTP_HELPER on the server.';
-      setLocalOtpIssue(`Local test OTP is unavailable.${detail}`);
-      return '';
-    } finally {
-      setLocalOtpLoading(false);
-    }
-  };
-
-  const renderLocalTestOtpHelper = (purpose) => {
-    if (!ENABLE_TEST_OTP_HELPER) return null;
-    const helperText = localTestOtp
-      ? <>Test OTP: <strong>{localTestOtp}</strong></>
-      : localOtpLoading
-        ? 'Getting test OTP...'
-        : localOtpIssue || 'Test OTP appears here when local mock delivery is enabled.';
-    return (
-      <div className="signup-test-otp-panel" role="status" aria-live="polite">
-        <p className={`signup-test-otp ${localOtpIssue && !localTestOtp ? 'signup-test-otp-error' : ''}`}>{helperText}</p>
-        <button
-          className="signup-test-otp-action"
-          type="button"
-          disabled={localOtpLoading || !otpSession}
-          onClick={() => fetchLocalTestOtp(purpose, otpSession, phoneValue, { fill: true })}
-        >
-          {localTestOtp ? 'Fill OTP' : localOtpLoading ? 'Checking...' : 'Show test OTP'}
-        </button>
-      </div>
-    );
   };
 
   const requestSignupOtp = async () => {
@@ -10462,10 +10363,7 @@ function AuthPage({ mode, setUser }) {
       setOtpSession(nextSession);
       setPhoneValue(nextPhone);
       setOtpValue('');
-      setLocalTestOtp('');
-      setLocalOtpIssue('');
-      const testOtp = await fetchLocalTestOtp('signup', nextSession, nextPhone);
-      setMessage(testOtp ? `OTP sent. Test code: ${testOtp}` : 'OTP sent.');
+      setMessage('OTP sent.');
     } catch (err) {
       if (isExistingAccountError(err)) {
         redirectExistingAccountToLogin(err, phoneValue);
@@ -10515,10 +10413,7 @@ function AuthPage({ mode, setUser }) {
       setOtpSession(nextSession);
       setPhoneValue(nextPhone);
       setOtpValue('');
-      setLocalTestOtp('');
-      setLocalOtpIssue('');
-      const testOtp = await fetchLocalTestOtp('login', nextSession, nextPhone);
-      setMessage(testOtp ? `OTP sent. Test code: ${testOtp}` : 'OTP sent.');
+      setMessage('OTP sent.');
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -10568,7 +10463,7 @@ function AuthPage({ mode, setUser }) {
         const cleanName = String(body.get('name') || '').trim();
         const password = String(body.get('password') || '');
         const confirmPassword = String(body.get('confirmPassword') || '');
-        if (password.length < 12) throw new Error('Password must be at least 12 characters.');
+        if (password.length < 8) throw new Error('Password must be at least 8 characters.');
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
         const random = Math.random().toString(36).slice(2, 8);
         const suffix = `${Date.now().toString(36)}${random}`;
@@ -10651,7 +10546,6 @@ function AuthPage({ mode, setUser }) {
               {otpSession && (
                 <div className="auth-signup-reference-fields">
                   <OtpCodeFields idPrefix="signup-otp" value={otpValue} onChange={setOtpValue} disabled={otpLoading} />
-                  {renderLocalTestOtpHelper('signup')}
                   <button className="signup-submit-button signup-otp-button" type="button" disabled={otpLoading || otpValue.length < 6} onClick={verifySignupOtp}>{otpLoading ? 'Verifying...' : 'Verify & continue'}</button>
                 </div>
               )}
@@ -10664,8 +10558,8 @@ function AuthPage({ mode, setUser }) {
                   <span>Full name</span>
                   <input name="name" required autoFocus={shouldAutoFocusAuthField} value={nameValue} autoComplete="name" placeholder="Enter your name" onChange={(event) => setNameValue(event.target.value)} />
                 </label>
-                <AuthInputField className="signup-field" label="Create password" name="password" type="password" required minLength="12" maxLength="72" value={signupPassword} autoComplete="new-password" placeholder="At least 12 characters" onChange={(event) => setSignupPassword(event.target.value)} />
-                <AuthInputField className="signup-field" label="Confirm password" name="confirmPassword" type="password" required minLength="12" maxLength="72" value={signupConfirmPassword} autoComplete="new-password" placeholder="Repeat your password" onChange={(event) => setSignupConfirmPassword(event.target.value)} />
+                <AuthInputField className="signup-field" label="Create password" name="password" type="password" required minLength="8" maxLength="72" value={signupPassword} autoComplete="new-password" placeholder="At least 8 characters" onChange={(event) => setSignupPassword(event.target.value)} />
+                <AuthInputField className="signup-field" label="Confirm password" name="confirmPassword" type="password" required minLength="8" maxLength="72" value={signupConfirmPassword} autoComplete="new-password" placeholder="Repeat your password" onChange={(event) => setSignupConfirmPassword(event.target.value)} />
               </div>
 
               <fieldset className="signup-gender-group">

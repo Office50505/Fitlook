@@ -224,10 +224,7 @@ test('OTP attempt lockout can be bypassed outside production for testing', async
 test('frontend and backend sources do not contain the old exposed OTP UI/API keys', async () => {
   const frontendSource = await fs.readFile('src/App.jsx', 'utf8');
   assert.doesNotMatch(frontendSource, /devOtp/);
-  if (/Test OTP|Test code/.test(frontendSource)) {
-    assert.match(frontendSource, /ENABLE_TEST_OTP_HELPER/);
-    assert.match(frontendSource, /\/auth\/test-otp/);
-  }
+  assert.doesNotMatch(frontendSource, /Test OTP|Test code|Show test OTP|ENABLE_TEST_OTP_HELPER|\/auth\/test-otp/);
 
   const backendSource = await fs.readFile('server/routes/auth.js', 'utf8');
   assert.doesNotMatch(backendSource, /devOtp|Test OTP|Test code/);
