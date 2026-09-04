@@ -1590,14 +1590,13 @@ function useGenerationHistory(user) {
 
 function MobileBottomNav({ user }) {
   const currentPath = normalizePath();
-  const usesWardrobeItems = currentPath === '/home' || currentPath === '/categories' || currentPath === '/explore' || currentPath === '/style-bot' || currentPath === '/profile';
-  const usesWardrobeStyle = usesWardrobeItems || currentPath === '/custom-try-on';
+  const usesWardrobeStyle = currentPath === '/closet' || currentPath.startsWith('/wardrobe');
   const mobileNavLinks = [
     { label: 'Home', href: '/home', Icon: HomeIcon },
     { label: 'Categories', href: '/categories', Icon: GridIcon },
     { label: 'Try-On', href: '/custom-try-on', Icon: TryOnIcon },
-    { label: 'Wardrobe', href: '/closet', Icon: TShirtIcon },
-    { label: 'AI Studio', href: user ? '/style-bot' : '/signup', Icon: SparkleLineIcon }
+    { label: 'AI Stylist', href: user ? '/style-bot' : '/signup', Icon: SparkleLineIcon },
+    { label: 'Wardrobe', href: '/closet', Icon: ClosetIcon }
   ];
   const isActiveLink = (href, index, link = {}) => {
     if (link.inactiveOn?.includes(currentPath)) return false;
@@ -2701,15 +2700,22 @@ function AtelierHome({ user, demoEcommerceMode = false }) {
   }, [catalogProducts, demoEcommerceMode, recommendedProducts]);
   const categoryCards = useMemo(() => {
     const counts = state.facets?.categoryCounts || [];
-    return counts
+    const cards = counts
       .map(({ category, count }) => {
         const slug = categorySlug(category);
-        const product = catalogProducts.find((item) => categorySlug(item.category) === slug);
-        return product ? { category, count, product, slug, collectionVisual: collectionVisualForCategory(category) } : null;
+        return { category, count, slug, collectionVisual: collectionVisualForCategory(category) };
       })
-      .filter(Boolean)
-      .slice(0, 16);
-  }, [catalogProducts, state.facets]);
+      .filter(Boolean);
+    const pinnedSlugs = ['innerwear', 'ethnic wear', 'jeans', 'jackets', 'sweatshirts', 'pants', 'shoes'];
+    const pinnedCards = pinnedSlugs
+      .map((slug) => cards.find((card) => card.slug === slug))
+      .filter(Boolean);
+    const pinnedSet = new Set(pinnedCards.map((card) => card.slug));
+    return [
+      ...pinnedCards,
+      ...cards.filter((card) => !pinnedSet.has(card.slug))
+    ].slice(0, 16);
+  }, [state.facets]);
   const heroSlide = atelierHeroSlides[heroSlideIndex] || atelierHeroSlides[0];
   const firstCommerceSections = commerceSections.slice(0, isMobileHome ? 2 : 4);
   const secondCommerceSections = commerceSections.slice(isMobileHome ? 2 : 4, isMobileHome ? 4 : 8);
@@ -3334,37 +3340,41 @@ function AtelierCategoriesPage() {
           </a>
         </section>}
 
-        {catalog.quickCategories.length > 0 && <section className="atelier-category-wide atelier-category-quick-section" aria-labelledby="category-quick-title">
+        {(catalog.quickCategories.length > 0 || catalog.audienceCards.length > 0) && <section className="atelier-category-wide atelier-category-discovery-section" aria-labelledby="category-quick-title">
           <div className="atelier-category-quick-heading"><p>SHOP BY CATEGORY</p><h2 id="category-quick-title">Find your style</h2></div>
-          <div className="atelier-category-rail-wrap">
-            <button className="atelier-category-scroll-button prev" type="button" aria-label="Previous fashion categories" onClick={() => scrollQuickCategoryRail(-1)}><AtelierIcon name="arrowLeft" /></button>
-            <nav className="atelier-category-quick-rail" aria-label="Fashion categories" ref={quickCategoryRailRef} tabIndex="0" onKeyDown={handleQuickCategoryKeyDown}>
-              {catalog.quickCategories.map((category) => <a className={`category-icon-${categorySlug(category.category)}`} href={categoryHref(category.category)} key={category.category}>
-                <span className="atelier-category-quick-image"><OptimizedImage src={asset(category.collectionVisual.image)} alt="" style={{ objectPosition: category.collectionVisual.position }} /></span><strong>{category.label}</strong><small>{category.count} items</small>
-              </a>)}
-            </nav>
-            <button className="atelier-category-scroll-button next" type="button" aria-label="Next fashion categories" onClick={() => scrollQuickCategoryRail(1)}><AtelierIcon name="arrowRight" /></button>
-          </div>
-        </section>}
+          <div className="atelier-category-discovery-row">
+            {catalog.quickCategories.length > 0 && <div className="atelier-category-quick-section">
+              <div className="atelier-category-rail-wrap">
+                <button className="atelier-category-scroll-button prev" type="button" aria-label="Previous fashion categories" onClick={() => scrollQuickCategoryRail(-1)}><AtelierIcon name="arrowLeft" /></button>
+                <nav className="atelier-category-quick-rail" aria-label="Fashion categories" ref={quickCategoryRailRef} tabIndex="0" onKeyDown={handleQuickCategoryKeyDown}>
+                  {catalog.quickCategories.map((category) => <a className={`category-icon-${categorySlug(category.category)}`} href={categoryHref(category.category)} key={category.category}>
+                    <span className="atelier-category-quick-image"><OptimizedImage src={asset(category.collectionVisual.image)} alt="" style={{ objectPosition: category.collectionVisual.position }} /></span><strong>{category.label}</strong><small>{category.count} items</small>
+                  </a>)}
+                </nav>
+                <button className="atelier-category-scroll-button next" type="button" aria-label="Next fashion categories" onClick={() => scrollQuickCategoryRail(1)}><AtelierIcon name="arrowRight" /></button>
+              </div>
+            </div>}
 
-        {catalog.audienceCards.length > 0 && <section className="atelier-category-wide atelier-category-audience-section" aria-labelledby="category-audience-title">
-          <div className="atelier-category-audience-heading">
-            <p id="category-audience-title">Shop by audience</p>
-            <span>Fashion from the live catalog</span>
-          </div>
-          <div className="atelier-category-audience-rail-wrap">
-            <button className="atelier-category-scroll-button prev" type="button" aria-label="Previous audience" onClick={() => scrollAudienceRail(-1)}><AtelierIcon name="arrowLeft" /></button>
-            <div className="atelier-category-audience-rail" role="tablist" aria-label="Shop fashion by audience" ref={audienceRailRef}>
-              <button className={activeAudience === 'all' ? 'active' : ''} type="button" role="tab" aria-selected={activeAudience === 'all'} onClick={() => setActiveAudience('all')}>
-                <span className="atelier-category-audience-all" aria-hidden="true">All</span><strong>All fashion</strong><small>{catalog.fashionProductCount} items</small>
-              </button>
-              {catalog.audienceCards.map((audience) => (
-                <button className={activeAudience === audience.value ? 'active' : ''} type="button" role="tab" aria-selected={activeAudience === audience.value} key={audience.value} onClick={() => setActiveAudience(audience.value)}>
-                  <span className="atelier-category-audience-image"><OptimizedImage src={audience.image ? asset(audience.image) : audience.product.imageUrl} alt="" /></span><strong>{audience.label}</strong><small>{audience.count} items</small>
-                </button>
-              ))}
-            </div>
-            <button className="atelier-category-scroll-button next" type="button" aria-label="Next audience" onClick={() => scrollAudienceRail(1)}><AtelierIcon name="arrowRight" /></button>
+            {catalog.audienceCards.length > 0 && <div className="atelier-category-audience-section">
+              <div className="atelier-category-audience-heading">
+                <p id="category-audience-title">Shop by audience</p>
+                <span>Fashion from the live catalog</span>
+              </div>
+              <div className="atelier-category-audience-rail-wrap">
+                <button className="atelier-category-scroll-button prev" type="button" aria-label="Previous audience" onClick={() => scrollAudienceRail(-1)}><AtelierIcon name="arrowLeft" /></button>
+                <div className="atelier-category-audience-rail" role="tablist" aria-label="Shop fashion by audience" ref={audienceRailRef}>
+                  <button className={activeAudience === 'all' ? 'active' : ''} type="button" role="tab" aria-selected={activeAudience === 'all'} onClick={() => setActiveAudience('all')}>
+                    <span className="atelier-category-audience-all" aria-hidden="true">All</span><strong>All fashion</strong><small>{catalog.fashionProductCount} items</small>
+                  </button>
+                  {catalog.audienceCards.map((audience) => (
+                    <button className={activeAudience === audience.value ? 'active' : ''} type="button" role="tab" aria-selected={activeAudience === audience.value} key={audience.value} onClick={() => setActiveAudience(audience.value)}>
+                      <span className="atelier-category-audience-image"><OptimizedImage src={audience.image ? asset(audience.image) : audience.product.imageUrl} alt="" /></span><strong>{audience.label}</strong><small>{audience.count} items</small>
+                    </button>
+                  ))}
+                </div>
+                <button className="atelier-category-scroll-button next" type="button" aria-label="Next audience" onClick={() => scrollAudienceRail(1)}><AtelierIcon name="arrowRight" /></button>
+              </div>
+            </div>}
           </div>
         </section>}
 
@@ -3450,49 +3460,354 @@ const departmentPriceFilters = [
   { value: '2500-plus', label: '2,500+', test: (price) => price >= 2500 }
 ];
 
+const departmentTypeFilters = [
+  { value: 'all', label: 'All products', test: () => true },
+  { value: 'tops', label: 'Tops', test: (product) => /shirt|top|tee|kurta|blouse|jacket|sweatshirt/i.test(productSearchText(product)) },
+  { value: 'bottoms', label: 'Bottoms', test: (product) => /jeans|pant|trouser|leggings|skirt|shorts/i.test(productSearchText(product)) },
+  { value: 'outfits', label: 'Outfits & sets', test: (product) => /set|suit|lehenga|saree|dress|outfit/i.test(productSearchText(product)) },
+  { value: 'accessories', label: 'Accessories', test: (product) => /bag|belt|watch|cap|scarf|jewellery|jewelry|accessor/i.test(productSearchText(product)) }
+];
+
+const shoeTypeFilters = [
+  { value: 'all', label: 'All shoes', test: () => true },
+  { value: 'sports', label: 'Sports shoes', test: (product) => /sport|running|training|gym|athletic|walking/i.test(productSearchText(product)) },
+  { value: 'casual', label: 'Casual shoes', test: (product) => /casual|loafer|canvas|daily|everyday/i.test(productSearchText(product)) },
+  { value: 'formal', label: 'Formal shoes', test: (product) => /formal|office|dress shoe|oxford|derby/i.test(productSearchText(product)) },
+  { value: 'sneakers', label: 'Sneakers', test: (product) => /sneaker|trainer/i.test(productSearchText(product)) },
+  { value: 'sandals', label: 'Sandals', test: (product) => /sandal|floater|slide/i.test(productSearchText(product)) },
+  { value: 'slippers', label: 'Slippers', test: (product) => /slipper|flip flop|flip-flop|clog/i.test(productSearchText(product)) }
+];
+
+const innerwearTypeFilters = [
+  { value: 'all', label: 'All innerwear', test: () => true },
+  { value: 'underwear', label: 'Underwear', test: (product) => /underwear|brief|boxer|trunk|vest/i.test(productSearchText(product)) },
+  { value: 'panties', label: 'Panties', test: (product) => /panty|panties|bikini|hipster/i.test(productSearchText(product)) },
+  { value: 'bras', label: 'Bras', test: (product) => /bra|bralette|sports bra|push up|padded/i.test(productSearchText(product)) },
+  { value: 'lingerie', label: 'Lingerie', test: (product) => /lingerie|lace|nighty|babydoll/i.test(productSearchText(product)) },
+  { value: 'camisoles', label: 'Camisoles', test: (product) => /camisole|cami|slip|tank/i.test(productSearchText(product)) },
+  { value: 'shapewear', label: 'Shapewear', test: (product) => /shapewear|shape wear|body shaper|corset/i.test(productSearchText(product)) }
+];
+
+const ethnicWearTypeFilters = [
+  { value: 'all', label: 'All ethnic wear', test: () => true },
+  { value: 'lehengas', label: 'Lehengas', test: (product) => /lehenga|chaniya|choli/i.test(productSearchText(product)) },
+  { value: 'kurtas', label: 'Kurtas & kurtis', test: (product) => /kurta|kurti|anarkali/i.test(productSearchText(product)) },
+  { value: 'suits', label: 'Salwar suits', test: (product) => /salwar|suit|churidar|sharara|farshi|farsi|palazzo/i.test(productSearchText(product)) },
+  { value: 'sarees', label: 'Sarees', test: (product) => /saree|sari|kanjivaram|kanchipuram/i.test(productSearchText(product)) },
+  { value: 'dupattas', label: 'Dupattas', test: (product) => /dupatta|odhni|stole/i.test(productSearchText(product)) },
+  { value: 'blouses', label: 'Blouses', test: (product) => /blouse|choli/i.test(productSearchText(product)) }
+];
+
+const eyewearTypeFilters = [
+  { value: 'all', label: 'All sunglasses', test: () => true },
+  { value: 'round', label: 'Round sunglasses', test: (product) => /round|circle|circular/i.test(productSearchText(product)) },
+  { value: 'square', label: 'Square sunglasses', test: (product) => /square/i.test(productSearchText(product)) },
+  { value: 'rectangular', label: 'Rectangular sunglasses', test: (product) => /rectangular|rectangle|rimless/i.test(productSearchText(product)) },
+  { value: 'aviator', label: 'Aviator sunglasses', test: (product) => /aviator|pilot/i.test(productSearchText(product)) },
+  { value: 'oval', label: 'Oval sunglasses', test: (product) => /oval/i.test(productSearchText(product)) },
+  { value: 'geometric', label: 'Geometric frames', test: (product) => /geometric|hexagon|hexagonal|cat eye|cat-eye|wayfarer/i.test(productSearchText(product)) }
+];
+
+const accessoryTypeFilters = [
+  { value: 'all', label: 'All accessories', test: () => true },
+  { value: 'caps', label: 'Caps & hats', test: (product) => /cap|hat|baseball|trucker|dad hat/i.test(productSearchText(product)) },
+  { value: 'belts', label: 'Belts', test: (product) => /belt|buckle|waist belt/i.test(productSearchText(product)) },
+  { value: 'scarves', label: 'Scarves', test: (product) => /scarf|scarves|headscarf|neck scarf/i.test(productSearchText(product)) },
+  { value: 'stoles', label: 'Stoles & shawls', test: (product) => /stole|shawl|hijab/i.test(productSearchText(product)) },
+  { value: 'mufflers', label: 'Mufflers', test: (product) => /muffler|winter scarf|woolen/i.test(productSearchText(product)) },
+  { value: 'bandanas', label: 'Bandanas & hair accessories', test: (product) => /bandana|hair wrap|hair accessory|head wrap/i.test(productSearchText(product)) }
+];
+
+const sleepwearTypeFilters = [
+  { value: 'all', label: 'All sleepwear', test: () => true },
+  { value: 'nighties', label: 'Nighties', test: (product) => /nighty|nightie/i.test(productSearchText(product)) },
+  { value: 'night-gowns', label: 'Night gowns', test: (product) => /night gown|gown|maxi/i.test(productSearchText(product)) },
+  { value: 'pyjamas', label: 'Pyjamas', test: (product) => /pyjama|pajama|pyjama set|pajama set/i.test(productSearchText(product)) },
+  { value: 'night-suits', label: 'Night suits', test: (product) => /night suit|sleepwear set|co-ord|two-piece/i.test(productSearchText(product)) },
+  { value: 'lounge-pants', label: 'Lounge pants', test: (product) => /lounge pant|track pant|lower|bottom/i.test(productSearchText(product)) },
+  { value: 'slip-dresses', label: 'Slip dresses', test: (product) => /slip dress|cami|camisole|lace trim/i.test(productSearchText(product)) }
+];
+
+const bagTypeFilters = [
+  { value: 'all', label: 'All bags', test: () => true },
+  { value: 'backpacks', label: 'Backpacks', test: (product) => /backpack|daypack|college bag|school/i.test(productSearchText(product)) },
+  { value: 'laptop-bags', label: 'Laptop bags', test: (product) => /laptop|office|business/i.test(productSearchText(product)) },
+  { value: 'travel-bags', label: 'Travel bags', test: (product) => /travel|overnighter|weekender|cabin|carry on|luggage/i.test(productSearchText(product)) },
+  { value: 'shoulder-bags', label: 'Shoulder & sling bags', test: (product) => /shoulder|sling|crossbody|detachable strap/i.test(productSearchText(product)) },
+  { value: 'tote-bags', label: 'Tote & handbags', test: (product) => /tote|handbag|purse|carry bag/i.test(productSearchText(product)) }
+];
+
+const skirtTypeFilters = [
+  { value: 'all', label: 'All skirts', test: () => true },
+  { value: 'maxi', label: 'Maxi skirts', test: (product) => /maxi|full length|ankle length|long skirt/i.test(productSearchText(product)) },
+  { value: 'midi', label: 'Midi skirts', test: (product) => /midi|knee-long|knee long/i.test(productSearchText(product)) },
+  { value: 'mini', label: 'Mini skirts', test: (product) => /mini|short skirt/i.test(productSearchText(product)) },
+  { value: 'wraparound', label: 'Wraparound skirts', test: (product) => /wraparound|wrap-around|wrap skirt|tie waist/i.test(productSearchText(product)) },
+  { value: 'flared', label: 'Flared & A-line skirts', test: (product) => /flared|flare|a-line|skater|umbrella|tiered|flowy/i.test(productSearchText(product)) },
+  { value: 'ethnic-boho', label: 'Ethnic & boho skirts', test: (product) => /ethnic|boho|bohemian|rajasthani|jaipuri|ajrakh|traditional/i.test(productSearchText(product)) }
+];
+
+const watchTypeFilters = [
+  { value: 'all', label: 'All watches', test: () => true },
+  { value: 'smart', label: 'Smart watches', test: (product) => /smart ?watch|smart watch|smartwatch/i.test(productSearchText(product)) },
+  { value: 'bluetooth-calling', label: 'Bluetooth calling watches', test: (product) => /bluetooth calling|bt calling|answer\/make calls|make calls/i.test(productSearchText(product)) },
+  { value: 'fitness', label: 'Fitness & sports watches', test: (product) => /fitness|sport|heart rate|spo2|sleep monitor|activity tracker|step counter/i.test(productSearchText(product)) },
+  { value: 'amoled', label: 'AMOLED display watches', test: (product) => /amoled|always on display|aod/i.test(productSearchText(product)) },
+  { value: 'round-dial', label: 'Round dial watches', test: (product) => /round display|round dial|rotating dial|rotating bezel/i.test(productSearchText(product)) },
+  { value: 'waterproof', label: 'Waterproof watches', test: (product) => /waterproof|water resistant|ip67|ip68|ipx4/i.test(productSearchText(product)) }
+];
+
+const shirtTypeFilters = [
+  { value: 'all', label: 'All shirts', test: () => true },
+  { value: 'casual', label: 'Casual shirts', test: (product) => /casual|everyday|beach|summer|streetwear/i.test(productSearchText(product)) },
+  { value: 'formal', label: 'Formal & office shirts', test: (product) => /formal|office|work|collared|spread collar/i.test(productSearchText(product)) },
+  { value: 'striped', label: 'Striped shirts', test: (product) => /stripe|striped|vertical stripes/i.test(productSearchText(product)) },
+  { value: 'checked', label: 'Checked shirts', test: (product) => /check|checked|plaid/i.test(productSearchText(product)) },
+  { value: 'solid', label: 'Solid shirts', test: (product) => /solid|plain/i.test(productSearchText(product)) },
+  { value: 'crop-oversized', label: 'Crop & oversized shirts', test: (product) => /crop|cropped|oversized|loose fit|drop shoulder/i.test(productSearchText(product)) }
+];
+
+const dressTypeFilters = [
+  { value: 'all', label: 'All dresses', test: () => true },
+  { value: 'maxi', label: 'Maxi dresses', test: (product) => /maxi|long dress|ankle length/i.test(productSearchText(product)) },
+  { value: 'midi', label: 'Midi dresses', test: (product) => /midi|below the knee|knee length/i.test(productSearchText(product)) },
+  { value: 'mini', label: 'Mini dresses', test: (product) => /mini|short dress/i.test(productSearchText(product)) },
+  { value: 'bodycon', label: 'Bodycon dresses', test: (product) => /bodycon|form-fitting|mermaid|cocktail/i.test(productSearchText(product)) },
+  { value: 'fit-flare', label: 'Fit & flare dresses', test: (product) => /fit and flare|fit & flare|a-line|flared|flare/i.test(productSearchText(product)) },
+  { value: 'ethnic-gown', label: 'Ethnic gowns & sets', test: (product) => /ethnic|gown|anarkali|kurta set|kurti set|salwar|palazzo/i.test(productSearchText(product)) }
+];
+
+const departmentRatingFilters = [
+  { value: 'all', label: 'All ratings', test: () => true },
+  { value: '4-plus', label: '4 stars & up', test: (product) => Number(product.rating || 0) >= 4 },
+  { value: '3-plus', label: '3 stars & up', test: (product) => Number(product.rating || 0) >= 3 }
+];
+
+const departmentDiscountFilters = [
+  { value: 'all', label: 'All discounts', test: () => true },
+  { value: 'sale', label: 'On sale', test: (product) => productDiscountPercent(product) > 0 },
+  { value: '10-plus', label: '10% off or more', test: (product) => productDiscountPercent(product) >= 10 },
+  { value: '30-plus', label: '30% off or more', test: (product) => productDiscountPercent(product) >= 30 },
+  { value: '50-plus', label: '50% off or more', test: (product) => productDiscountPercent(product) >= 50 }
+];
+
+const departmentTryOnFilters = [
+  { value: 'all', label: 'All products', test: () => true },
+  { value: 'ready', label: 'AI Try-On ready', test: (product) => Boolean(product.tryOnAvailable || product.aiTryOnAvailable) }
+];
+
+function productSearchText(product = {}) {
+  return [
+    product.name,
+    product.brand,
+    product.category,
+    product.description,
+    Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function optionsWithCounts(options, products, getValue = (product) => product) {
+  return options.map((option) => ({
+    ...option,
+    count: option.value === 'all'
+      ? products.length
+      : products.filter((product) => option.test(getValue(product), product)).length
+  }));
+}
+
+function DepartmentFilterMenu({ value, groups, onChange, ariaLabel = 'Filter products' }) {
+  const [open, setOpen] = useState(false);
+  const [activeGroup, setActiveGroup] = useState('');
+  const rootRef = useRef(null);
+  const selectedOption = groups.flatMap((group) => group.options).find((option) => option.value === value);
+  const selectedLabel = selectedOption?.label || 'All products';
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  const chooseOption = (nextValue) => {
+    onChange(nextValue);
+    setOpen(false);
+    setActiveGroup('');
+  };
+
+  return (
+    <div className="grouped-filter-select" ref={rootRef}>
+      <button className="grouped-filter-trigger" type="button" aria-label={ariaLabel} aria-haspopup="menu" aria-expanded={open} onClick={() => {
+        setOpen((current) => !current);
+        setActiveGroup('');
+      }}>
+        <span>{selectedLabel}</span>
+        <b aria-hidden="true">v</b>
+      </button>
+      {open && (
+        <div className="grouped-filter-menu" role="menu">
+          <button className={`grouped-filter-reset${value === 'all' ? ' active' : ''}`} type="button" role="menuitem" onClick={() => chooseOption('all')}>All products</button>
+          {groups.map((group) => (
+            <div className="grouped-filter-group" key={group.label}>
+              <button className="grouped-filter-group-button" type="button" aria-expanded={activeGroup === group.label} onClick={() => setActiveGroup((current) => current === group.label ? '' : group.label)}>
+                <span>{group.label}</span>
+                <b aria-hidden="true">{activeGroup === group.label ? '-' : '+'}</b>
+              </button>
+              {activeGroup === group.label && (
+                <div className="grouped-filter-options">
+                  {group.options.map((option) => (
+                    <button className={value === option.value ? 'active' : ''} type="button" role="menuitem" onClick={() => chooseOption(option.value)} key={option.value}>{option.label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CategoryDepartmentPage({ category, user, demoEcommerceMode = false }) {
   const initialGender = new URLSearchParams(window.location.search).get('gender') || '';
   const [gender, setGender] = useState(initialGender);
-  const [brandFilter, setBrandFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [priceFilter, setPriceFilter] = useState('all');
+  const [ratingFilter, setRatingFilter] = useState('all');
+  const [discountFilter, setDiscountFilter] = useState('all');
+  const [tryOnFilter, setTryOnFilter] = useState('all');
   const [sort, setSort] = useState('newest');
   const state = useProducts({ category, gender, sort, limit: 96 });
   const title = departmentTitle(category);
   const categoryPath = categoryPageHref(category, gender);
   const departmentProducts = state.products || [];
   const heroVisual = departmentHeroVisual(category, gender || 'all');
-  const departmentBrands = useMemo(() => {
-    const brandCounts = departmentProducts.reduce((map, product) => {
-      const brand = displayBrand(product);
-      if (!brand || brand === 'Marketplace brand') return map;
-      const key = brand.toLowerCase();
-      const existing = map.get(key) || { value: brand, label: brand, count: 0 };
-      existing.count += 1;
-      map.set(key, existing);
-      return map;
-    }, new Map());
-
-    return [...brandCounts.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [departmentProducts]);
-  const departmentPriceOptions = useMemo(() => departmentPriceFilters.map((option) => ({
-    ...option,
-    count: option.value === 'all'
-      ? departmentProducts.length
-      : departmentProducts.filter((product) => option.test(Number(product.price || 0))).length
-  })), [departmentProducts]);
+  const departmentSlug = categorySlug(category);
+  const isShoesDepartment = ['shoes', 'footwear'].includes(departmentSlug);
+  const isInnerwearDepartment = ['innerwear', 'lingerie', 'underwear'].includes(departmentSlug);
+  const isEthnicWearDepartment = ['ethnic wear', 'ethnic'].includes(departmentSlug);
+  const isEyewearDepartment = ['eyewear', 'sunglasses', 'glasses'].includes(departmentSlug);
+  const isAccessoryDepartment = ['accessories', 'accessory'].includes(departmentSlug);
+  const isSleepwearDepartment = ['sleepwear', 'nightwear', 'loungewear'].includes(departmentSlug);
+  const isBagDepartment = ['bags', 'bag'].includes(departmentSlug);
+  const isSkirtDepartment = ['skirts', 'skirt'].includes(departmentSlug);
+  const isWatchDepartment = ['watches', 'watch'].includes(departmentSlug);
+  const isShirtDepartment = ['shirts', 'shirt'].includes(departmentSlug);
+  const isDressDepartment = ['dresses', 'dress'].includes(departmentSlug);
+  const activeTypeFilters = isShoesDepartment
+    ? shoeTypeFilters
+    : isInnerwearDepartment
+      ? innerwearTypeFilters
+      : isEthnicWearDepartment
+        ? ethnicWearTypeFilters
+        : isEyewearDepartment
+          ? eyewearTypeFilters
+          : isAccessoryDepartment
+            ? accessoryTypeFilters
+            : isSleepwearDepartment
+              ? sleepwearTypeFilters
+              : isBagDepartment
+                ? bagTypeFilters
+                : isSkirtDepartment
+                  ? skirtTypeFilters
+                  : isWatchDepartment
+                    ? watchTypeFilters
+                    : isShirtDepartment
+                      ? shirtTypeFilters
+                      : isDressDepartment
+                        ? dressTypeFilters
+                        : departmentTypeFilters;
+  const departmentTypeOptions = useMemo(() => optionsWithCounts(activeTypeFilters, departmentProducts), [activeTypeFilters, departmentProducts]);
+  const departmentPriceOptions = useMemo(() => optionsWithCounts(departmentPriceFilters, departmentProducts, (product) => Number(product.price || 0)), [departmentProducts]);
+  const departmentRatingOptions = useMemo(() => optionsWithCounts(departmentRatingFilters, departmentProducts), [departmentProducts]);
+  const departmentDiscountOptions = useMemo(() => optionsWithCounts(departmentDiscountFilters, departmentProducts), [departmentProducts]);
+  const departmentTryOnOptions = useMemo(() => optionsWithCounts(departmentTryOnFilters, departmentProducts), [departmentProducts]);
   const departmentSortOptions = [
     ['newest', 'Newest'],
     ['price_asc', 'Price: Low to High'],
     ['price_desc', 'Price: High to Low'],
+    ['discount', 'Best Discount'],
     !demoEcommerceMode && ['rating', 'Top Rated']
   ].filter(Boolean);
+  const combinedFilterValue = typeFilter !== 'all'
+    ? `type:${typeFilter}`
+    : priceFilter !== 'all'
+      ? `price:${priceFilter}`
+      : ratingFilter !== 'all'
+        ? `rating:${ratingFilter}`
+        : discountFilter !== 'all'
+          ? `discount:${discountFilter}`
+          : 'all';
+  const departmentFilterGroups = useMemo(() => [
+    {
+      label: 'Type',
+      options: departmentTypeOptions.map((option) => ({
+        value: option.value === 'all' ? 'all' : `type:${option.value}`,
+        label: option.value === 'all' ? option.label : `${option.label} (${option.count})`
+      }))
+    },
+    {
+      label: 'Price',
+      options: departmentPriceOptions
+        .filter((option) => option.value !== 'all')
+        .map((option) => ({ value: `price:${option.value}`, label: `${option.label} (${option.count})` }))
+    },
+    {
+      label: 'Rating',
+      options: departmentRatingOptions
+        .filter((option) => option.value !== 'all')
+        .map((option) => ({ value: `rating:${option.value}`, label: `${option.label} (${option.count})` }))
+    },
+    {
+      label: 'Discount',
+      options: departmentDiscountOptions
+        .filter((option) => option.value !== 'all')
+        .map((option) => ({ value: `discount:${option.value}`, label: `${option.label} (${option.count})` }))
+    }
+  ], [departmentDiscountOptions, departmentPriceOptions, departmentRatingOptions, departmentTypeOptions]);
+  const setCombinedFilter = (value) => {
+    setTypeFilter('all');
+    setPriceFilter('all');
+    setRatingFilter('all');
+    setDiscountFilter('all');
+    if (value === 'all') return;
+    const [group, nextValue] = value.split(':');
+    if (group === 'type') setTypeFilter(nextValue);
+    if (group === 'price') setPriceFilter(nextValue);
+    if (group === 'rating') setRatingFilter(nextValue);
+    if (group === 'discount') setDiscountFilter(nextValue);
+  };
   const visibleProducts = useMemo(() => {
+    const typeOption = activeTypeFilters.find((option) => option.value === typeFilter) || activeTypeFilters[0];
     const priceOption = departmentPriceFilters.find((option) => option.value === priceFilter) || departmentPriceFilters[0];
-    return departmentProducts
-      .filter((product) => brandFilter === 'all' || displayBrand(product) === brandFilter)
-      .filter((product) => priceOption.test(Number(product.price || 0)));
-  }, [brandFilter, departmentProducts, priceFilter]);
-  const filtersActive = Boolean(gender) || brandFilter !== 'all' || priceFilter !== 'all' || sort !== 'newest';
+    const ratingOption = departmentRatingFilters.find((option) => option.value === ratingFilter) || departmentRatingFilters[0];
+    const discountOption = departmentDiscountFilters.find((option) => option.value === discountFilter) || departmentDiscountFilters[0];
+    const tryOnOption = departmentTryOnFilters.find((option) => option.value === tryOnFilter) || departmentTryOnFilters[0];
+    const products = departmentProducts
+      .filter((product) => typeOption.test(product))
+      .filter((product) => priceOption.test(Number(product.price || 0)))
+      .filter((product) => ratingOption.test(product))
+      .filter((product) => discountOption.test(product))
+      .filter((product) => tryOnOption.test(product));
+
+    return [...products].sort((a, b) => {
+      if (sort === 'price_asc') return Number(a.price || 0) - Number(b.price || 0);
+      if (sort === 'price_desc') return Number(b.price || 0) - Number(a.price || 0);
+      if (sort === 'rating') return Number(b.rating || 0) - Number(a.rating || 0);
+      if (sort === 'discount') return productDiscountPercent(b) - productDiscountPercent(a);
+      return 0;
+    });
+  }, [activeTypeFilters, departmentProducts, discountFilter, priceFilter, ratingFilter, sort, tryOnFilter, typeFilter]);
+  const filtersActive = Boolean(gender) || typeFilter !== 'all' || priceFilter !== 'all' || ratingFilter !== 'all' || discountFilter !== 'all' || tryOnFilter !== 'all' || sort !== 'newest';
 
   useEffect(() => {
     const currentPath = `${window.location.pathname}${window.location.search}`;
@@ -3500,13 +3815,12 @@ function CategoryDepartmentPage({ category, user, demoEcommerceMode = false }) {
   }, [categoryPath]);
 
   useEffect(() => {
-    setBrandFilter('all');
+    setTypeFilter('all');
     setPriceFilter('all');
+    setRatingFilter('all');
+    setDiscountFilter('all');
+    setTryOnFilter('all');
   }, [category, gender]);
-
-  useEffect(() => {
-    if (brandFilter !== 'all' && !departmentBrands.some((brand) => brand.value === brandFilter)) setBrandFilter('all');
-  }, [brandFilter, departmentBrands]);
 
   useEffect(() => {
     if (demoEcommerceMode && sort === 'rating') setSort('newest');
@@ -3514,8 +3828,11 @@ function CategoryDepartmentPage({ category, user, demoEcommerceMode = false }) {
 
   const resetDepartmentFilters = () => {
     setGender('');
-    setBrandFilter('all');
+    setTypeFilter('all');
     setPriceFilter('all');
+    setRatingFilter('all');
+    setDiscountFilter('all');
+    setTryOnFilter('all');
     setSort('newest');
     window.history.replaceState({}, '', categoryPageHref(category));
   };
@@ -3544,8 +3861,8 @@ function CategoryDepartmentPage({ category, user, demoEcommerceMode = false }) {
             {[['All', ''], ['Women', 'women'], ['Men', 'men'], ['Unisex', 'unisex']].map(([label, value]) => <button className={gender === value ? 'active' : ''} type="button" role="tab" aria-selected={gender === value} onClick={() => setGender(value)} key={label}>{label}</button>)}
           </div>
           <div className="department-filter-selects">
-            <label className="department-sort"><span>Brand</span><select value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)} aria-label="Filter products by brand" disabled={!departmentBrands.length}><option value="all">All brands</option>{departmentBrands.map((brand) => <option value={brand.value} key={brand.value}>{brand.label} ({brand.count})</option>)}</select></label>
-            <label className="department-sort"><span>Price</span><select value={priceFilter} onChange={(event) => setPriceFilter(event.target.value)} aria-label="Filter products by price">{departmentPriceOptions.map((option) => <option value={option.value} key={option.value}>{option.label}{option.value !== 'all' ? ` (${option.count})` : ''}</option>)}</select></label>
+            <div className="department-sort"><span>Filter</span><DepartmentFilterMenu value={combinedFilterValue} groups={departmentFilterGroups} onChange={setCombinedFilter} /></div>
+            <label className="department-sort"><span>Try-On</span><select value={tryOnFilter} onChange={(event) => setTryOnFilter(event.target.value)} aria-label="Filter products by try-on">{departmentTryOnOptions.map((option) => <option value={option.value} key={option.value}>{option.label}{option.value !== 'all' ? ` (${option.count})` : ''}</option>)}</select></label>
             <label className="department-sort"><span>Sort</span><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort products">{departmentSortOptions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
           </div>
         </div>
@@ -3888,7 +4205,7 @@ function inspectPreviewImage(src) {
   });
 }
 
-function stageMatchedModelImage(src) {
+function stageMatchedModelImage(src, targetRgb = [215, 215, 213]) {
   return new Promise((resolve, reject) => {
     if (!src) {
       reject(new Error('Model image URL is missing'));
@@ -3904,7 +4221,7 @@ function stageMatchedModelImage(src) {
         return;
       }
 
-      const maxSide = 2400;
+      const maxSide = 1200;
       const scale = Math.min(1, maxSide / Math.max(naturalWidth, naturalHeight));
       const width = Math.max(1, Math.round(naturalWidth * scale));
       const height = Math.max(1, Math.round(naturalHeight * scale));
@@ -3912,8 +4229,6 @@ function stageMatchedModelImage(src) {
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext('2d', { willReadFrequently: true });
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = 'high';
       context.drawImage(image, 0, 0, width, height);
 
       const imageData = context.getImageData(0, 0, width, height);
@@ -3937,7 +4252,7 @@ function stageMatchedModelImage(src) {
       const backgroundRgb = samples.length
         ? samples.reduce((sum, rgb) => [sum[0] + rgb[0], sum[1] + rgb[1], sum[2] + rgb[2]], [0, 0, 0]).map((value) => value / samples.length)
         : [238, 238, 236];
-      const threshold = 72;
+      const threshold = 78;
       const visited = new Uint8Array(width * height);
       const stack = [];
       const push = (x, y) => {
@@ -3969,7 +4284,10 @@ function stageMatchedModelImage(src) {
         const pixel = stack.pop();
         if (!isBackgroundPixel(pixel)) continue;
         const index = pixel * 4;
-        data[index + 3] = 0;
+        data[index] = targetRgb[0];
+        data[index + 1] = targetRgb[1];
+        data[index + 2] = targetRgb[2];
+        data[index + 3] = 255;
         const x = pixel % width;
         const y = Math.floor(pixel / width);
         push(x + 1, y);
@@ -3981,33 +4299,33 @@ function stageMatchedModelImage(src) {
       context.putImageData(imageData, 0, 0);
       canvas.toBlob((blob) => {
         if (blob) resolve(URL.createObjectURL(blob));
-        else reject(new Error('Could not prepare transparent model image'));
+        else reject(new Error('Could not prepare stage-matched model image'));
       }, 'image/png');
     };
-    image.onerror = () => reject(new Error('Model image could not be loaded for background removal'));
+    image.onerror = () => reject(new Error('Model image could not be loaded for background matching'));
     image.src = src;
   });
 }
 
 function useStageMatchedModelImage(src, enabled) {
-  const [state, setState] = useState({ src: '', status: 'idle' });
+  const [matchedSrc, setMatchedSrc] = useState('');
 
   useEffect(() => {
     if (!src || !enabled) {
-      setState({ src: '', status: 'idle' });
+      setMatchedSrc('');
       return undefined;
     }
     let active = true;
     let objectUrl = '';
-    setState({ src: '', status: 'loading' });
+    setMatchedSrc('');
     stageMatchedModelImage(src)
       .then((url) => {
         objectUrl = url;
-        if (active) setState({ src: url, status: 'ready' });
+        if (active) setMatchedSrc(url);
         else URL.revokeObjectURL(url);
       })
       .catch(() => {
-        if (active) setState({ src: '', status: 'failed' });
+        if (active) setMatchedSrc('');
       });
     return () => {
       active = false;
@@ -4015,7 +4333,7 @@ function useStageMatchedModelImage(src, enabled) {
     };
   }, [src, enabled]);
 
-  return state;
+  return matchedSrc;
 }
 
 function useSubjectIsolation(modelSource, user) {
@@ -4234,13 +4552,12 @@ function RoomScene({ modelSource, alt, generating, user, onOpen, onEmpty }) {
   const isolation = useSubjectIsolation(modelSource, user);
   const transparentSrc = safeWardrobeImageUrl(isolation.transparentUrl);
   const originalSrc = safeWardrobeImageUrl(modelSource?.imageUrl);
-  const fallbackCutout = useStageMatchedModelImage(originalSrc, Boolean(originalSrc && !transparentSrc));
-  const cutoutLoading = Boolean(originalSrc && !transparentSrc && fallbackCutout.status === 'loading');
-  const visibleSrc = transparentSrc || fallbackCutout.src || (fallbackCutout.status === 'failed' ? originalSrc : '');
+  const matchedSrc = useStageMatchedModelImage(originalSrc, Boolean(originalSrc && !transparentSrc));
+  const visibleSrc = transparentSrc || matchedSrc || originalSrc;
   const imageAlt = alt || 'Wardrobe preview';
 
   return (
-    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''} ${transparentSrc || fallbackCutout.src ? 'has-transparent-model' : ''}`}>
+    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''} ${transparentSrc ? 'has-transparent-model' : 'match-stage-background'}`}>
       {visibleSrc ? (
         <button className="wardrobe-flat-model" type="button" onClick={onOpen} aria-label="Open wardrobe preview full screen">
           <OptimizedImage
@@ -4252,8 +4569,6 @@ function RoomScene({ modelSource, alt, generating, user, onOpen, onEmpty }) {
             style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', objectPosition: 'center center' }}
           />
         </button>
-      ) : cutoutLoading ? (
-        <div className="wardrobe-flat-model wardrobe-flat-model-loading" aria-hidden="true" />
       ) : (
         <button className="wardrobe-model-empty" type="button" onClick={onEmpty}>
           <UserIcon />

@@ -1259,6 +1259,23 @@ function sortFor(value) {
   return { isFeatured: -1, createdAt: -1 };
 }
 
+function categoryFilterFor(value) {
+  const normalized = String(value || '').trim();
+  const key = normalized.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (key === 'shoes' || key === 'footwear') {
+    const shoePattern = /shoe|footwear|sneaker|sandal|slipper|heel|boot/i;
+    return {
+      $or: [
+        { category: shoePattern },
+        { name: shoePattern },
+        { description: shoePattern },
+        { tags: shoePattern }
+      ]
+    };
+  }
+  return { category: new RegExp(`^${escapeRegExp(normalized)}$`, 'i') };
+}
+
 function temporaryExternalAmazonFilter() {
   return {
     catalogApproved: { $ne: true },
@@ -1343,7 +1360,7 @@ router.get('/', productReadLimiter, async (req, res) => {
 
     if (q) filter.$text = { $search: q };
     if (tag) filter.tags = new RegExp(`^${escapeRegExp(String(tag).trim())}$`, 'i');
-    if (category) filter.category = new RegExp(`^${String(category).trim()}$`, 'i');
+    if (category) Object.assign(filter, categoryFilterFor(category));
     if (brand) filter.brand = new RegExp(`^${String(brand).trim()}$`, 'i');
     if (gender) filter.gender = new RegExp(`^${String(gender).trim()}$`, 'i');
     if (featured === 'true') filter.isFeatured = true;
