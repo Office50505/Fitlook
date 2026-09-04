@@ -37082,19 +37082,73 @@ label,
 }
 
 /* AI Stylist: account for the shared navbar while keeping the chat workspace visible. */
+#main-content .style-bot-page.concierge-page .concierge-composer {
+  border-top: 0 !important;
+}
+
+#main-content .style-bot-page.concierge-page .concierge-composer > div {
+  border: 0 !important;
+}
+
+#main-content .style-bot-page.concierge-page .concierge-composer input,
+#main-content .style-bot-page.concierge-page .concierge-composer input:focus,
+#main-content .style-bot-page.concierge-page .concierge-composer input:focus-visible {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+
+#main-content .style-bot-page.concierge-page .concierge-composer > div:focus-within {
+  box-shadow:
+    0 0 0 3px rgba(155, 81, 77, .08),
+    0 18px 44px rgba(42, 34, 30, .09) !important;
+}
+
 #main-content .style-bot-page.concierge-page {
   height: calc(100dvh - 83px) !important;
   min-height: calc(100dvh - 83px) !important;
 }
 
-@media (max-width: 980px) {
+@media (min-width: 901px) {
+  #main-content .style-bot-page.concierge-page > .concierge-session-rail,
+  #main-content .style-bot-page.concierge-page > .concierge-workspace {
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  #main-content .style-bot-page.concierge-page .concierge-session-list {
+    flex: 1 1 auto !important;
+    align-content: start !important;
+    overscroll-behavior-y: contain;
+  }
+
+  #main-content .style-bot-page.concierge-page .concierge-new-session,
+  #main-content .style-bot-page.concierge-page .concierge-chat-head,
+  #main-content .style-bot-page.concierge-page .concierge-composer {
+    flex: 0 0 auto;
+  }
+
+  #main-content .style-bot-page.concierge-page .concierge-scroll {
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 980px) {
   #main-content .style-bot-page.concierge-page {
-    height: auto !important;
+    height: calc(100dvh - 67px) !important;
     min-height: calc(100dvh - 67px) !important;
   }
 }
 
 @media (max-width: 900px) {
+  #main-content .style-bot-page.concierge-page {
+    height: auto !important;
+    min-height: calc(100dvh - 67px) !important;
+  }
+
   #main-content .style-bot-page.concierge-page .concierge-session-rail {
     top: 66px !important;
   }

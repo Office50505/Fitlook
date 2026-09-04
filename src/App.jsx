@@ -6468,7 +6468,6 @@ function StyleBotPage({ user, setUser }) {
   const [runs, setRuns] = useState([]);
   const [busy, setBusy] = useState(false);
   const conciergeScrollRef = useRef(null);
-  const conciergeEndRef = useRef(null);
   const promptIdeas = ['linen shirts under 1500', 'black party dress', 'gold sunglasses', 'oversized denim jacket'];
   const creditCount = Number(user?.tokens || 0);
 
@@ -6479,7 +6478,6 @@ function StyleBotPage({ user, setUser }) {
     const scrollToLatest = (behavior = 'smooth') => {
       frameId = window.requestAnimationFrame(() => {
         const scrollNode = conciergeScrollRef.current;
-        conciergeEndRef.current?.scrollIntoView({ block: 'end', behavior });
         if (scrollNode) {
           scrollNode.scrollTo({ top: scrollNode.scrollHeight, behavior });
         }
@@ -6586,7 +6584,7 @@ function StyleBotPage({ user, setUser }) {
               </div>
             </div>
           ))}
-          <div className="concierge-scroll-anchor" ref={conciergeEndRef} aria-hidden="true" />
+          <div className="concierge-scroll-anchor" aria-hidden="true" />
         </div>
         <form className="concierge-composer" onSubmit={submit}>
           <div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ask your stylist anything..." aria-label="Ask Lookmefy Concierge" /><button type="submit" disabled={busy || !query.trim()} aria-label={busy ? 'Curating suggestions' : 'Send message'} title={busy ? 'Curating suggestions' : 'Send message'}>{busy ? '...' : '→'}</button></div>
