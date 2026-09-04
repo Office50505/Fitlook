@@ -2706,7 +2706,7 @@ function AtelierHome({ user, demoEcommerceMode = false }) {
         return { category, count, slug, collectionVisual: collectionVisualForCategory(category) };
       })
       .filter(Boolean);
-    const pinnedSlugs = ['innerwear', 'ethnic wear', 'jeans', 'jackets', 'sweatshirts', 'pants', 'shoes'];
+    const pinnedSlugs = ['innerwear', 'ethnic wear', 'jeans', 'jackets', 'sweatshirts', 'pants', 'shoes', 'watches'];
     const pinnedCards = pinnedSlugs
       .map((slug) => cards.find((card) => card.slug === slug))
       .filter(Boolean);
@@ -3893,6 +3893,8 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, d
   const buyHref = `/checkout?productId=${encodeURIComponent(product.id)}`;
   const authBuyHref = `/signup?return=${encodeURIComponent(buyHref)}`;
   const brand = displayBrand(product);
+  const shouldCenterProductImage = /\b(eyewear|sunglasses?|glasses|spectacles|goggles)\b/i.test(productSearchText(product));
+  const mediaClassName = `product-media${shouldCenterProductImage ? ' product-media-centered' : ''}`;
 
   useEffect(() => {
     setTryOnImageFailed(false);
@@ -3925,7 +3927,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, d
 
   const content = (
     <>
-      <div className="product-media">
+      <div className={mediaClassName}>
         {hasTryOnVideo ? (
           <video src={tryOnVideoUrl} poster={tryOnImageUrl} autoPlay muted loop playsInline />
         ) : (

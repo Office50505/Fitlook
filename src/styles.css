@@ -39632,6 +39632,11 @@ label,
   object-position: center top !important;
 }
 
+.product-card .product-media.product-media-centered img,
+.product-card .product-media.product-media-centered video {
+  object-position: center center !important;
+}
+
 .product-card:not(.locked-product):hover .product-media img,
 .product-card:not(.locked-product):focus-within .product-media img,
 .atelier-home .atelier-arrivals-rail .atelier-product:hover .atelier-product-image img,
