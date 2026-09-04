@@ -5,9 +5,10 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import ClosetOutfit from '../models/ClosetOutfit.js';
 import CustomTryOn from '../models/CustomTryOn.js';
 import ExternalTryOn from '../models/ExternalTryOn.js';
-import Product from '../models/Product.js';
+import Product, { productToClient } from '../models/Product.js';
 import TryOn, { tryOnToClient } from '../models/TryOn.js';
 import User from '../models/User.js';
 import { requireUser } from './auth.js';
@@ -1902,6 +1903,77 @@ async function runProductTryOnJob({ userId, productId, requestedModel = '', forc
   }
 }
 
+function generationHistoryDocumentId(value) {
+  return value?._id?.toString?.() || value?.toString?.() || '';
+}
+
+function generationHistoryDate(record) {
+  return record?.updatedAt || record?.createdAt || new Date();
+}
+
+function productGenerationHistoryItem(tryOn, productsById) {
+  const productId = generationHistoryDocumentId(tryOn.product);
+  const product = productsById.get(productId);
+  const productClient = product ? productToClient(product) : null;
+  const client = tryOnToClient(tryOn);
+  return {
+    id: `product-${generationHistoryDocumentId(tryOn)}`,
+    tryOnId: generationHistoryDocumentId(tryOn),
+    type: 'product',
+    label: 'AI Try-On',
+    title: productClient?.name || 'Catalogue Try-On',
+    subtitle: productClient?.brand || 'Lookmefy product',
+    imageUrl: client.imageUrl || '',
+    transparentImageUrl: client.transparentImageUrl || '',
+    videoUrl: client.videoUrl || '',
+    sourceImageUrl: productClient?.imageUrl || '',
+    productId,
+    product: productClient,
+    provider: tryOn.provider,
+    model: tryOn.model,
+    tokenCost: tryOn.tokenCost,
+    createdAt: generationHistoryDate(tryOn)
+  };
+}
+
+function customGenerationHistoryItem(tryOn) {
+  const client = new CustomTryOn(tryOn).toClient();
+  return {
+    id: `custom-${generationHistoryDocumentId(tryOn)}`,
+    tryOnId: generationHistoryDocumentId(tryOn),
+    type: 'custom',
+    label: 'Custom Try-On',
+    title: tryOn.garment?.filename || 'Uploaded garment',
+    subtitle: 'Custom upload',
+    imageUrl: client.imageUrl || '',
+    transparentImageUrl: client.transparentImageUrl || '',
+    sourceImageUrl: client.garmentUrl || '',
+    provider: tryOn.provider,
+    model: tryOn.model,
+    tokenCost: tryOn.tokenCost,
+    createdAt: generationHistoryDate(tryOn)
+  };
+}
+
+function closetGenerationHistoryItem(outfit) {
+  const client = new ClosetOutfit(outfit).toClient();
+  return {
+    id: `closet-${generationHistoryDocumentId(outfit)}`,
+    tryOnId: generationHistoryDocumentId(outfit),
+    type: 'closet',
+    label: 'Wardrobe Try-On',
+    title: client.title || 'Wardrobe look',
+    subtitle: client.occasion || 'Your wardrobe',
+    imageUrl: client.imageUrl || '',
+    transparentImageUrl: client.transparentImageUrl || '',
+    sourceImageUrl: client.garmentUrl || '',
+    provider: outfit.provider,
+    model: outfit.model,
+    tokenCost: outfit.tokenCost,
+    createdAt: generationHistoryDate(outfit)
+  };
+}
+
 router.get('/', requireUser, tryOnReadLimiter, async (req, res) => {
   const ids = String(req.query.productIds || '')
     .split(',')
@@ -1912,6 +1984,53 @@ router.get('/', requireUser, tryOnReadLimiter, async (req, res) => {
   if (ids.length) filter.product = { $in: ids };
   const tryOns = await TryOn.find(filter).sort({ createdAt: -1 }).lean();
   res.json({ tryOns: tryOns.map(tryOnToClient) });
+});
+
+router.get('/history', requireUser, tryOnReadLimiter, async (req, res) => {
+  const limit = Math.min(60, Math.max(1, Number(req.query.limit) || 24));
+  const queryLimit = Math.min(80, Math.max(limit, 24));
+  const userFilter = { user: req.user._id };
+
+  const [productTryOns, customTryOns, closetOutfits, productCount, customCount, closetCount] = await Promise.all([
+    TryOn.find(userFilter).sort({ updatedAt: -1, createdAt: -1 }).limit(queryLimit).lean(),
+    CustomTryOn.find(userFilter).sort({ updatedAt: -1, createdAt: -1 }).limit(queryLimit).lean(),
+    ClosetOutfit.find(userFilter).sort({ updatedAt: -1, createdAt: -1 }).limit(queryLimit).lean(),
+    TryOn.countDocuments(userFilter),
+    CustomTryOn.countDocuments(userFilter),
+    ClosetOutfit.countDocuments(userFilter)
+  ]);
+  const productIds = [...new Set(productTryOns.map((tryOn) => generationHistoryDocumentId(tryOn.product)).filter(Boolean))];
+  const products = productIds.length ? await Product.find({ _id: { $in: productIds } }).lean() : [];
+  const productsById = new Map(products.map((product) => [generationHistoryDocumentId(product), product]));
+  const items = [
+    ...productTryOns.map((tryOn) => productGenerationHistoryItem(tryOn, productsById)),
+    ...customTryOns.map(customGenerationHistoryItem),
+    ...closetOutfits.map(closetGenerationHistoryItem)
+  ]
+    .filter((item) => item.imageUrl || item.videoUrl)
+    .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime())
+    .slice(0, limit);
+
+  res.json({ items, total: productCount + customCount + closetCount });
+});
+
+router.get('/custom/latest', requireUser, tryOnReadLimiter, async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+    'Surrogate-Control': 'no-store'
+  });
+  const tryOns = await CustomTryOn.find({
+    user: req.user._id,
+    'image.storage': { $ne: 'remote-pending' }
+  })
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .limit(10);
+  const latest = tryOns
+    .map((tryOn) => tryOn.toClient())
+    .find((tryOn) => Boolean(tryOn.imageUrl));
+  res.json({ tryOn: latest || null });
 });
 
 router.get('/:tryOnId/video/media', async (req, res) => {

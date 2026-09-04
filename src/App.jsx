@@ -1556,6 +1556,53 @@ function useTryOnCache(user, products) {
   return [tryOns, setTryOns];
 }
 
+function closetOutfitToGenerationHistoryItem(outfit) {
+  const normalized = normalizeClosetOutfit(outfit);
+  if (!normalized.id || !normalized.imageUrl) return null;
+  return {
+    id: `closet-${normalized.id}`,
+    tryOnId: normalized.id,
+    type: 'closet',
+    label: 'Wardrobe Try-On',
+    title: normalized.title || 'Wardrobe look',
+    subtitle: normalized.occasion || 'Your wardrobe',
+    imageUrl: normalized.imageUrl,
+    transparentImageUrl: normalized.transparentImageUrl || '',
+    sourceImageUrl: normalized.garmentUrl || '',
+    provider: normalized.provider,
+    model: normalized.model,
+    tokenCost: normalized.tokenCost,
+    createdAt: normalized.createdAt
+  };
+}
+
+function productTryOnToGenerationHistoryItem(tryOn) {
+  if (!tryOn?.id || !tryOn?.imageUrl) return null;
+  return {
+    ...tryOn,
+    id: `product-${tryOn.id}`,
+    tryOnId: tryOn.id,
+    type: 'product',
+    label: 'AI Try-On',
+    title: tryOn.product?.name || 'Catalogue Try-On',
+    subtitle: tryOn.product?.brand || 'Lookmefy product'
+  };
+}
+
+function customTryOnToGenerationHistoryItem(tryOn) {
+  if (!tryOn?.id || !tryOn?.imageUrl) return null;
+  return {
+    ...tryOn,
+    id: `custom-${tryOn.id}`,
+    tryOnId: tryOn.id,
+    type: 'custom',
+    label: 'Custom Try-On',
+    title: tryOn.garment?.filename || 'Uploaded garment',
+    subtitle: 'Custom upload',
+    sourceImageUrl: tryOn.garmentUrl || ''
+  };
+}
+
 function useGenerationHistory(user) {
   const [state, setState] = useState({ items: [], loading: Boolean(user), error: '' });
   const [requestVersion, setRequestVersion] = useState(0);
@@ -1570,23 +1617,46 @@ function useGenerationHistory(user) {
     const controller = new AbortController();
     setState((current) => ({ ...current, loading: true, error: '' }));
 
-    api('/tryons', { signal: controller.signal })
-      .then(async (data) => {
-        const tryOns = Array.isArray(data.tryOns) ? data.tryOns : [];
-        const productIds = [...new Set(tryOns.map((item) => item.productId).filter(Boolean))].slice(0, 48);
-        const productPairs = await Promise.all(productIds.map(async (productId) => {
-          try {
-            const result = await api(`/products/${encodeURIComponent(productId)}`, { signal: controller.signal });
-            return [productId, result.product || null];
-          } catch {
-            return [productId, null];
-          }
-        }));
+    Promise.allSettled([
+      api('/tryons/history?limit=60', { signal: controller.signal }),
+      api('/closet', { signal: controller.signal })
+    ])
+      .then(async ([historyResult, closetResult]) => {
         if (!alive) return;
-        const productsById = Object.fromEntries(productPairs);
-        const items = tryOns
-          .filter((item) => item?.imageUrl)
-          .map((item) => ({ ...item, product: productsById[item.productId] || null }));
+        let legacyProductResult = null;
+        let legacyCustomResult = null;
+        if (historyResult.status === 'rejected') {
+          [legacyProductResult, legacyCustomResult] = await Promise.allSettled([
+            api('/tryons', { signal: controller.signal }),
+            api('/tryons/custom/latest', { signal: controller.signal })
+          ]);
+          if (!alive) return;
+        }
+        const hasHistorySource = historyResult.status === 'fulfilled'
+          || closetResult.status === 'fulfilled'
+          || legacyProductResult?.status === 'fulfilled'
+          || legacyCustomResult?.status === 'fulfilled';
+        if (!hasHistorySource) {
+          throw historyResult.reason || closetResult.reason || new Error('Generation history unavailable');
+        }
+        const unifiedItems = historyResult.status === 'fulfilled' && Array.isArray(historyResult.value?.items)
+          ? historyResult.value.items
+          : [];
+        const legacyProductItems = legacyProductResult?.status === 'fulfilled'
+          ? (legacyProductResult.value?.tryOns || []).map(productTryOnToGenerationHistoryItem).filter(Boolean)
+          : [];
+        const legacyCustomItem = legacyCustomResult?.status === 'fulfilled'
+          ? customTryOnToGenerationHistoryItem(legacyCustomResult.value?.tryOn)
+          : null;
+        const wardrobeItems = closetResult.status === 'fulfilled'
+          ? normalizeClosetData(closetResult.value).outfits.map(closetOutfitToGenerationHistoryItem).filter(Boolean)
+          : [];
+        const mergedItems = new Map();
+        [...unifiedItems, ...legacyProductItems, legacyCustomItem, ...wardrobeItems].forEach((item) => {
+          if (item?.id && item?.imageUrl) mergedItems.set(item.id, item);
+        });
+        const items = [...mergedItems.values()]
+          .sort((first, second) => new Date(second.createdAt || 0) - new Date(first.createdAt || 0));
         setState({ items, loading: false, error: '' });
       })
       .catch((error) => {
@@ -7692,11 +7762,38 @@ function DeleteAccountDialog({ onCancel, onDeleted, returnFocusRef }) {
   );
 }
 
+const generationHistoryFilters = [
+  { key: 'all', label: 'All' },
+  { key: 'wardrobe', label: 'Wardrobe' },
+  { key: 'custom', label: 'Custom Try-On' },
+  { key: 'ai', label: 'AI Try-On' }
+];
+
+function generationHistoryFilterKey(item) {
+  if (item?.type === 'closet') return 'wardrobe';
+  if (item?.type === 'custom') return 'custom';
+  if (item?.type === 'product') return 'ai';
+  return null;
+}
+
 function GenerationHistoryPage({ user }) {
   const history = useGenerationHistory(user);
   const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [activeFilter, setActiveFilter] = useState('all');
 
   if (!user) return null;
+
+  const categorizedHistoryItems = history.items.filter((item) => generationHistoryFilterKey(item));
+  const filterCounts = categorizedHistoryItems.reduce((counts, item) => {
+    const key = generationHistoryFilterKey(item);
+    counts.all += 1;
+    counts[key] += 1;
+    return counts;
+  }, { all: 0, wardrobe: 0, custom: 0, ai: 0 });
+  const visibleHistoryItems = activeFilter === 'all'
+    ? categorizedHistoryItems
+    : categorizedHistoryItems.filter((item) => generationHistoryFilterKey(item) === activeFilter);
+  const activeFilterLabel = generationHistoryFilters.find((filter) => filter.key === activeFilter)?.label || 'generation';
 
   return (
     <main className="profile-page profile-reference-page generation-history-page">
@@ -7704,19 +7801,38 @@ function GenerationHistoryPage({ user }) {
         <header className="profile-reference-head generation-history-head">
           <div>
             <h1 id="generation-history-title">Generation History</h1>
-            <p>Your AI Try-On creations, all in one place.</p>
+            <p>Your wardrobe, custom, and AI Try-On creations, all in one place.</p>
           </div>
           <a className="generation-history-back" href="/profile">Back to Profile</a>
         </header>
 
-        <section className="generation-history-content" aria-label="AI Try-On generation history">
+        {!history.loading && !history.error ? (
+          <div className="generation-history-filters" role="tablist" aria-label="Filter generation history">
+            {generationHistoryFilters.map((filter) => (
+              <button
+                className={activeFilter === filter.key ? 'active' : ''}
+                type="button"
+                role="tab"
+                aria-selected={activeFilter === filter.key}
+                onClick={() => setActiveFilter(filter.key)}
+                key={filter.key}
+              >
+                <span>{filter.label}</span>
+                <small>{filterCounts[filter.key]}</small>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <section className="generation-history-content" aria-label="Generation history">
           {history.loading && <ProductGridSkeleton count={8} />}
           {!history.loading && history.error && <StatusPanel text={history.error} onRetry={history.retry} />}
-          {!history.loading && !history.error && history.items.length > 0 && (
+          {!history.loading && !history.error && visibleHistoryItems.length > 0 && (
             <div className="generation-history-grid">
-              {history.items.map((item) => {
+              {visibleHistoryItems.map((item) => {
                 const product = item.product;
-                const title = product?.name || 'AI Try-On';
+                const title = product?.name || item.title || 'AI Try-On';
+                const label = item.label || (item.type === 'closet' ? 'Wardrobe Try-On' : 'AI Try-On');
                 const imageUrl = protectedMediaUrl(item.imageUrl);
                 return (
                   <article className="generation-history-card" key={item.id}>
@@ -7724,13 +7840,13 @@ function GenerationHistoryPage({ user }) {
                       className="generation-history-media"
                       type="button"
                       aria-label={`Open ${title} generation`}
-                      onClick={() => setFullscreenImage({ src: imageUrl, alt: `AI Try-On creation${product?.name ? ` for ${product.name}` : ''}`, title })}
+                      onClick={() => setFullscreenImage({ src: imageUrl, alt: `${label} creation for ${title}`, title })}
                     >
-                      <OptimizedImage src={imageUrl} fallbackSrc={asset('hero2.png')} alt={`AI Try-On creation${product?.name ? ` for ${product.name}` : ''}`} />
+                      <OptimizedImage src={imageUrl} fallbackSrc={asset('hero2.png')} alt={`${label} creation for ${title}`} />
                     </button>
                     <div className="generation-history-copy">
-                      <p>AI Try-On</p>
-                      {product ? <a href={`/product/${encodeURIComponent(product.id)}`}><h2>{product.name}</h2></a> : <h2>AI Try-On</h2>}
+                      <p>{label}</p>
+                      {product ? <a href={`/product/${encodeURIComponent(product.id)}`}><h2>{product.name}</h2></a> : <h2>{title}</h2>}
                       {item.createdAt && <time dateTime={item.createdAt}>{formatDate(item.createdAt)}</time>}
                     </div>
                   </article>
@@ -7738,10 +7854,16 @@ function GenerationHistoryPage({ user }) {
               })}
             </div>
           )}
-          {!history.loading && !history.error && history.items.length === 0 && (
+          {!history.loading && !history.error && categorizedHistoryItems.length === 0 && (
             <section className="wishlist-reference-empty generation-history-empty" aria-label="No generation history">
-              <div><h2>No generations yet</h2><p>Your AI Try-On creations will appear here.</p></div>
+              <div><h2>No generations yet</h2><p>Your wardrobe, custom, and AI Try-On creations will appear here.</p></div>
               <a href="/categories">Explore Styles</a>
+            </section>
+          )}
+          {!history.loading && !history.error && categorizedHistoryItems.length > 0 && visibleHistoryItems.length === 0 && (
+            <section className="wishlist-reference-empty generation-history-empty" aria-label={`No ${activeFilterLabel} generations`}>
+              <div><h2>No {activeFilterLabel} generations yet</h2><p>Choose another filter to view your other creations.</p></div>
+              <button type="button" onClick={() => setActiveFilter('all')}>View All</button>
             </section>
           )}
         </section>

@@ -22249,6 +22249,14 @@ body.onboarding-scroll-locked {
 
 .generation-history-shell { max-width: 1180px; }
 .generation-history-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
+.generation-history-filters { display: flex; align-items: center; gap: 8px; overflow-x: auto; margin: -2px 0 22px; padding: 2px 0 4px; scrollbar-width: none; }
+.generation-history-filters::-webkit-scrollbar { display: none; }
+.generation-history-filters button { display: inline-flex; min-height: 40px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 9px; border: 1px solid #ded4d0; border-radius: 999px; padding: 0 15px; background: #fffdfd; color: #37312d; font-family: var(--font-interface); font-size: 10px; font-weight: 700; cursor: pointer; transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease; }
+.generation-history-filters button:hover { border-color: #211e1c; transform: translateY(-1px); }
+.generation-history-filters button:focus-visible { outline: 2px solid #211e1c; outline-offset: 2px; }
+.generation-history-filters button small { display: grid; min-width: 21px; height: 21px; place-items: center; border-radius: 999px; padding: 0 5px; background: #f3ece9; color: #837a75; font-size: 8px; font-weight: 700; line-height: 1; }
+.generation-history-filters button.active { border-color: #211e1c; background: #211e1c; color: #fff; }
+.generation-history-filters button.active small { background: rgba(255, 255, 255, .16); color: #fff; }
 .generation-history-content { min-height: 260px; }
 .generation-history-content .status-panel { border: 1px solid #eee7e4; border-radius: 6px; background: #fffdfd; }
 .generation-history-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(12px, 1.6vw, 20px); }
@@ -22376,6 +22384,8 @@ body.onboarding-scroll-locked {
   .profile-reference-account > a { grid-column: 1 / -1; width: fit-content; }
   .profile-generation-foot,
   .generation-history-head { align-items: flex-start; flex-direction: column; }
+  .generation-history-filters { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; overflow: visible; margin-bottom: 18px; }
+  .generation-history-filters button { width: 100%; min-height: 38px; gap: 7px; padding: 0 10px; font-size: 9px; }
   .generation-history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .profile-danger-action { grid-template-columns: 1fr; }
   .profile-danger-action button { width: fit-content; }
