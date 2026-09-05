@@ -37,7 +37,7 @@ const closetItemSchema = new mongoose.Schema(
     name: { type: String, trim: true, required: true },
     category: {
       type: String,
-      enum: ['tops', 'bottoms', 'dresses', 'suits', 'outerwear', 'shoes', 'accessories', 'activewear', 'ethnic', 'other'],
+      enum: ['full-outfit', 'tops', 'bottoms', 'dresses', 'suits', 'outerwear', 'shoes', 'accessories', 'activewear', 'ethnic', 'other'],
       default: 'other',
       index: true
     },

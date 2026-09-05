@@ -57,6 +57,7 @@ const upload = multer({
 });
 
 const categoryKeywords = [
+  ['full-outfit', ['full outfit', 'complete outfit', 'full look', 'complete look', 'outfit set', 'matching set']],
   ['dresses', ['dress', 'gown', 'frock', 'onepiece', 'one piece']],
   ['suits', ['suit', 'blazer set', 'co-ord', 'coord', 'tuxedo', 'sherwani']],
   ['bottoms', ['pant', 'pants', 'trouser', 'jean', 'denim', 'short', 'skirt', 'legging', 'palazzo']],
@@ -74,7 +75,7 @@ const partyWords = ['party', 'date', 'wedding', 'function', 'celebration', 'nigh
 const activeWords = ['gym', 'run', 'sports', 'walk', 'training'];
 const fitRoomUpperCategories = new Set(['tops', 'outerwear', 'activewear', 'ethnic']);
 const fitRoomLowerCategories = new Set(['bottoms']);
-const fitRoomFullSetCategories = new Set(['dresses', 'suits']);
+const fitRoomFullSetCategories = new Set(['full-outfit', 'dresses', 'suits']);
 
 function isAllowedImageUpload(file) {
   const type = String(file.mimetype || '').toLowerCase();
@@ -449,7 +450,7 @@ function closetVisionPrompt() {
     'Return only valid compact JSON with no markdown and no commentary.',
     'Use this exact schema:',
     '{"nameSuggestion":"","category":"","subcategory":"","primaryColor":"","secondaryColors":[],"pattern":"","fabricGuess":"","texture":"","fit":"","silhouette":"","formality":"","occasions":[],"seasons":[],"styleTags":[],"pairingNotes":"","rawDescription":"","confidence":0}',
-    'Allowed category values: tops, bottoms, dresses, suits, outerwear, shoes, accessories, activewear, ethnic, other.',
+    'Allowed category values: full-outfit, tops, bottoms, dresses, suits, outerwear, shoes, accessories, activewear, ethnic, other.',
     'Allowed formality values: casual, smart-casual, formal, party, active, any.',
     'Allowed season values: summer, winter, monsoon, spring, autumn, all-season.',
     'Choose practical ecommerce wardrobe labels. Infer visual attributes from the image only. If uncertain, use an empty string, empty array, "other", "any", or lower confidence.',
@@ -1036,6 +1037,7 @@ function buildSuggestions(items, context = {}) {
   };
 
   add(`Best for ${base}`, ['tops', 'bottoms', 'shoes', 'outerwear'], 'Balanced color/formality match from your closet.');
+  add('Complete outfit ready', ['full-outfit'], 'One full outfit image ready for a direct try-on preview.');
   add('One-piece easy win', ['dresses', 'shoes', 'outerwear'], 'Fast outfit with fewer decisions and a polished silhouette.');
   add('Formal-ready combo', ['suits', 'tops', 'shoes', 'accessories'], 'Cleaner structure for office, meetings, interviews, or events.');
   add('Relaxed daily fit', ['tops', 'bottoms', 'shoes', 'accessories'], 'Comfort-first combination using versatile pieces.');

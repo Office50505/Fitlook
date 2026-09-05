@@ -41225,6 +41225,29 @@ label,
 /* Wardrobe stage alignment guard: keep the live body preview visually centered.
    Generated wardrobe looks stay unshifted because they are already composed full-body outputs. */
 @media (min-width: 861px) {
+  body:has(#main-content .wardrobe-studio-page) {
+    overflow-y: hidden !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-category-menu {
+    gap: clamp(6px, .72vh, 9px) !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-category-menu button {
+    min-height: clamp(40px, 4.65vh, 50px) !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) .wishlist-compact-footer,
+  body:has(#main-content .wardrobe-studio-page) .footer {
+    display: none !important;
+  }
+
+  body:has(#main-content .wardrobe-studio-page) .app-page-transition {
+    height: calc(100svh - 82px) !important;
+    max-height: calc(100svh - 82px) !important;
+    overflow: hidden !important;
+  }
+
   .wardrobe-studio-page .wardrobe-model-stage {
     display: grid !important;
     place-items: center !important;
@@ -41266,5 +41289,14 @@ label,
     object-fit: contain !important;
     object-position: center center !important;
     transform: none !important;
+  }
+}
+
+@media (min-width: 1241px) {
+  .wardrobe-studio-page .wardrobe-studio-shell {
+    grid-template-columns:
+      minmax(340px, 1fr)
+      clamp(560px, 32vw, 620px)
+      clamp(460px, 34vw, 650px) !important;
   }
 }

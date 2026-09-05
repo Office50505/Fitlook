@@ -4087,6 +4087,7 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, d
 
 const closetCategories = [
   ['All', 'all'],
+  ['Full Outfit', 'full-outfit'],
   ['Tops', 'tops'],
   ['Bottoms', 'bottoms'],
   ['Dresses', 'dresses'],
@@ -4685,7 +4686,7 @@ function ClosetPage({ user, setUser }) {
     : closetSuggestions.slice(0, 5).map((suggestion, index) => ({ id: suggestion.key || `${suggestion.title}-${index}`, title: suggestion.title, items: Array.isArray(suggestion.items) ? suggestion.items : [] }));
   const comboOptions = closetSuggestions.slice(0, 6);
   const selectedKey = selectedIds.slice().sort().join(':');
-  const comboPreviewItems = (selectedItems.length ? selectedItems : closetItems.filter((item) => ['tops', 'bottoms', 'suits', 'outerwear', 'shoes'].includes(item.category))).slice(0, 4);
+  const comboPreviewItems = (selectedItems.length ? selectedItems : closetItems.filter((item) => ['full-outfit', 'tops', 'bottoms', 'suits', 'outerwear', 'shoes'].includes(item.category))).slice(0, 4);
   const wardrobeSections = [
     { label: 'Tops', icon: <TryOnIcon />, categories: ['tops', 'ethnic', 'activewear'] },
     { label: 'Bottoms', icon: <ClosetIcon />, categories: ['bottoms'] },
@@ -4946,8 +4947,15 @@ function ClosetPage({ user, setUser }) {
     const options = sortedClosetItems.filter((item) => categories.includes(item.category));
     return options.length ? options[offset % options.length] : null;
   };
+  const fullOutfitItems = sortedClosetItems.filter((item) => item.category === 'full-outfit');
   const dressItems = sortedClosetItems.filter((item) => ['dresses', 'ethnic', 'suits'].includes(item.category));
   const generatedWardrobeCombos = [
+    ...fullOutfitItems.slice(0, 6).map((item, index) => ({
+      id: `full-outfit-look-${item.id}-${index}-${recommendationRefreshIndex}`,
+      title: `${occasion || 'Today'} full outfit`,
+      reason: 'Complete outfit image ready for one-step wardrobe try-on.',
+      items: [item]
+    })),
     ...dressItems.slice(0, 6).map((dress, index) => ({
       id: `dress-look-${dress.id}-${index}-${recommendationRefreshIndex}`,
       title: `${occasion || 'Today'} dress pairing`,
@@ -5056,6 +5064,7 @@ function ClosetPage({ user, setUser }) {
       return item.category === 'accessories'
         && !Object.values(wardrobeAccessoryPatterns).some((pattern) => pattern.test(itemText));
     }
+    if (categoryKey === 'full-outfit') return item.category === 'full-outfit';
     if (categoryKey === 'tops') return ['tops', 'dresses', 'ethnic', 'activewear'].includes(item.category);
     if (categoryKey === 'outerwear') return ['outerwear', 'suits'].includes(item.category);
     return item.category === categoryKey;
@@ -5068,7 +5077,8 @@ function ClosetPage({ user, setUser }) {
     { key: 'accessories', label: 'Accessories', icon: 'accessories' },
     { key: 'glasses', label: 'Glasses', icon: 'glasses' },
     { key: 'watches', label: 'Watches', icon: 'watches' },
-    { key: 'bags-hats', label: 'Bags & Hats', icon: 'bags' }
+    { key: 'bags-hats', label: 'Bags & Hats', icon: 'bags' },
+    { key: 'full-outfit', label: 'Full Outfit', icon: 'full-outfit' }
   ].map((category) => ({
     ...category,
     items: sortedClosetItems.filter((item) => wardrobeItemMatchesDrawerCategory(item, category.key))
@@ -5094,6 +5104,7 @@ function ClosetPage({ user, setUser }) {
     nextFilter === 'all' || recommendationOccasionPatterns[nextFilter]?.test(recommendationOccasionText(card))
   );
   const recommendationItemOrder = {
+    'full-outfit': 0,
     tops: 0,
     dresses: 0,
     ethnic: 0,
@@ -5104,6 +5115,7 @@ function ClosetPage({ user, setUser }) {
     accessories: 4
   };
   const recommendationPieceLabels = {
+    'full-outfit': 'Full outfit',
     tops: 'Top',
     dresses: 'Dress',
     ethnic: 'Main piece',
@@ -5246,7 +5258,7 @@ function ClosetPage({ user, setUser }) {
               alt={previewAlt}
               generating={generating}
               user={user}
-              onMediaLoad={updateWardrobeModelAspect}
+              onMediaLoad={showingGeneratedOutfit ? undefined : updateWardrobeModelAspect}
               onOpen={() => modelPreview ? setFullscreenImage({ src: modelPreview, alt: previewAlt, title: previewTitle }) : openRoute('/profile')}
               onEmpty={() => openRoute('/profile')}
             />
@@ -11089,7 +11101,7 @@ function App() {
       {!isOnline && <div className="network-status" role="status" aria-live="polite">You are offline. Changes will resume when you reconnect.</div>}
       {toast && <Toast toast={toast} onDismiss={dismissToast} />}
       {!shouldHideMobileBottomNav && <MobileBottomNav user={user} />}
-      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && <Footer />}
+      {!isStandaloneAuth && !isOpeningPage && !isConciergePage && !isWardrobeWorkspace && <Footer />}
       {shouldShowOnboarding && <OnboardingOverview user={user} onComplete={setUser} />}
       {replayTourOpen && user && <OnboardingOverview user={user} persist={false} onClose={() => setReplayTourOpen(false)} />}
     </>
@@ -11209,6 +11221,7 @@ function TagIcon() {
 }
 
 function WardrobeCategoryIcon({ name }) {
+  if (name === 'full-outfit') return <svg viewBox="0 0 32 32"><path d="M11 5 7 7l-3 6 4 2 2-4v16h12V11l2 4 4-2-3-6-4-2c-.7 2.1-2.2 3.2-5 3.2S11.7 7.1 11 5Z" /><path d="M12 16h8M13 21h6M16 8v19" /></svg>;
   if (name === 'tops') return <svg viewBox="0 0 32 32"><path d="M11 6 6 8l-3 6 5 2v11h16V16l5-2-3-6-5-2c-.7 2.2-2.3 3.5-5 3.5S11.7 8.2 11 6Z" /></svg>;
   if (name === 'bottoms') return <svg viewBox="0 0 32 32"><path d="M10 4h12l2 24h-7l-1-15-1 15H8l2-24Z" /><path d="M10 9h12" /></svg>;
   if (name === 'outerwear') return <svg viewBox="0 0 32 32"><path d="m12 5-6 3-3 8 5 2 2-5v15h12V13l2 5 5-2-3-8-6-3-4 5-4-5Z" /><path d="M16 10v18M12 5l4 5 4-5" /></svg>;
