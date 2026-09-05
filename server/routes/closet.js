@@ -215,9 +215,11 @@ function selectFitRoomClosetPlan(items = []) {
 function normalizeCategory(value, sourceText = '') {
   const given = cleanWord(value).toLowerCase();
   const known = categoryKeywords.map(([category]) => category);
+  if (['dresses', 'suits'].includes(given)) return 'full-outfit';
   if (known.includes(given)) return given;
   const haystack = `${given} ${sourceText}`.toLowerCase();
   const match = categoryKeywords.find(([, words]) => words.some((word) => haystack.includes(word)));
+  if (['dresses', 'suits'].includes(match?.[0])) return 'full-outfit';
   return match?.[0] || 'other';
 }
 
@@ -450,7 +452,8 @@ function closetVisionPrompt() {
     'Return only valid compact JSON with no markdown and no commentary.',
     'Use this exact schema:',
     '{"nameSuggestion":"","category":"","subcategory":"","primaryColor":"","secondaryColors":[],"pattern":"","fabricGuess":"","texture":"","fit":"","silhouette":"","formality":"","occasions":[],"seasons":[],"styleTags":[],"pairingNotes":"","rawDescription":"","confidence":0}',
-    'Allowed category values: full-outfit, tops, bottoms, dresses, suits, outerwear, shoes, accessories, activewear, ethnic, other.',
+    'Allowed category values: full-outfit, tops, bottoms, outerwear, shoes, accessories, activewear, ethnic, other.',
+    'Use full-outfit for dresses, gowns, suits, co-ords, sarees, lehengas, jumpsuits, rompers, and any complete outfit image.',
     'Allowed formality values: casual, smart-casual, formal, party, active, any.',
     'Allowed season values: summer, winter, monsoon, spring, autumn, all-season.',
     'Choose practical ecommerce wardrobe labels. Infer visual attributes from the image only. If uncertain, use an empty string, empty array, "other", "any", or lower confidence.',
@@ -1020,9 +1023,19 @@ function buildSuggestions(items, context = {}) {
   if (!source.length) return [];
   const base = cleanWord(`${context.occasion || 'today'} ${context.weather || ''} ${context.mood || ''}`, 'today');
   const suggestions = [];
-  const add = (title, cats, reason) => {
+  const fullSetCategories = new Set(['full-outfit', 'dresses', 'suits']);
+  const upperCategories = new Set(['tops', 'ethnic', 'activewear']);
+  const lowerCategories = new Set(['bottoms']);
+  const hasCategoryGroup = (selected, categories) => selected.some((item) => categories.has(item.category));
+  const isCompleteSuggestion = (selected, { requireFullSet = false, requireSeparates = false } = {}) => {
+    if (!selected.length) return false;
+    if (requireFullSet) return hasCategoryGroup(selected, fullSetCategories);
+    if (requireSeparates) return hasCategoryGroup(selected, upperCategories) && hasCategoryGroup(selected, lowerCategories);
+    return selected.length >= 2;
+  };
+  const add = (title, cats, reason, options = {}) => {
     const selected = bestByCategory(source, cats, context);
-    if (selected.length >= Math.min(2, cats.length)) {
+    if (isCompleteSuggestion(selected, options)) {
       const key = selected.map((item) => item._id.toString()).sort().join(':');
       if (!suggestions.some((suggestion) => suggestion.key === key)) {
         suggestions.push({
@@ -1036,12 +1049,13 @@ function buildSuggestions(items, context = {}) {
     }
   };
 
-  add(`Best for ${base}`, ['tops', 'bottoms', 'shoes', 'outerwear'], 'Balanced color/formality match from your closet.');
-  add('Complete outfit ready', ['full-outfit'], 'One full outfit image ready for a direct try-on preview.');
-  add('One-piece easy win', ['dresses', 'shoes', 'outerwear'], 'Fast outfit with fewer decisions and a polished silhouette.');
-  add('Formal-ready combo', ['suits', 'tops', 'shoes', 'accessories'], 'Cleaner structure for office, meetings, interviews, or events.');
-  add('Relaxed daily fit', ['tops', 'bottoms', 'shoes', 'accessories'], 'Comfort-first combination using versatile pieces.');
-  add('Ethnic occasion look', ['ethnic', 'bottoms', 'shoes', 'accessories'], 'Good for festive, family, or traditional occasions.');
+  add(`Best for ${base}`, ['tops', 'bottoms', 'shoes', 'outerwear', 'accessories'], 'Balanced color/formality match from your closet.', { requireSeparates: true });
+  add('Complete outfit ready', ['full-outfit'], 'One full outfit image ready for a direct try-on preview.', { requireFullSet: true });
+  add('One-piece easy win', ['full-outfit', 'shoes', 'outerwear', 'accessories'], 'Fast outfit with fewer decisions and a polished silhouette.', { requireFullSet: true });
+  add('Suit occasion look', ['full-outfit', 'shoes', 'accessories'], 'A complete suit-based look without mixing it with another outfit base.', { requireFullSet: true });
+  add('Formal-ready combo', ['tops', 'bottoms', 'outerwear', 'shoes', 'accessories'], 'Cleaner separates for office, meetings, interviews, or events.', { requireSeparates: true });
+  add('Relaxed daily fit', ['tops', 'bottoms', 'shoes', 'accessories'], 'Comfort-first combination using versatile pieces.', { requireSeparates: true });
+  add('Ethnic occasion look', ['ethnic', 'bottoms', 'shoes', 'accessories'], 'Good for festive, family, or traditional occasions.', { requireSeparates: true });
 
   return suggestions.slice(0, 5);
 }

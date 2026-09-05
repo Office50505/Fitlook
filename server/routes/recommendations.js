@@ -508,6 +508,36 @@ router.post('/events/batch', requireUser, recommendationEventLimiter, async (req
   }
 });
 
+router.get('/recent-searches', requireUser, recommendationReadLimiter, async (req, res) => {
+  try {
+    const limit = boundedLimit(req.query.limit, 5, 12);
+    const events = await UserEvent.find({
+      user: req.user._id,
+      type: 'search',
+      query: { $exists: true, $ne: '' }
+    })
+      .sort({ createdAt: -1 })
+      .limit(80)
+      .lean();
+    const seenQueries = new Set();
+    const searches = [];
+
+    for (const event of events) {
+      const query = String(event.query || '').replace(/\s+/g, ' ').trim();
+      const queryKey = query.toLowerCase();
+      if (!query || seenQueries.has(queryKey)) continue;
+      seenQueries.add(queryKey);
+      searches.push({ query, createdAt: event.createdAt });
+      if (searches.length >= limit) break;
+    }
+
+    res.json({ searches });
+  } catch (error) {
+    console.warn('[recommendations:recent-searches] failed', error.message);
+    res.json({ searches: [] });
+  }
+});
+
 router.get('/admin/stats', requireAdmin, requireUserOperationsAdmin, async (req, res) => {
   try {
     const period = analyticsPeriodFromQuery(req.query);

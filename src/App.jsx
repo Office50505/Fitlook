@@ -22,13 +22,18 @@ const API_TIMEOUT_MS = 25000;
 const AI_IMAGE_TIMEOUT_MS = 180000;
 const AI_VIDEO_TIMEOUT_MS = 300000;
 const PRODUCT_CACHE_TTL_MS = 30_000;
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '').replace(/\/api$/, '');
 const AUTH_TOKEN_KEY = 'fitlook_token';
 const MEDIA_TOKEN_KEY = 'fitlook_media_token';
+const RECOMMENDATION_CLIENT = 'web';
+const RECOMMENDATION_SOURCE_FOR_YOU = 'recommended_for_you';
+const RECOMMENDATION_SOURCE_SIMILAR = 'similar_products';
+const RECOMMENDATION_SOURCE_SEARCH = 'search_recommendations';
 const APP_STORE_URL = safeExternalStoreUrl(import.meta.env.VITE_APP_STORE_URL);
 const PLAY_STORE_URL = safeExternalStoreUrl(import.meta.env.VITE_PLAY_STORE_URL);
 const productListCache = new Map();
 const productDetailLocalCache = new Map();
+const sentRecommendationImpressionKeys = new Set();
 const EMPTY_PRODUCT_FACETS = { brands: [], categories: [], categoryCounts: [] };
 const INDIA_STATES = [
   'Andaman and Nicobar Islands',
@@ -499,7 +504,7 @@ const categories = [
   ['Pants', 'category-3.jpg', 'pants'],
   ['Jeans', 'category-4.jpg', 'jeans'],
   ['Jackets', 'category-5.jpg', 'jackets'],
-  ['Shoes', 'category-6.jpg', 'shoes'],
+  ['Footwear', 'category-6.jpg', 'shoes'],
   ['Watches', 'category-7.jpg', 'watches'],
   ['Accessories', 'category-8.jpg', 'accessories'],
   ['Ethnic Wear', 'arrival-4.jpg', 'ethnic wear'],
@@ -1071,6 +1076,49 @@ function saveRecentSearch(search) {
   return next;
 }
 
+function currentClientPath() {
+  if (typeof window === 'undefined') return '/';
+  return `${window.location.pathname || '/'}${window.location.search || ''}`;
+}
+
+function recommendationQuery({ limit, surface, client } = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', String(limit));
+  if (surface) params.set('surface', surface);
+  if (client) params.set('client', client);
+  return params.toString();
+}
+
+function productRecommendationContext(product) {
+  const context = product?.recommendationContext && typeof product.recommendationContext === 'object'
+    ? product.recommendationContext
+    : {};
+  const source = String(context.source || '').trim();
+  return {
+    source,
+    rank: Number(context.rank || 0) || undefined,
+    algorithmVersion: context.algorithmVersion || product?.algorithmVersion || '',
+    personalized: typeof context.personalized === 'boolean' ? context.personalized : undefined
+  };
+}
+
+function normalizeRecentSearchEntry(entry) {
+  if (typeof entry === 'string' || typeof entry === 'number') return normalizeSearchQuery(entry);
+  if (!entry || typeof entry !== 'object') return '';
+  return normalizeSearchQuery(entry.query || entry.search || entry.term || entry.text || entry.value || '');
+}
+
+function mergeRecentSearches(primary = [], fallback = [], limit = 6) {
+  const seen = new Set();
+  return [...primary, ...fallback].map(normalizeRecentSearchEntry).filter((search) => {
+    if (!search) return false;
+    const key = search.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, limit);
+}
+
 function readableError(value, fallback = 'Request failed') {
   if (!value) return fallback;
   if (typeof value === 'string') return value;
@@ -1264,10 +1312,96 @@ function razorpayFailureMessage(response) {
 function recordEvent(type, payload = {}) {
   trackClientEvent(type, payload);
   if (!readAuthToken()) return;
+  const body = {
+    path: currentClientPath(),
+    ...payload,
+    type
+  };
   api('/recommendations/events', {
     method: 'POST',
-    body: JSON.stringify({ type, ...payload })
+    body: JSON.stringify(body)
   }).catch(() => {});
+}
+
+function useRecommendationImpressions(products = [], {
+  source = RECOMMENDATION_SOURCE_FOR_YOU,
+  surface = 'home',
+  client = RECOMMENDATION_CLIENT,
+  enabled = true,
+  requireRecommendationContext = true
+} = {}) {
+  const idsKey = (products || []).map((product) => product?.id || product?._id || '').filter(Boolean).join(',');
+
+  useEffect(() => {
+    if (!enabled || !readAuthToken() || !idsKey) return;
+    const path = currentClientPath();
+    const events = (products || []).flatMap((product, index) => {
+      const productId = String(product?.id || product?._id || '');
+      if (!productId) return [];
+      const context = productRecommendationContext(product);
+      if (requireRecommendationContext && !context.source) return [];
+      const eventSource = source || context.source || RECOMMENDATION_SOURCE_FOR_YOU;
+      const key = `${path}:${eventSource}:${surface}:${productId}`;
+      if (sentRecommendationImpressionKeys.has(key)) return [];
+      sentRecommendationImpressionKeys.add(key);
+      return [{
+        type: 'recommendation_impression',
+        productId,
+        source: eventSource,
+        metadata: {
+          surface,
+          client,
+          rank: context.rank || index + 1,
+          algorithmVersion: context.algorithmVersion,
+          personalized: context.personalized
+        }
+      }];
+    });
+    if (!events.length) return;
+    api('/recommendations/events/batch', {
+      method: 'POST',
+      body: JSON.stringify({ path, events })
+    }).catch(() => {});
+  }, [enabled, idsKey, source, surface, client, requireRecommendationContext, products]);
+}
+
+function useRecentSearchSuggestions(user, limit = 5) {
+  const [recentSearches, setRecentSearches] = useState(readRecentSearches);
+
+  useEffect(() => {
+    if (!user || !readAuthToken()) {
+      setRecentSearches(readRecentSearches());
+      return;
+    }
+    let alive = true;
+    api(`/recommendations/recent-searches?limit=${limit}`, { retry: 0 })
+      .then((data) => {
+        if (!alive) return;
+        const remote = data?.searches || data?.recentSearches || data?.queries || data?.items || [];
+        setRecentSearches(mergeRecentSearches(remote, readRecentSearches(), Math.max(limit, 6)));
+      })
+      .catch(() => {
+        if (alive) setRecentSearches(readRecentSearches());
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user, limit]);
+
+  const rememberRecentSearch = (search) => {
+    const next = saveRecentSearch(search);
+    setRecentSearches((current) => mergeRecentSearches(next, current, Math.max(limit, 6)));
+    return next;
+  };
+
+  const clearRecentSearches = () => {
+    try {
+      localStorage.removeItem('fitlook_recent_searches');
+    } catch {}
+    setRecentSearches([]);
+  };
+
+  return [recentSearches, rememberRecentSearch, clearRecentSearches];
 }
 
 function tryOnProfileBlockMessage(user) {
@@ -1366,7 +1500,10 @@ function useProducts(params) {
   return { ...state, retry: () => setRequestVersion((current) => current + 1) };
 }
 
-function useRecommendedProducts(user, limit = 6) {
+function useRecommendedProducts(user, limit = 6, {
+  surface = 'home',
+  client = RECOMMENDATION_CLIENT
+} = {}) {
   const [state, setState] = useState({ products: [], total: 0, facets: { brands: [], categories: [], categoryCounts: [] }, loading: Boolean(user), error: '' });
 
   useEffect(() => {
@@ -1376,8 +1513,9 @@ function useRecommendedProducts(user, limit = 6) {
     }
     let alive = true;
     const controller = new AbortController();
+    const query = recommendationQuery({ limit, surface, client });
     setState((current) => ({ ...current, loading: true, error: '' }));
-    api(`/recommendations/for-you?limit=${limit}`, { signal: controller.signal })
+    api(`/recommendations/for-you?${query}`, { signal: controller.signal })
       .then((data) => {
         if (alive) setState({ ...normalizeProductListResponse(data), facets: EMPTY_PRODUCT_FACETS });
       })
@@ -1388,7 +1526,7 @@ function useRecommendedProducts(user, limit = 6) {
       alive = false;
       controller.abort();
     };
-  }, [user, limit]);
+  }, [user, limit, surface, client]);
 
   return state;
 }
@@ -1400,8 +1538,9 @@ function useSimilarProducts(id, limit = 4) {
     if (!id) return;
     let alive = true;
     const controller = new AbortController();
+    const query = recommendationQuery({ limit, client: RECOMMENDATION_CLIENT });
     setState({ products: [], loading: true, error: '' });
-    api(`/recommendations/similar/${encodeURIComponent(id)}?limit=${limit}`, { signal: controller.signal })
+    api(`/recommendations/similar/${encodeURIComponent(id)}?${query}`, { signal: controller.signal })
       .then((data) => {
         if (alive) setState({ products: Array.isArray(data?.products) ? data.products : [], loading: false, error: '' });
       })
@@ -1728,7 +1867,7 @@ function Header({ user, setUser, authChecked = true }) {
   const [desktopSearch, setDesktopSearch] = useState(currentSearchValue);
   const headerRef = useRef(null);
   const desktopSearchRef = useRef(null);
-  const [recentSearches, setRecentSearches] = useState(readRecentSearches);
+  const [recentSearches, rememberRecentSearch] = useRecentSearchSuggestions(user, 5);
   const currentPath = normalizePath();
   const currentParams = new URLSearchParams(window.location.search);
   const searchValueFromUrl = currentSearchValue();
@@ -1845,7 +1984,7 @@ function Header({ user, setUser, authChecked = true }) {
       desktopSearchRef.current?.focus();
       return;
     }
-    setRecentSearches(saveRecentSearch(query));
+    rememberRecentSearch(query);
     setMenuOpen(false);
   };
   const clearSearch = () => {
@@ -1913,10 +2052,18 @@ function Header({ user, setUser, authChecked = true }) {
   );
 }
 
-function SearchLandingPage() {
+function SearchLandingPage({ user }) {
   const searchInputRef = useRef(null);
   const [query, setQuery] = useState(currentSearchValue);
-  const [recentSearches, setRecentSearches] = useState(readRecentSearches);
+  const [recentSearches, rememberRecentSearch, clearRecentSearches] = useRecentSearchSuggestions(user, 5);
+  const searchSuggestions = useRecommendedProducts(user, 8, { surface: 'search', client: RECOMMENDATION_CLIENT });
+  const suggestedProducts = uniqueProducts(searchSuggestions.products).slice(0, 4);
+  useRecommendationImpressions(suggestedProducts, {
+    source: RECOMMENDATION_SOURCE_SEARCH,
+    surface: 'search',
+    client: RECOMMENDATION_CLIENT,
+    enabled: Boolean(user && suggestedProducts.length)
+  });
   const quickSearches = popularSearchTerms;
   const featuredCategories = featuredSearchCategories;
 
@@ -1934,7 +2081,7 @@ function SearchLandingPage() {
       searchInputRef.current?.focus();
       return;
     }
-    setRecentSearches(saveRecentSearch(nextQuery));
+    rememberRecentSearch(nextQuery);
   };
 
   return (
@@ -1952,10 +2099,31 @@ function SearchLandingPage() {
           <div className="mobile-search-block">
             <div className="mobile-search-block-head">
               <h2>Recent searches</h2>
-              <button type="button" onClick={() => { localStorage.removeItem('fitlook_recent_searches'); setRecentSearches([]); }}>Clear</button>
+              <button type="button" onClick={clearRecentSearches}>Clear</button>
             </div>
             <div className="mobile-search-chip-row">
               {recentSearches.map((search) => <a href={`/categories?q=${encodeURIComponent(search)}`} key={search}>{search}</a>)}
+            </div>
+          </div>
+        )}
+        {suggestedProducts.length > 0 && (
+          <div className="mobile-search-block">
+            <h2>Suggestions for you</h2>
+            <div className="mobile-search-category-grid">
+              {suggestedProducts.map((product) => (
+                <a
+                  href={`/product/${encodeURIComponent(product.id)}`}
+                  key={product.id}
+                  onClick={() => recordEvent('product_click', {
+                    productId: product.id,
+                    source: RECOMMENDATION_SOURCE_SEARCH,
+                    metadata: { surface: 'search', client: RECOMMENDATION_CLIENT }
+                  })}
+                >
+                  <OptimizedImage src={product.imageUrl || asset('hero2.png')} alt="" />
+                  <span>{product.name}</span>
+                </a>
+              ))}
             </div>
           </div>
         )}
@@ -2297,16 +2465,33 @@ const atelierHeroSlides = [
   }
 ];
 
-function AtelierProductRailCard({ product, demoEcommerceMode = false }) {
+function AtelierProductRailCard({ product, demoEcommerceMode = false, trackingSource = '', trackingSurface = 'home' }) {
   const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
   const discount = hasDiscount ? Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100) : 0;
   const rating = Number(product.rating || 0);
   const ratingCount = Number(product.ratingCount || product.reviewsCount || product.reviewCount || 0);
   const badge = displayProductBadge(product, { demoEcommerceMode });
+  const recommendationContext = productRecommendationContext(product);
+  const eventSource = trackingSource || recommendationContext.source;
+  const trackingMetadata = eventSource ? {
+    surface: trackingSurface,
+    client: RECOMMENDATION_CLIENT,
+    rank: recommendationContext.rank,
+    algorithmVersion: recommendationContext.algorithmVersion,
+    personalized: recommendationContext.personalized
+  } : null;
 
   return (
     <article className="atelier-product">
-      <a className="atelier-product-link" href={`/product/${encodeURIComponent(product.id)}`} aria-label={`Open ${product.name}`}>
+      <a
+        className="atelier-product-link"
+        href={`/product/${encodeURIComponent(product.id)}`}
+        aria-label={`Open ${product.name}`}
+        onClick={() => recordEvent('product_click', {
+          productId: product.id,
+          ...(eventSource ? { source: eventSource, metadata: trackingMetadata } : {})
+        })}
+      >
         <span className="atelier-product-image">
           {(badge || discount > 0) && <span className="atelier-best-seller">{badge || `${discount}% off`}</span>}
           <OptimizedImage src={product.imageUrl} alt={product.name} />
@@ -2428,6 +2613,13 @@ function AtelierCommerceStrip({ id, title, subtitle, products, viewHref = '/cate
   const railRef = useRef(null);
   const isMobileRail = useMediaQuery('(max-width: 760px)');
   const visibleProducts = uniqueProducts(products).slice(0, isMobileRail ? 8 : 18);
+  const isRecommendedForYouRail = id === 'recommended-for-you';
+  useRecommendationImpressions(visibleProducts, {
+    source: RECOMMENDATION_SOURCE_FOR_YOU,
+    surface: 'home',
+    client: RECOMMENDATION_CLIENT,
+    enabled: isRecommendedForYouRail
+  });
   if (!visibleProducts.length) return null;
 
   const scrollRail = (direction) => {
@@ -2457,7 +2649,15 @@ function AtelierCommerceStrip({ id, title, subtitle, products, viewHref = '/cate
           </div>
         </div>
         <div className="atelier-product-grid atelier-arrivals-rail" id={id} ref={railRef} tabIndex="0" aria-label={title} onKeyDown={handleKeyDown}>
-          {visibleProducts.map((product) => <AtelierProductRailCard product={product} demoEcommerceMode={demoEcommerceMode} key={`${id}-${product.id}`} />)}
+          {visibleProducts.map((product) => (
+            <AtelierProductRailCard
+              product={product}
+              demoEcommerceMode={demoEcommerceMode}
+              trackingSource={isRecommendedForYouRail ? RECOMMENDATION_SOURCE_FOR_YOU : ''}
+              trackingSurface="home"
+              key={`${id}-${product.id}`}
+            />
+          ))}
         </div>
       </div>
     </section>
@@ -2722,7 +2922,7 @@ function AtelierBestCategories({ categories = [] }) {
 
 function AtelierHome({ user, demoEcommerceMode = false }) {
   const state = useProducts({ limit: 96, sort: 'newest' });
-  const recommendedState = useRecommendedProducts(user, 16);
+  const recommendedState = useRecommendedProducts(user, 12, { surface: 'home', client: RECOMMENDATION_CLIENT });
   const arrivalsRailRef = useRef(null);
   const tryOnRailRef = useRef(null);
   const essentialsRailRef = useRef(null);
@@ -4090,10 +4290,8 @@ const closetCategories = [
   ['Full Outfit', 'full-outfit'],
   ['Tops', 'tops'],
   ['Bottoms', 'bottoms'],
-  ['Dresses', 'dresses'],
-  ['Suits', 'suits'],
   ['Outerwear', 'outerwear'],
-  ['Shoes', 'shoes'],
+  ['Footwear', 'shoes'],
   ['Accessories', 'accessories'],
   ['Activewear', 'activewear'],
   ['Ethnic', 'ethnic'],
@@ -4121,6 +4319,17 @@ function closetList(value) {
   return [];
 }
 
+function normalizeWardrobeCategory(value, fallback = 'other') {
+  const category = closetText(value, fallback).toLowerCase() || fallback;
+  if (['dresses', 'suits'].includes(category)) return 'full-outfit';
+  return category;
+}
+
+function wardrobeCategoryLabel(value) {
+  const category = normalizeWardrobeCategory(value, '');
+  return closetCategories.find(([, key]) => key === category)?.[0] || categoryLabel(category || value);
+}
+
 function normalizeClosetItem(item = {}, index = 0) {
   const source = item && typeof item === 'object' ? item : {};
   const id = closetText(source.id || source._id || source.productId, `closet-item-${index}`);
@@ -4128,7 +4337,7 @@ function normalizeClosetItem(item = {}, index = 0) {
     ...source,
     id,
     name: closetText(source.name || source.title, 'Wardrobe item'),
-    category: closetText(source.category, 'other').toLowerCase() || 'other',
+    category: normalizeWardrobeCategory(source.category),
     imageUrl: closetText(source.imageUrl || source.image || source.thumbnailUrl),
     color: closetText(source.color),
     fabric: closetText(source.fabric),
@@ -4586,6 +4795,7 @@ function ClosetPage({ user, setUser }) {
   ]);
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [mobileWardrobePicker, setMobileWardrobePicker] = useState(null);
+  const [mobileWardrobeDrawerOpen, setMobileWardrobeDrawerOpen] = useState(false);
   const generateInFlightRef = useRef(false);
   const latestOutfitPreviewOpenedRef = useRef(false);
 
@@ -4654,7 +4864,7 @@ function ClosetPage({ user, setUser }) {
     { key: 'bottomwear', label: 'Bottomwear', helper: 'Pants, denim, skirts', short: 'Bo', categories: ['bottoms'] },
     { key: 'goggles', label: 'Goggles', helper: 'Glasses and shades', short: 'Go', categories: ['accessories'], keywords: ['goggle', 'goggles', 'glass', 'glasses', 'sunglass', 'eyewear'] },
     { key: 'cap', label: 'Cap', helper: 'Caps and hats', short: 'Ca', categories: ['accessories'], keywords: ['cap', 'hat'] },
-    { key: 'footwear', label: 'Footwear', helper: 'Shoes, boots, sandals', short: 'Fo', categories: ['shoes'] }
+    { key: 'footwear', label: 'Footwear', helper: 'Footwear, boots, sandals', short: 'Fo', categories: ['shoes'] }
   ];
   const wardrobeSlotMatches = (slot, item, strict = false) => {
     if (!item?.category) return false;
@@ -4691,7 +4901,7 @@ function ClosetPage({ user, setUser }) {
     { label: 'Tops', icon: <TryOnIcon />, categories: ['tops', 'ethnic', 'activewear'] },
     { label: 'Bottoms', icon: <ClosetIcon />, categories: ['bottoms'] },
     { label: 'Outerwear', icon: <BagIcon />, categories: ['outerwear', 'suits'] },
-    { label: 'Shoes', icon: <TagIcon />, categories: ['shoes'] }
+    { label: 'Footwear', icon: <TagIcon />, categories: ['shoes'] }
   ].map((section) => ({
     ...section,
     items: closetItems.filter((item) => section.categories.includes(item.category))
@@ -4903,11 +5113,13 @@ function ClosetPage({ user, setUser }) {
     const matchedSlot = matchedComboSlot(item);
     if (!matchedSlot) {
       toggleSelected(item);
+      if (window.matchMedia?.('(max-width: 760px)').matches) setMobileWardrobeDrawerOpen(false);
       return;
     }
     const shouldClear = comboSlots[matchedSlot.key] === item.id;
     chooseSlotItem(matchedSlot.key, shouldClear ? null : item);
     if (autoApply) setMessage(shouldClear ? `Removed ${item.name} from the look.` : `${item.name} added to the look.`);
+    if (window.matchMedia?.('(max-width: 760px)').matches) setMobileWardrobeDrawerOpen(false);
   };
 
   const applyAccessorySlot = (slotKey, label) => {
@@ -4947,8 +5159,42 @@ function ClosetPage({ user, setUser }) {
     const options = sortedClosetItems.filter((item) => categories.includes(item.category));
     return options.length ? options[offset % options.length] : null;
   };
+  const recommendationUpperCategories = ['tops', 'ethnic', 'activewear'];
+  const recommendationLowerCategories = ['bottoms'];
+  const recommendationLayerCategories = ['outerwear'];
+  const recommendationFootwearCategories = ['shoes'];
+  const recommendationAccessoryCategories = ['accessories'];
+  const fullBodyRecommendationCategories = new Set(['full-outfit', 'dresses', 'suits']);
+  const isFullBodyRecommendationItem = (item) => fullBodyRecommendationCategories.has(item?.category);
+  const pickRecommendationItem = (safeItems, categories, offset = 0) => {
+    return safeItems.find((item) => categories.includes(item.category))
+      || closetItemsForCategories(categories, offset);
+  };
+  const sanitizeRecommendationItems = (items = [], offset = 0) => {
+    const safeItems = uniqueClosetItems((Array.isArray(items) ? items : []).filter((item) => item?.id && item?.imageUrl));
+    const fullBodyItem = safeItems.find(isFullBodyRecommendationItem);
+    if (fullBodyItem) {
+      if (fullBodyItem.category === 'full-outfit') return [fullBodyItem];
+      return uniqueClosetItems([
+        fullBodyItem,
+        pickRecommendationItem(safeItems, recommendationLayerCategories, offset),
+        pickRecommendationItem(safeItems, recommendationFootwearCategories, offset),
+        pickRecommendationItem(safeItems, recommendationAccessoryCategories, offset)
+      ]);
+    }
+    const upperItem = pickRecommendationItem(safeItems, recommendationUpperCategories, offset);
+    const lowerItem = pickRecommendationItem(safeItems, recommendationLowerCategories, offset);
+    if (!upperItem || !lowerItem) return [];
+    return uniqueClosetItems([
+      upperItem,
+      lowerItem,
+      pickRecommendationItem(safeItems, recommendationLayerCategories, offset),
+      pickRecommendationItem(safeItems, recommendationFootwearCategories, offset),
+      pickRecommendationItem(safeItems, recommendationAccessoryCategories, offset)
+    ]);
+  };
   const fullOutfitItems = sortedClosetItems.filter((item) => item.category === 'full-outfit');
-  const dressItems = sortedClosetItems.filter((item) => ['dresses', 'ethnic', 'suits'].includes(item.category));
+  const dressItems = sortedClosetItems.filter((item) => ['dresses', 'suits'].includes(item.category));
   const generatedWardrobeCombos = [
     ...fullOutfitItems.slice(0, 6).map((item, index) => ({
       id: `full-outfit-look-${item.id}-${index}-${recommendationRefreshIndex}`,
@@ -4963,22 +5209,26 @@ function ClosetPage({ user, setUser }) {
       items: uniqueClosetItems([
         dress,
         closetItemsForCategories(['shoes'], index + recommendationRefreshIndex),
-        closetItemsForCategories(['outerwear', 'suits'], index + recommendationRefreshIndex),
+        closetItemsForCategories(['outerwear'], index + recommendationRefreshIndex),
         closetItemsForCategories(['accessories'], index + recommendationRefreshIndex)
       ])
     })),
-    ...Array.from({ length: 6 }).map((_, index) => ({
-      id: `wardrobe-look-${index}-${recommendationRefreshIndex}`,
-      title: `${closetOccasions[(index + recommendationRefreshIndex) % closetOccasions.length] || occasion || 'Today'} outfit pair`,
-      reason: `Recommended for ${closetOccasions[(index + recommendationRefreshIndex) % closetOccasions.length] || occasion || 'today'}.`,
-      items: uniqueClosetItems([
-        closetItemsForCategories(['tops', 'ethnic'], index + recommendationRefreshIndex),
-        closetItemsForCategories(['bottoms'], index + recommendationRefreshIndex),
-        closetItemsForCategories(['outerwear', 'suits'], index + recommendationRefreshIndex),
-        closetItemsForCategories(['shoes'], index + recommendationRefreshIndex),
-        closetItemsForCategories(['accessories'], index + recommendationRefreshIndex)
-      ])
-    }))
+    ...Array.from({ length: 6 }).map((_, index) => {
+      const topItem = closetItemsForCategories(['tops', 'ethnic', 'activewear'], index + recommendationRefreshIndex);
+      const bottomItem = closetItemsForCategories(['bottoms'], index + recommendationRefreshIndex);
+      return {
+        id: `wardrobe-look-${index}-${recommendationRefreshIndex}`,
+        title: `${closetOccasions[(index + recommendationRefreshIndex) % closetOccasions.length] || occasion || 'Today'} outfit pair`,
+        reason: `Recommended for ${closetOccasions[(index + recommendationRefreshIndex) % closetOccasions.length] || occasion || 'today'}.`,
+        items: topItem && bottomItem ? uniqueClosetItems([
+          topItem,
+          bottomItem,
+          closetItemsForCategories(['outerwear'], index + recommendationRefreshIndex),
+          closetItemsForCategories(['shoes'], index + recommendationRefreshIndex),
+          closetItemsForCategories(['accessories'], index + recommendationRefreshIndex)
+        ]) : []
+      };
+    })
   ].filter((card) => card.items.length > 0);
   const suggestionRecommendationCombos = closetSuggestions
     .slice(0, 6)
@@ -4986,7 +5236,7 @@ function ClosetPage({ user, setUser }) {
       id: suggestion.key || suggestion.title || `suggestion-${index}`,
       title: suggestion.title || closetOccasions[index] || 'Recommended look',
       reason: suggestion.reason || `Recommended for ${occasion || 'today'}.`,
-      items: (Array.isArray(suggestion.items) ? suggestion.items : []).filter((item) => item?.imageUrl)
+      items: sanitizeRecommendationItems(suggestion.items, index + recommendationRefreshIndex)
     }))
     .filter((card) => card.items.length > 0);
   const recommendationCombos = [...suggestionRecommendationCombos, ...generatedWardrobeCombos];
@@ -5073,7 +5323,7 @@ function ClosetPage({ user, setUser }) {
     { key: 'tops', label: 'Tops', icon: 'tops' },
     { key: 'bottoms', label: 'Bottoms', icon: 'bottoms' },
     { key: 'outerwear', label: 'Outerwear', icon: 'outerwear' },
-    { key: 'shoes', label: 'Shoes', icon: 'shoes' },
+    { key: 'shoes', label: 'Footwear', icon: 'shoes' },
     { key: 'accessories', label: 'Accessories', icon: 'accessories' },
     { key: 'glasses', label: 'Glasses', icon: 'glasses' },
     { key: 'watches', label: 'Watches', icon: 'watches' },
@@ -5121,7 +5371,7 @@ function ClosetPage({ user, setUser }) {
     ethnic: 'Main piece',
     suits: 'Suit',
     bottoms: 'Bottom',
-    shoes: 'Shoes',
+    shoes: 'Footwear',
     outerwear: 'Layer',
     accessories: 'Accessory'
   };
@@ -5129,7 +5379,7 @@ function ClosetPage({ user, setUser }) {
     .filter((item) => item?.id && safeWardrobeImageUrl(item.imageUrl))
     .sort((first, second) => (recommendationItemOrder[first.category] ?? 5) - (recommendationItemOrder[second.category] ?? 5))
     .filter((item, index, items) => items.findIndex((candidate) => candidate.category === item.category) === index)
-    .slice(0, 3);
+    .slice(0, 5);
   const visibleRecommendedOutfits = wardrobeRecommendationCards.filter((card) => {
     return matchesRecommendationOccasion(card, recommendationFilter);
   });
@@ -5146,6 +5396,14 @@ function ClosetPage({ user, setUser }) {
     setMessage('');
   };
   const chooseWardrobeCategory = (key) => {
+    const category = wardrobeCategoryMenu.find((entry) => entry.key === key);
+    if (window.matchMedia?.('(max-width: 760px)').matches) {
+      if (!state.loading && category && !category.items.length) {
+        openRoute('/closet/add');
+        return;
+      }
+      setMobileWardrobeDrawerOpen(true);
+    }
     setActiveWardrobeCategory(key);
     setFilter(key);
   };
@@ -5174,13 +5432,14 @@ function ClosetPage({ user, setUser }) {
       <div className="wardrobe-studio-shell" style={{ '--wardrobe-model-aspect': wardrobeModelAspect }}>
         <aside className="wardrobe-sidebar" aria-label="Wardrobe categories">
           <div className="wardrobe-sidebar-workspace">
-            <section className="wardrobe-category-drawer" id="wardrobe-category-drawer" aria-live="polite">
+            <section className={`wardrobe-category-drawer ${mobileWardrobeDrawerOpen ? 'mobile-open' : ''}`} id="wardrobe-category-drawer" aria-live="polite">
               <header>
                 <div>
                   <h2>{activeWardrobeDrawer.label}</h2>
                   <span>{activeWardrobeDrawer.items.length} {activeWardrobeDrawer.items.length === 1 ? 'item' : 'items'}</span>
                 </div>
                 <a href="/closet/add" aria-label={`Add ${activeWardrobeDrawer.label.toLowerCase()}`}>＋ Add</a>
+                <button className="wardrobe-drawer-close" type="button" onClick={() => setMobileWardrobeDrawerOpen(false)} aria-label="Close wardrobe collection">×</button>
               </header>
 
               {state.loading ? (
@@ -5263,23 +5522,41 @@ function ClosetPage({ user, setUser }) {
               onEmpty={() => openRoute('/profile')}
             />
           </div>
-          <div className="wardrobe-stage-try-on-area">
-            <button
-              className="wardrobe-try-on-button wardrobe-stage-try-on-button"
-              type="button"
-              onClick={tryOnWardrobeLook}
-              disabled={generating || closetItems.length === 0}
-            >
-              <TryOnIcon />
-              <span>{generating ? 'Creating look…' : 'Try On'}</span>
-            </button>
-            <WardrobeTryOnNotices
-              showDisclaimer={showingGeneratedOutfit && !generating}
-              message={!generating ? visibleWardrobeStageMessage : ''}
-              isError={wardrobeStageMessageIsError}
-            />
-          </div>
+          <a className="wardrobe-mobile-add-item" href="/closet/add" aria-label="Add wardrobe item">
+            <span>＋</span>
+            <strong>Add Item</strong>
+          </a>
+          <button
+            className="wardrobe-stage-ai-card"
+            type="button"
+            onClick={tryOnWardrobeLook}
+            disabled={generating || closetItems.length === 0}
+            aria-label={generating ? 'Creating AI outfit' : 'Generate AI outfit'}
+          >
+            <SparkleLineIcon />
+            <span>
+              <strong>{generating ? 'Creating' : 'AI Outfit'}</strong>
+              <small>{generating ? 'Please wait' : 'Generate look'}</small>
+            </span>
+          </button>
         </section>
+
+        <div className="wardrobe-stage-try-on-area">
+          <button
+            className="wardrobe-try-on-button wardrobe-stage-try-on-button"
+            type="button"
+            onClick={tryOnWardrobeLook}
+            disabled={generating || closetItems.length === 0}
+          >
+            <TryOnIcon />
+            <span>{generating ? 'Creating look…' : 'Try On'}</span>
+          </button>
+          <WardrobeTryOnNotices
+            showDisclaimer={showingGeneratedOutfit && !generating}
+            message={!generating ? visibleWardrobeStageMessage : ''}
+            isError={wardrobeStageMessageIsError}
+          />
+        </div>
 
         <aside className="wardrobe-recommendations" aria-label="Wardrobe recommendations">
           <section className="wardrobe-items-panel">
@@ -5785,7 +6062,7 @@ function ClosetAddPage({ user, setUser }) {
       if (!field.value || defaults.includes(field.value)) field.value = next;
     };
     setField('name', details.name);
-    setField('category', details.category);
+    setField('category', normalizeWardrobeCategory(details.category, ''));
     setField('color', details.color);
     setField('fabric', details.fabric);
     setField('pattern', details.pattern);
@@ -5924,9 +6201,9 @@ function ClosetAddPage({ user, setUser }) {
           </div>
 
           <section className="atelier-closet-specifications">
-            <header><span>Archive Entry: {categoryLabel(detectedProfile?.category || 'New Item')}</span><h2>Item Specifications</h2></header>
+            <header><span>Archive Entry: {detectedProfile?.category ? wardrobeCategoryLabel(detectedProfile.category) : 'New Item'}</span><h2>Item Specifications</h2></header>
             <div className="atelier-closet-form-grid">
-              <label><span>Dress Name</span><input name="name" placeholder="e.g. Moonlight Silk Slip" /></label>
+              <label><span>Item Name</span><input name="name" placeholder="e.g. Moonlight Silk Slip" /></label>
               <label><span>Type</span><select name="category" defaultValue=""><option value="">Select type</option>{closetCategories.slice(1).map(([label, value]) => <option key={value} value={value}>{label}</option>)}</select></label>
               <label className="atelier-closet-color-field"><span>Color</span><div><i aria-hidden="true" /><input name="color" placeholder="Stone / Ivory" /></div></label>
               <label><span>Fabric</span><input name="fabric" placeholder="Silk, linen, cotton" /></label>
@@ -6290,6 +6567,10 @@ function toggleWishlistProductId(productOrId) {
     api(`/auth/wishlist/${encodeURIComponent(id)}`, { method: saved ? 'PUT' : 'DELETE' })
       .catch(() => announce('Wishlist saved on this device. Account sync will retry when the connection is available.', 'error'));
   }
+  recordEvent(saved ? 'wishlist' : 'wishlist_remove', {
+    productId: id,
+    metadata: product ? { productName: product.name, category: product.category } : undefined
+  });
   return saved;
 }
 
@@ -6866,7 +7147,7 @@ function CustomClothingTryOn({ user, setUser }) {
 }
 
 function CustomTryOnConfidence({ user }) {
-  const recommendations = useRecommendedProducts(user, 5);
+  const recommendations = useRecommendedProducts(user, 5, { surface: 'for_you', client: RECOMMENDATION_CLIENT });
   const fallback = useProducts({ limit: 5, sort: 'newest' });
   const products = (recommendations.products.length ? recommendations.products : fallback.products).slice(0, 5);
   const loading = recommendations.loading || (!products.length && fallback.loading);
@@ -6945,10 +7226,14 @@ function StyleBotPage({ user, setUser }) {
     const searchPrompt = genderedStyleBotQuery(prompt, genderPreference);
     setQuery('');
     setBusy(true);
-    recordEvent('style_bot_query', { query: prompt });
+    recordEvent('style_bot_query', {
+      query: prompt,
+      source: 'ai_stylist',
+      metadata: { surface: 'ai_stylist', client: RECOMMENDATION_CLIENT }
+    });
     setRuns((current) => [
       ...current,
-      { id, query: prompt, products: [], tryOns: {}, loading: promptCompatibility.compatible, generating: {}, errors: {}, searchError: promptCompatibility.compatible ? '' : promptCompatibility.reason }
+      { id, query: prompt, products: [], reply: '', conversationId: '', tryOns: {}, loading: promptCompatibility.compatible, generating: {}, errors: {}, searchError: promptCompatibility.compatible ? '' : promptCompatibility.reason }
     ]);
     if (!promptCompatibility.compatible) {
       setBusy(false);
@@ -6956,19 +7241,42 @@ function StyleBotPage({ user, setUser }) {
     }
 
     try {
-      const data = await api('/products/amazon-search', {
-        method: 'POST',
-        body: JSON.stringify({ query: searchPrompt, limit: 2, genderPreference })
-      });
-      const products = (data.products || []).filter((product) => (
+      let data;
+      try {
+        data = await api('/recommendations/studio-chat', {
+          method: 'POST',
+          body: JSON.stringify({
+            message: prompt,
+            conversationId: sessionHistory[0]?.conversationId || undefined,
+            history: sessionHistory.slice(0, 6).reverse().map((run) => ({
+              role: 'user',
+              content: run.query
+            }))
+          })
+        });
+      } catch (recommendationError) {
+        if (![404, 405, 501].includes(Number(recommendationError.status || 0))) throw recommendationError;
+        data = await api('/products/amazon-search', {
+          method: 'POST',
+          body: JSON.stringify({ query: searchPrompt, limit: 2, genderPreference })
+        });
+      }
+      const rawProducts = Array.isArray(data.products) ? data.products
+        : Array.isArray(data.recommendations) ? data.recommendations
+        : Array.isArray(data.items) ? data.items
+        : Array.isArray(data.suggestions) ? data.suggestions
+        : Array.isArray(data.suggestions?.products) ? data.suggestions.products
+        : [];
+      const normalizedProducts = (Array.isArray(rawProducts) ? rawProducts : []).filter((product) => (
         styleBotProductCompatibility(product, prompt).compatible &&
         styleBotGenderCompatibility(product, genderPreference).compatible
       ));
-      if (products.length === 0) {
-        throw new Error('Amazon results were found, but none matched your try-on gender preference. Try a more specific clothing search.');
-      }
+      const finalProducts = normalizedProducts;
+      if (finalProducts.length === 0) throw new Error('No matching recommendations were returned. Try a more specific clothing search.');
       updateRun(id, () => ({
-        products,
+        products: finalProducts,
+        reply: data.message || data.reply || data.text || '',
+        conversationId: data.conversationId || '',
         loading: false,
         generating: {}
       }));
@@ -7014,7 +7322,7 @@ function StyleBotPage({ user, setUser }) {
                 <div className="concierge-bubble concierge-response">
                   {run.loading && <span className="concierge-loading">Curating your edit...</span>}
                   {run.searchError && <p className="form-message error-message">{run.searchError}</p>}
-                  {!run.loading && !run.searchError && <div className="concierge-result-summary"><p className="concierge-result-copy">I found {run.products.length} matching piece{run.products.length === 1 ? '' : 's'} for this edit.</p><a href={`/categories?q=${encodeURIComponent(run.query)}`}>View matching products</a></div>}
+                  {!run.loading && !run.searchError && <div className="concierge-result-summary"><p className="concierge-result-copy">{run.reply || `I found ${run.products.length} matching piece${run.products.length === 1 ? '' : 's'} for this edit.`}</p><a href={`/categories?q=${encodeURIComponent(run.query)}`}>View matching products</a></div>}
                 </div>
               </div>
             </div>
@@ -8506,7 +8814,7 @@ function AutoPlayingTryOnVideo({ src, poster }) {
 
 function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
   const { product, loading, error } = useProduct(id);
-  const related = useSimilarProducts(id, 4);
+  const related = useSimilarProducts(id, 8);
   const [tryOn, setTryOn] = useState(null);
   const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const [tryOnLoading, setTryOnLoading] = useState(false);
@@ -8520,6 +8828,12 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
   const [sizeRequestOpen, setSizeRequestOpen] = useState(false);
   const productViewStarted = useRef('');
   const relatedProducts = related.products.filter((item) => item.id !== id).slice(0, 4);
+  useRecommendationImpressions(relatedProducts, {
+    source: RECOMMENDATION_SOURCE_SIMILAR,
+    surface: 'product',
+    client: RECOMMENDATION_CLIENT,
+    enabled: Boolean(relatedProducts.length)
+  });
 
   useEffect(() => {
     if (!user || !id) {
@@ -8892,7 +9206,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
       {relatedProducts.length > 0 && (
         <section className="wrap product-editorial-related">
           <div className="product-editorial-related-head"><div><p>Curated for you</p><h2>Complete the look</h2></div><a href={`/categories/${encodeURIComponent(categorySlug(product.category || ''))}`}>View all in {category}</a></div>
-          <div className="product-editorial-related-grid">{relatedProducts.map((item) => <EditorialRelatedProduct key={item.id} product={item} />)}</div>
+          <div className="product-editorial-related-grid">{relatedProducts.map((item) => <EditorialRelatedProduct key={item.id} product={item} trackingSource={RECOMMENDATION_SOURCE_SIMILAR} trackingSurface="product" />)}</div>
         </section>
       )}
       {sizeRequestOpen && <SizeRequestPanel product={product} onClose={() => setSizeRequestOpen(false)} />}
@@ -8944,12 +9258,29 @@ function SizeRequestPanel({ product, onClose }) {
   );
 }
 
-function EditorialRelatedProduct({ product }) {
+function EditorialRelatedProduct({ product, trackingSource = '', trackingSurface = 'product' }) {
   const category = displayCategory(product);
   const brand = displayBrand(product);
+  const recommendationContext = productRecommendationContext(product);
+  const eventSource = trackingSource || recommendationContext.source;
   return (
     <article className="product-editorial-related-card">
-      <a href={`/product/${encodeURIComponent(product.id)}`}>
+      <a
+        href={`/product/${encodeURIComponent(product.id)}`}
+        onClick={() => recordEvent('product_click', {
+          productId: product.id,
+          ...(eventSource ? {
+            source: eventSource,
+            metadata: {
+              surface: trackingSurface,
+              client: RECOMMENDATION_CLIENT,
+              rank: recommendationContext.rank,
+              algorithmVersion: recommendationContext.algorithmVersion,
+              personalized: recommendationContext.personalized
+            }
+          } : {})
+        })}
+      >
         <img src={product.imageUrl || asset('hero2.png')} alt={product.name} />
         <p>{brand}</p>
         <h3>{product.name}</h3>
@@ -9388,7 +9719,7 @@ function DownloadExploreMockup() {
   const featuredItems = [
     { label: 'Shirts', image: 'category-generated/shirts.png' },
     { label: 'T-Shirts', image: 'category-generated/t-shirts.png' },
-    { label: 'Shoes', image: 'category-icons/shoes-section.png' }
+    { label: 'Footwear', image: 'category-icons/shoes-section.png' }
   ];
   const fashionItems = [
     { label: 'Shirts', image: 'category-generated/shirts.png' },
@@ -10993,7 +11324,7 @@ function App() {
     if (path === '/home') return <AtelierHome user={user} demoEcommerceMode={demoEcommerceMode} />;
     if (path === '/categories' || path === '/explore') return <CategoriesPage key={routeKey} user={user} demoEcommerceMode={demoEcommerceMode} />;
     if (categoryMatch) return <CategoryDepartmentPage category={decodeURIComponent(categoryMatch[1])} user={user} demoEcommerceMode={demoEcommerceMode} />;
-    if (path === '/search') return <SearchLandingPage key={routeKey} />;
+    if (path === '/search') return <SearchLandingPage key={routeKey} user={user} />;
     if (path === '/try-on') return <CustomTryOnPage user={user} setUser={setUser} />;
     if (path === '/closet') return <ClosetPage user={user} setUser={setUser} />;
     if (path === '/closet/add') return <ClosetAddPage user={user} setUser={setUser} />;
