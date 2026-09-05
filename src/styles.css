@@ -45207,3 +45207,23 @@ label,
     left: 10px !important;
   }
 }
+
+/* Generated wardrobe result should fill the preview card, not letterbox. */
+@media (min-width: 761px) {
+  .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview,
+  .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview .wardrobe-flat-model {
+    background: #d7d7d5 !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview .wardrobe-flat-model img,
+  .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview .wardrobe-flat-model picture,
+  .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview .wardrobe-flat-model .optimized-image,
+  .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview .wardrobe-flat-model .wardrobe-flat-image {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    object-fit: cover !important;
+    object-position: center center !important;
+  }
+}
