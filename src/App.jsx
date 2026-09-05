@@ -1015,10 +1015,18 @@ function protectedMediaUrl(value = '') {
   if (!url || /^(?:data:|blob:)/i.test(url)) return url;
   if (!url.startsWith('/uploads/')) return url;
   const token = readMediaToken();
-  if (!token || /(?:[?&])mediaToken=/.test(url)) return API_BASE_URL ? `${API_BASE_URL}${url}` : url;
+  const safeApiBaseUrl = (() => {
+    if (!API_BASE_URL) return '';
+    try {
+      return new URL(API_BASE_URL, window.location.origin).origin;
+    } catch {
+      return '';
+    }
+  })();
+  if (!token || /(?:[?&])mediaToken=/.test(url)) return safeApiBaseUrl ? `${safeApiBaseUrl}${url}` : url;
   const separator = url.includes('?') ? '&' : '?';
   const withToken = `${url}${separator}mediaToken=${encodeURIComponent(token)}`;
-  return API_BASE_URL ? `${API_BASE_URL}${withToken}` : withToken;
+  return safeApiBaseUrl ? `${safeApiBaseUrl}${withToken}` : withToken;
 }
 
 function uploadPathnameFromClientUrl(value = '') {
@@ -1027,7 +1035,12 @@ function uploadPathnameFromClientUrl(value = '') {
   if (url.startsWith('/uploads/')) return url;
   try {
     const parsed = new URL(url, window.location.origin);
-    const apiOrigin = API_BASE_URL ? new URL(API_BASE_URL, window.location.origin).origin : '';
+    let apiOrigin = '';
+    try {
+      apiOrigin = API_BASE_URL ? new URL(API_BASE_URL, window.location.origin).origin : '';
+    } catch {
+      apiOrigin = '';
+    }
     if ((parsed.origin === window.location.origin || parsed.origin === apiOrigin) && parsed.pathname.startsWith('/uploads/')) {
       return parsed.pathname;
     }
