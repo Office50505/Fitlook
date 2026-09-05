@@ -4518,6 +4518,7 @@ function CutoutFallbackNotice({ isolation, originalSrc, onRetry }) {
 function RoomScene({ modelSource, alt, generating, onOpen, onEmpty, onMediaLoad }) {
   const visibleSrc = safeWardrobeImageUrl(modelSource?.imageUrl);
   const imageAlt = alt || 'Wardrobe preview';
+  const previewKind = modelSource?.previewKind === 'outfit' ? 'outfit' : 'body';
   const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
@@ -4525,7 +4526,7 @@ function RoomScene({ modelSource, alt, generating, onOpen, onEmpty, onMediaLoad 
   }, [visibleSrc]);
 
   return (
-    <div className={`room-scene wardrobe-flat-scene ${generating ? 'is-generating' : ''}`}>
+    <div className={`room-scene wardrobe-flat-scene is-${previewKind}-preview ${generating ? 'is-generating' : ''}`}>
       {visibleSrc && !imageFailed ? (
         <button className="wardrobe-flat-model" type="button" onClick={onOpen} aria-label="Open wardrobe preview full screen">
           <OptimizedImage
@@ -5024,6 +5025,7 @@ function ClosetPage({ user, setUser }) {
   };
   const modelSource = {
     imageUrl: modelPreview,
+    previewKind: showingGeneratedOutfit ? 'outfit' : 'body',
     transparentImageUrl: showingGeneratedOutfit ? latestOutfit?.transparentImageUrl || '' : '',
     imageProcessing: showingGeneratedOutfit ? latestOutfit?.imageProcessing || null : null
   };

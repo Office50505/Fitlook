@@ -41221,3 +41221,50 @@ label,
     grid-template-columns: repeat(4, minmax(86px, 1fr)) !important;
   }
 }
+
+/* Wardrobe stage alignment guard: keep the live body preview visually centered.
+   Generated wardrobe looks stay unshifted because they are already composed full-body outputs. */
+@media (min-width: 861px) {
+  .wardrobe-studio-page .wardrobe-model-stage {
+    display: grid !important;
+    place-items: center !important;
+    background: #d7d7d5 !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-model-frame,
+  .wardrobe-studio-page .room-scene,
+  .wardrobe-studio-page .wardrobe-flat-scene {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    transform: none !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-flat-scene.is-body-preview .wardrobe-flat-model img,
+  .wardrobe-studio-page .wardrobe-flat-scene.is-body-preview .wardrobe-flat-model picture,
+  .wardrobe-studio-page .wardrobe-flat-scene.is-body-preview .wardrobe-flat-model .optimized-image,
+  .wardrobe-studio-page .wardrobe-flat-scene.is-body-preview .wardrobe-flat-model .wardrobe-flat-image {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    object-fit: contain !important;
+    object-position: center center !important;
+    transform: none !important;
+    transform-origin: center center !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview .wardrobe-flat-model img,
+  .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview .wardrobe-flat-model picture,
+  .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview .wardrobe-flat-model .optimized-image,
+  .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview .wardrobe-flat-model .wardrobe-flat-image {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    object-fit: contain !important;
+    object-position: center center !important;
+    transform: none !important;
+  }
+}
