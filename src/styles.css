@@ -45227,3 +45227,109 @@ label,
     object-position: center center !important;
   }
 }
+
+/* Download showcase device normalization.
+   The Explore asset has a shorter/wider source ratio than the other four app
+   screenshots, so width-based sizing made that phone visibly smaller. */
+.download-screen-device-image.explore {
+  width: var(--showcase-phone-stage-width) !important;
+  height: var(--showcase-phone-height) !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: fill !important;
+}
+
+.download-screen-card:has(.download-screen-device-image.explore) {
+  overflow: visible !important;
+}
+
+.download-screen-device-stage {
+  overflow: visible !important;
+}
+
+.download-showcase-bottom-nav {
+  position: absolute !important;
+  right: 1.2% !important;
+  bottom: 3.15% !important;
+  left: 1.2% !important;
+  z-index: 5 !important;
+  display: none !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  align-items: center !important;
+  gap: 0 !important;
+  min-height: 8.9% !important;
+  padding: 1.15% !important;
+  border-radius: 14px !important;
+  background: #fff !important;
+  box-shadow: 0 -5px 18px rgba(27, 22, 19, .12) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  isolation: isolate !important;
+}
+
+.download-showcase-bottom-nav::before {
+  content: "" !important;
+  position: absolute !important;
+  inset: -10px -14px -12px !important;
+  z-index: -1 !important;
+  border-radius: 19px !important;
+  background: #fff !important;
+  box-shadow: 0 -1px 0 rgba(17, 16, 14, .05) !important;
+}
+
+.download-showcase-bottom-nav span {
+  display: grid !important;
+  min-width: 0 !important;
+  height: 34px !important;
+  place-items: center !important;
+  align-content: center !important;
+  gap: 2px !important;
+  border-radius: 9px !important;
+  color: #1f1d1b !important;
+  font-family: var(--font-interface) !important;
+  font-weight: 650 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+}
+
+.download-showcase-bottom-nav span.is-active {
+  background: #1d1a18 !important;
+  color: #fff !important;
+}
+
+.download-showcase-bottom-nav svg {
+  width: 13px !important;
+  height: 13px !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 1.75 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+
+.download-showcase-bottom-nav small {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  color: currentColor !important;
+  font-size: 5.5px !important;
+  letter-spacing: -.02em !important;
+  line-height: 1 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+@media (max-width: 1180px) {
+  .download-showcase-bottom-nav span {
+    height: 32px !important;
+  }
+
+  .download-showcase-bottom-nav svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+
+  .download-showcase-bottom-nav small {
+    font-size: 5px !important;
+  }
+}

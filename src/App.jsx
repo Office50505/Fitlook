@@ -9807,13 +9807,15 @@ function DownloadExploreMockup() {
 function DownloadScreenVisual({ screen }) {
   if (screen.deviceImage) {
     return (
-      <OptimizedImage
-        className={`download-screen-device-image ${screen.variant || ''}`.trim()}
-        src={asset(screen.deviceImage)}
-        fallbackSrc=""
-        alt={screen.alt}
-        highResolution={false}
-      />
+      <span className={`download-screen-device-stage ${screen.variant || ''}`.trim()}>
+        <OptimizedImage
+          className={`download-screen-device-image ${screen.variant || ''}`.trim()}
+          src={asset(screen.deviceImage)}
+          fallbackSrc=""
+          alt={screen.alt}
+          highResolution={false}
+        />
+      </span>
     );
   }
 
