@@ -319,16 +319,29 @@ function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1
     if (touchZoom.active) moveOrigin(event);
   };
 
-  const handleWheel = (event) => {
-    if (disableZoom || zoom <= 1 || Math.abs(event.deltaY) < 2) return;
-    event.preventDefault();
-    moveOrigin(event);
-    setZooming(true);
-    window.clearTimeout(wheelZoomTimeoutRef.current);
-    wheelZoomTimeoutRef.current = window.setTimeout(() => setZooming(false), 900);
-  };
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || disableZoom || zoom <= 1) return undefined;
 
-  useEffect(() => () => window.clearTimeout(wheelZoomTimeoutRef.current), []);
+    const handleWheel = (event) => {
+      if (Math.abs(event.deltaY) < 2) return;
+      event.preventDefault();
+
+      const rect = frame.getBoundingClientRect();
+      const x = Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100));
+      const y = Math.min(100, Math.max(0, ((event.clientY - rect.top) / rect.height) * 100));
+      setOrigin({ x, y });
+      setZooming(true);
+      window.clearTimeout(wheelZoomTimeoutRef.current);
+      wheelZoomTimeoutRef.current = window.setTimeout(() => setZooming(false), 900);
+    };
+
+    frame.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      frame.removeEventListener('wheel', handleWheel);
+      window.clearTimeout(wheelZoomTimeoutRef.current);
+    };
+  }, [disableZoom, zoom]);
 
   const openImage = () => {
     if (canOpen) onOpen();
@@ -354,7 +367,6 @@ function ZoomableImage({ src, alt, className = '', imageClassName = '', zoom = 1
       }}
       onClick={canOpen ? openImage : undefined}
       onKeyDown={handleKeyDown}
-      onWheel={handleWheel}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={stopZoom}
