@@ -45208,6 +45208,58 @@ label,
   }
 }
 
+/* Match the desktop wardrobe controls to the Recommendations card. */
+@media (min-width: 1081px) {
+  .wardrobe-studio-page .wardrobe-sidebar {
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: clamp(24px, 3vh, 31px) clamp(24px, 2vw, 30px) clamp(34px, 4.8vh, 49px) !important;
+    border: 1px solid var(--wardrobe-line) !important;
+    border-radius: 18px !important;
+    padding: 19px 18px !important;
+    background: var(--wardrobe-surface) !important;
+    box-shadow: 0 8px 24px rgba(17, 16, 14, .035) !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-sidebar .wardrobe-category-drawer {
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding: 0 4px 0 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-sidebar .wardrobe-category-drawer > header {
+    min-height: 50px !important;
+    align-items: flex-start !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-sidebar .wardrobe-category-drawer h2 {
+    margin-top: 2px !important;
+    font-size: clamp(23px, 1.65vw, 27px) !important;
+  }
+
+  .wardrobe-studio-page .wardrobe-sidebar .wardrobe-category-drawer > header > a {
+    min-width: 88px !important;
+    min-height: 40px !important;
+    border-radius: 10px !important;
+    padding: 0 14px !important;
+    font-size: 12px !important;
+  }
+}
+
+@media (min-width: 1241px) {
+  /* Size the pre-generation model track from the uploaded photo instead of
+     exposing unused bands around a narrower contained image. */
+  .wardrobe-studio-page .wardrobe-studio-shell:has(.wardrobe-flat-scene.is-body-preview) {
+    grid-template-columns:
+      minmax(340px, 1fr)
+      minmax(500px, calc((100svh - 80px) * var(--wardrobe-model-aspect, .74)))
+      clamp(460px, 34vw, 650px) !important;
+  }
+}
+
 /* Generated wardrobe result should fill the preview card, not letterbox. */
 @media (min-width: 761px) {
   .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview,

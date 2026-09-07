@@ -22,7 +22,11 @@ const API_TIMEOUT_MS = 25000;
 const AI_IMAGE_TIMEOUT_MS = 180000;
 const AI_VIDEO_TIMEOUT_MS = 300000;
 const PRODUCT_CACHE_TTL_MS = 30_000;
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '').replace(/\/api$/, '');
+// Keep browser requests same-origin in development so Vite can proxy them to
+// either the local API or the configured remote API without triggering CORS.
+const API_BASE_URL = (import.meta.env.DEV ? '' : import.meta.env.VITE_API_BASE_URL || '')
+  .replace(/\/$/, '')
+  .replace(/\/api$/, '');
 const AUTH_TOKEN_KEY = 'fitlook_token';
 const MEDIA_TOKEN_KEY = 'fitlook_media_token';
 const RECOMMENDATION_CLIENT = 'web';
