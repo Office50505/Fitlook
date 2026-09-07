@@ -519,9 +519,41 @@ const categories = [
 const featuredSearchCategories = categories.slice(0, 8);
 const popularSearchTerms = ['shirts', 'jeans', 'innerwear', 'ethnic wear', 'shoes', 'sleepwear'];
 const suggestedSearchTerms = ['shirts', 't-shirts', 'dresses', 'jeans', 'shoes', 'accessories'];
+const completeLookPairings = {
+  shirts: ['jeans', 'pants', 'shoes', 'watches'],
+  't-shirts': ['jeans', 'jackets', 'shoes', 'accessories'],
+  dresses: ['shoes', 'accessories', 'watches', 'jackets'],
+  pants: ['shirts', 't-shirts', 'shoes', 'watches'],
+  jeans: ['shirts', 't-shirts', 'shoes', 'accessories'],
+  jackets: ['t-shirts', 'jeans', 'shoes', 'watches'],
+  shoes: ['jeans', 'pants', 'shirts', 'accessories'],
+  watches: ['shirts', 'jackets', 'pants', 'shoes'],
+  accessories: ['dresses', 'shirts', 'shoes', 'watches'],
+  eyewear: ['shirts', 'jackets', 'watches', 'accessories'],
+  innerwear: ['shirts', 't-shirts', 'pants', 'jeans'],
+  sleepwear: ['t-shirts', 'pants', 'shoes', 'accessories']
+};
 
 function categorySlug(value) {
   return String(value || 'uncategorized').trim().toLowerCase();
+}
+
+function completeLookFallbackCards(product) {
+  const currentCategory = categorySlug(product?.category || '');
+  const pairingSlugs = completeLookPairings[currentCategory] || ['shirts', 'jeans', 'shoes', 'accessories'];
+  return pairingSlugs
+    .map((slug) => {
+      const category = categories.find(([, , value]) => categorySlug(value) === slug);
+      if (!category) return null;
+      const [label, image] = category;
+      return {
+        id: `complete-look-${slug}`,
+        label,
+        imageUrl: asset(image),
+        href: `/categories/${encodeURIComponent(slug)}`
+      };
+    })
+    .filter(Boolean);
 }
 
 function categoryVisualKey(value) {
@@ -1311,6 +1343,28 @@ function loadRazorpayCheckout() {
 
 function razorpayFailureMessage(response) {
   return response?.error?.description || response?.error?.reason || 'Payment was not completed. You can try again when ready.';
+}
+
+const MANDATE_PENDING_CREDIT_MESSAGE = 'Mandate verified. Credits will be added after Razorpay confirms the monthly payment.';
+
+function razorpayCheckoutIdentity(razorpay = {}) {
+  const subscriptionId = String(razorpay.subscriptionId || '').trim();
+  const orderId = String(razorpay.orderId || '').trim();
+  if (subscriptionId) return { subscription_id: subscriptionId };
+  if (orderId) return { order_id: orderId };
+  return {};
+}
+
+function razorpayVerifyPayload(checkoutData = {}, response = {}) {
+  const razorpay = checkoutData.razorpay || {};
+  const order = checkoutData.order || {};
+  return {
+    merchantOrderId: String(order.merchantOrderId || checkoutData.merchantOrderId || razorpay.merchantOrderId || razorpay.notes?.merchantOrderId || '').trim(),
+    razorpay_order_id: String(response.razorpay_order_id || razorpay.orderId || order.razorpayOrderId || '').trim(),
+    razorpay_subscription_id: String(response.razorpay_subscription_id || razorpay.subscriptionId || order.razorpaySubscriptionId || order.subscriptionId || '').trim(),
+    razorpay_payment_id: String(response.razorpay_payment_id || '').trim(),
+    razorpay_signature: String(response.razorpay_signature || '').trim()
+  };
 }
 
 function recordEvent(type, payload = {}) {
@@ -7435,7 +7489,11 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
         if (!alive) return;
         if (data.user) setUser(data.user);
         const state = data.order?.status;
-        if (state === 'completed') {
+        if (data.pendingSubscriptionCredit) {
+          setCreditedOrder(null);
+          setMessage(MANDATE_PENDING_CREDIT_MESSAGE);
+        }
+        else if (state === 'completed') {
           const addedTokens = Number(data.order?.tokens || 0);
           setMessage(`Payment confirmed. ${addedTokens || 'Your'} tokens have been added to your account.`);
         }
@@ -7468,6 +7526,8 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
       });
       if (data.razorpay) {
         const Razorpay = await loadRazorpayCheckout();
+        const checkoutIdentity = razorpayCheckoutIdentity(data.razorpay);
+        if (!checkoutIdentity.order_id && !checkoutIdentity.subscription_id) throw new Error('Checkout did not return a Razorpay order or subscription.');
         await new Promise((resolve, reject) => {
           let settled = false;
           const finish = () => {
@@ -7481,7 +7541,7 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
             currency: data.razorpay.currency || 'INR',
             name: data.razorpay.name || 'Lookmefy',
             description: data.razorpay.description || pack.label,
-            order_id: data.razorpay.orderId,
+            ...checkoutIdentity,
             prefill: data.razorpay.prefill || {},
             notes: data.razorpay.notes || {},
             theme: { color: '#1f1b19' },
@@ -7491,18 +7551,24 @@ function TokenPage({ user, setUser, mode = 'overview' }) {
                 setMessage('Verifying payment with Razorpay...');
                 const verified = await api(data.razorpay.verifyPath || '/payments/razorpay/verify', {
                   method: 'POST',
-                  body: JSON.stringify({
-                    merchantOrderId: data.order?.merchantOrderId,
-                    razorpay_order_id: response.razorpay_order_id,
-                    razorpay_payment_id: response.razorpay_payment_id,
-                    razorpay_signature: response.razorpay_signature
-                  })
+                  body: JSON.stringify(razorpayVerifyPayload(data, response))
                 });
                 if (verified.user) setUser(verified.user);
-                setCreditedOrder({ order: verified.order, user: verified.user || user });
                 checkoutIdempotencyRef.current.delete(pack.id);
-                setMessage('');
-                announce(`${Number(verified.order?.tokens || 0)} credits credited.`);
+                if (verified.pendingSubscriptionCredit) {
+                  setCreditedOrder(null);
+                  setMessage(MANDATE_PENDING_CREDIT_MESSAGE);
+                  announce(MANDATE_PENDING_CREDIT_MESSAGE);
+                }
+                else if (verified.order) {
+                  setCreditedOrder({ order: verified.order, user: verified.user || user });
+                  setMessage('');
+                  announce(`${Number(verified.order?.tokens || 0)} credits credited.`);
+                }
+                else {
+                  setCreditedOrder(null);
+                  setMessage(verified.message || 'Payment verified. Your credits will update shortly.');
+                }
                 if (finish()) resolve();
               } catch (error) {
                 if (finish()) reject(error);
@@ -8818,7 +8884,8 @@ function AutoPlayingTryOnVideo({ src, poster }) {
 
 function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
   const { product, loading, error } = useProduct(id);
-  const related = useSimilarProducts(id, 8);
+  const fallbackRelated = useProducts({ category: product?.category || '', gender: product?.gender || '', sort: 'newest', limit: 12 });
+  const generalRelated = useProducts({ sort: 'newest', limit: 16 });
   const [tryOn, setTryOn] = useState(null);
   const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const [tryOnLoading, setTryOnLoading] = useState(false);
@@ -8831,7 +8898,29 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
   const [detailImageView, setDetailImageView] = useState('tryon');
   const [sizeRequestOpen, setSizeRequestOpen] = useState(false);
   const productViewStarted = useRef('');
-  const relatedProducts = related.products.filter((item) => item.id !== id).slice(0, 4);
+  const relatedProducts = useMemo(() => {
+    const fallbackProducts = Array.isArray(fallbackRelated.products) ? fallbackRelated.products : [];
+    const generalProducts = Array.isArray(generalRelated.products) ? generalRelated.products : [];
+    const activeCategory = categorySlug(product?.category || '');
+    const activeGender = String(product?.gender || '').toLowerCase();
+    const sameCategoryProducts = activeCategory
+      ? fallbackProducts.filter((item) => categorySlug(item?.category || '') === activeCategory)
+      : [];
+    const sameGenderProducts = activeGender
+      ? fallbackProducts.filter((item) => String(item?.gender || '').toLowerCase() === activeGender)
+      : [];
+
+    return uniqueProducts([
+      ...sameCategoryProducts,
+      ...sameGenderProducts,
+      ...fallbackProducts,
+      ...generalProducts
+    ])
+      .filter((item) => item.id !== id)
+      .slice(0, 4);
+  }, [fallbackRelated.products, generalRelated.products, id, product?.category, product?.gender]);
+  const relatedSectionLoading = (fallbackRelated.loading || generalRelated.loading) && relatedProducts.length === 0;
+  const completeLookCards = relatedProducts.length || relatedSectionLoading ? [] : completeLookFallbackCards(product);
   useRecommendationImpressions(relatedProducts, {
     source: RECOMMENDATION_SOURCE_SIMILAR,
     surface: 'product',
@@ -9207,15 +9296,44 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
         <img src={editorialImage} alt={`${brand} ${category}`} />
       </section>
 
-      {relatedProducts.length > 0 && (
-        <section className="wrap product-editorial-related">
-          <div className="product-editorial-related-head"><div><p>Curated for you</p><h2>Complete the look</h2></div><a href={`/categories/${encodeURIComponent(categorySlug(product.category || ''))}`}>View all in {category}</a></div>
-          <div className="product-editorial-related-grid">{relatedProducts.map((item) => <EditorialRelatedProduct key={item.id} product={item} trackingSource={RECOMMENDATION_SOURCE_SIMILAR} trackingSurface="product" />)}</div>
-        </section>
-      )}
+      <section className="wrap product-editorial-related product-marketplace-recommendations">
+        <div className="product-editorial-related-head"><div><p>Curated for you</p><h2>Complete the look</h2></div><a href={`/categories/${encodeURIComponent(categorySlug(product.category || ''))}`}>View all in {category}</a></div>
+        <div className="product-editorial-related-grid">
+          {relatedSectionLoading
+            ? Array.from({ length: 4 }).map((_, index) => <EditorialRelatedProductSkeleton key={index} />)
+            : relatedProducts.length > 0
+            ? relatedProducts.map((item) => <EditorialRelatedProduct key={item.id} product={item} trackingSource={RECOMMENDATION_SOURCE_SIMILAR} trackingSurface="product" />)
+            : completeLookCards.map((item) => <CompleteLookFallbackCard key={item.id} item={item} />)}
+        </div>
+      </section>
       {sizeRequestOpen && <SizeRequestPanel product={product} onClose={() => setSizeRequestOpen(false)} />}
       {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
     </main>
+  );
+}
+
+function CompleteLookFallbackCard({ item }) {
+  return (
+    <article className="product-editorial-related-card product-editorial-related-fallback-card">
+      <a href={item.href}>
+        <img src={item.imageUrl} alt="" />
+        <p>Recommended pairing</p>
+        <h3>{item.label}</h3>
+        <strong>Explore collection</strong>
+        <span>Complete your outfit</span>
+      </a>
+    </article>
+  );
+}
+
+function EditorialRelatedProductSkeleton() {
+  return (
+    <article className="product-editorial-related-card product-editorial-related-skeleton" aria-hidden="true">
+      <div className="skeleton-media" />
+      <span className="skeleton-line short" />
+      <span className="skeleton-line wide" />
+      <span className="skeleton-line medium" />
+    </article>
   );
 }
 
