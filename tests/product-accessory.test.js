@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import Product from '../server/models/Product.js';
 import { normalizeGarmentPlacement } from '../server/routes/products.js';
-import { promptKeyForProduct } from '../server/utils/tryOnPrompts.js';
+import { promptKeyForProduct, promptForProduct } from '../server/utils/tryOnPrompts.js';
 
 test('product fit area accepts an explicit accessory classification', () => {
   const product = new Product({
@@ -46,4 +46,13 @@ test('accessory products use accessory prompts without replacing specialized pro
 test('full-body products use full outfit prompts', () => {
   assert.equal(promptKeyForProduct({ name: 'Minimal fashion piece', garmentPlacement: 'full-body' }), 'full_outfit');
   assert.equal(promptKeyForProduct({ name: 'Halter neck midi dress', garmentPlacement: 'top' }), 'full_outfit');
+});
+
+test('kurta sets transfer pants and visible dupatta instead of retaining the original blazer', () => {
+  const result = promptForProduct({ name: 'GoSriKi Viscose Printed Kurta for Women | Kurti Set | Kurta with Pant & Dupatta', garmentPlacement: 'top' });
+  assert.equal(result.key, 'full_outfit');
+  assert.match(result.prompt, /kurta AND matching pants/);
+  assert.match(result.prompt, /dupatta when visible/);
+  assert.match(result.prompt, /Do not leave the original blazer/);
+  assert.doesNotMatch(promptForProduct({ name: 'Cotton kurti', garmentPlacement: 'top' }).prompt, /kurta AND matching pants/);
 });

@@ -8880,6 +8880,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
   const [detailImageView, setDetailImageView] = useState('tryon');
   const [sizeRequestOpen, setSizeRequestOpen] = useState(false);
   const productViewStarted = useRef('');
+  const tryOnRequestVersion = useRef(0);
   const relatedProducts = useMemo(() => {
     const fallbackProducts = Array.isArray(fallbackRelated.products) ? fallbackRelated.products : [];
     const generalProducts = Array.isArray(generalRelated.products) ? generalRelated.products : [];
@@ -8903,6 +8904,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
   }, [fallbackRelated.products, generalRelated.products, id, product?.category, product?.gender]);
   const relatedSectionLoading = (fallbackRelated.loading || generalRelated.loading) && relatedProducts.length === 0;
   const completeLookCards = relatedProducts.length || relatedSectionLoading ? [] : completeLookFallbackCards(product);
+
   useRecommendationImpressions(relatedProducts, {
     source: RECOMMENDATION_SOURCE_SIMILAR,
     surface: 'product',
@@ -8916,18 +8918,22 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
       return;
     }
     let alive = true;
-    api(`/tryons?productIds=${encodeURIComponent(id)}`)
+    const requestVersion = ++tryOnRequestVersion.current;
+    setTryOn(null);
+    const controller = new AbortController();
+    api(`/tryons?productIds=${encodeURIComponent(id)}`, { signal: controller.signal })
       .then((data) => {
-        if (!alive) return;
-        setTryOn(data.tryOns?.[0] || null);
+        if (!alive || requestVersion !== tryOnRequestVersion.current) return;
+        setTryOn(data.tryOns?.find((entry) => String(entry.productId) === String(id)) || null);
       })
       .catch(() => {
-        if (alive) setTryOn(null);
+        if (alive && requestVersion === tryOnRequestVersion.current) setTryOn(null);
       });
     return () => {
       alive = false;
+      controller.abort();
     };
-  }, [id, user]);
+  }, [id, user?.id]);
 
   useEffect(() => {
     setTryOnImageFailed(false);
@@ -9000,7 +9006,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
   const detailFacts = [
     ['Brand', brand],
     ['Category', category],
-    ['Fit area', product.garmentPlacement === 'bottom' ? 'Bottomwear' : 'Topwear'],
+    ['Fit area', ({ bottom: 'Bottomwear', top: 'Topwear', 'full-body': 'Full outfit', accessory: 'Accessory' })[product.garmentPlacement] || 'Topwear'],
     ['For', product.gender],
     !demoEcommerceMode && ['Rating', `${Number(product.rating || 0).toFixed(1)}${product.ratingCount ? ` from ${product.ratingCount} reviews` : ''}`],
     ['Price', formatMoney(product.price, product.currency)]
@@ -9041,6 +9047,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
       setTryOnError(profileBlockMessage);
       return;
     }
+    tryOnRequestVersion.current += 1;
     const regenerate = Boolean(tryOn?.imageUrl);
     setTryOnLoading(true);
     setTryOnError('');
@@ -9076,6 +9083,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
       setTryOnVideoError(blocked);
       return;
     }
+    tryOnRequestVersion.current += 1;
     const needsImageTryOn = !tryOn?.imageUrl || tryOnImageFailed;
     setTryOnVideoLoading(true);
     setTryOnVideoError('');
@@ -11450,7 +11458,7 @@ function App() {
     if (path === '/tokens/top-up') return <TokenPage key={routeKey} user={user} setUser={setUser} mode="topup" />;
     if (path === '/profile') return <ProfilePage user={user} setUser={setUser} />;
     if (path === '/generation-history') return <GenerationHistoryPage user={user} />;
-    if (productMatch) return <ProductPage id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} demoEcommerceMode={demoEcommerceMode} />;
+    if (productMatch) return <ProductPage key={decodeURIComponent(productMatch[1])} id={decodeURIComponent(productMatch[1])} user={user} setUser={setUser} demoEcommerceMode={demoEcommerceMode} />;
     if (orderStatusMatch) return <OrderStatusPage id={decodeURIComponent(orderStatusMatch[1])} user={user} />;
     if (['/signup', '/login', '/forgot-password'].includes(path) && user) return <SearchPage user={user} setUser={setUser} demoEcommerceMode={demoEcommerceMode} />;
     if (path === '/signup') return <AuthPage mode="signup" setUser={setUser} />;

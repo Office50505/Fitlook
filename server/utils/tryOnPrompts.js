@@ -265,8 +265,13 @@ function promptForKey(key, product = {}) {
   const productBrand = String(product?.brand || '').trim();
   const descriptor = productBrand ? `${productName} by ${productBrand}` : productName;
 
+  const coordinatedKurtaSet = key === 'full_outfit'
+    && /\b(kurtas?|kurtis?)\b/i.test(productName)
+    && /\b(sets?|pants?|trousers?|palazzos?|dupattas?)\b/i.test(productName);
+
   return [
     `Product context: ${descriptor}.`,
+    coordinatedKurtaSet ? 'This reference is a coordinated kurta set, not a jacket or blazer. Transfer the kurta AND matching pants shown in the garment reference. Include the matching dupatta when visible, preserving its color, pattern and drape. A dupatta covering the torso must not be mistaken for a jacket; preserve the kurta visible beneath it. Replace the person’s original jacket, shirt and trousers with this complete referenced set. Do not leave the original blazer or substitute western clothing. Preserve the actual colors of each piece rather than using a single color for the whole outfit.' : '',
     selected
       .replace(/\bImage 1\b/g, 'the garment reference image')
       .replace(/\bimage 1\b/g, 'the garment reference image')
