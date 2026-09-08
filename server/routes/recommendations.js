@@ -12,6 +12,7 @@ import { createRateLimiter, rateLimitKeys } from '../utils/rateLimit.js';
 import { requireAdmin, requireAdminSection } from '../utils/adminAccess.js';
 import { ADMIN_SECTIONS } from '../utils/adminPermissions.js';
 import { normalizeSessionPath, touchUserSession } from '../utils/userSessions.js';
+import { createStudioChatHandler } from '../services/studioChat.js';
 
 const router = express.Router();
 const requireUserOperationsAdmin = requireAdminSection(ADMIN_SECTIONS.USER_OPERATIONS);
@@ -32,6 +33,24 @@ const recommendationReadLimiter = createRateLimiter({
   keyGenerator: rateLimitKeys.userOrIp,
   message: 'Recommendations are temporarily limited. Please try again shortly.'
 });
+
+const studioChatLimiter = createRateLimiter({
+  name: 'recommendations:studio-chat', windowMs: 60_000, max: 20,
+  keyGenerator: rateLimitKeys.user,
+  message: 'Please wait a moment before sending another message.'
+});
+
+router.post('/studio-chat', requireUser, studioChatLimiter, createStudioChatHandler({
+  searchProducts: async ({ terms, maxPrice }) => {
+    if (!terms.length) return [];
+    const filter = catalogFilter({
+      ...(maxPrice !== undefined ? { price: { $lte: maxPrice } } : {}),
+      $and: terms.map((term) => ({ $or: ['name', 'category', 'brand', 'tags'].map((field) => ({ [field]: new RegExp(term, 'i') })) }))
+    });
+    const products = await Product.find(filter).sort({ isFeatured: -1, rating: -1 }).limit(4).maxTimeMS(3000).lean();
+    return products.map(productToClient);
+  }
+}));
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RECENT_EVENT_WINDOW_DAYS = 90;

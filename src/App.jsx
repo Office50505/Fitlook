@@ -1,3 +1,4 @@
+import { styleBotWearablePatterns, styleBotProductCompatibility, styleBotChatIntent, styleBotChatResponse, productTryOnBlockMessage } from './utils/styleBot.js';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import OptimizedImage from './components/common/OptimizedImage.jsx';
@@ -410,62 +411,6 @@ function BackdropHero({ prefix, image, kicker, title, lead, aside, ariaLabel }) 
   );
 }
 
-const styleBotWearablePatterns = [
-  /\b(cloth(?:e|es|ing)?|apparel|garments?|outfits?|fashion|wearable|style|look)\b/i,
-  /\b(sarees?|saris?|lehenga(?:s)?|dupatta(?:s)?|kurta(?:s)?|kurtis?|salwar(?:s)?|churidar(?:s)?|anarkali|palazzo(?:s)?|sharara(?:s)?)\b/i,
-  /\b(sun\s*glasses|sunglasses|eye\s*glasses|eyeglasses|spectacles?|optical\s*frames?|goggles?|aviator|wayfarer)\b/i,
-  /\b(underwear|briefs?|boxers?|trunks?|vests?|innerwear|lingerie|bras?|bralettes?|sports?\s+bras?|pant(?:y|ies)|camisoles?|shapewear|bikinis?|swimsuits?|swimwear|monokinis?)\b/i,
-  /\b(night(?:y|ie|wear|gown|suit|dress)|sleepwear|pajamas?|pyjamas?|loungewear|robe)\b/i,
-  /\b(dress(?:es)?|gowns?|suits?|skirts?|skorts?|jeans?|pants?|trousers?|joggers?|leggings?|chinos?|shorts?|bermudas?)\b/i,
-  /\b(hoodies?|sweatshirts?|sweaters?|pullovers?|jumpers?|jackets?|overshirts?|blazers?|coats?|windcheaters?|parkas?|shrugs?)\b/i,
-  /\b(t\s*-?\s*shirts?|tshirts?|tees?|polo\s*(?:shirts?)?|shirts?|button\s*(?:down|up)|tops?|blouses?|tunics?|crop\s*tops?|tank\s*tops?)\b/i,
-  /\b(shoes?|sneakers?|boots?|loafers?|sandals?|slippers?|heels?|pumps?|flats?|footwear|trainers?)\b/i,
-  /\b(watch(?:es)?|smart\s*watch(?:es)?|smartwatch(?:es)?|chronograph)\b/i,
-  /\b(wallets?|purses?|backpacks?|handbags?|totes?|sling\s*bags?|crossbody|duffels?|clutches?)\b/i,
-  /\b(belts?|baseball\s*caps?|hats?|scarves?|ties?|jewellery|jewelry|necklaces?|bracelets?|earrings?|accessor(?:y|ies))\b/i
-];
-
-const styleBotBlockedPatterns = [
-  ['an oral care product', /\b(tooth\s*paste|toothpaste|toote\s*paste|tooth\s*brush|toothbrush|mouth\s*wash|mouthwash|dental|oral\s+care|colgate|sensodyne|pepsodent)\b/i],
-  ['a beauty or hygiene product', /\b(shampoo|conditioner|soap|body\s*wash|face\s*wash|cleanser|lotion|cream|moisturi[sz]er|deodorant|perfume|makeup|cosmetics?|serum|sunscreen)\b/i],
-  ['a food or grocery product', /\b(food|grocery|snacks?|chocolate|candy|tea|coffee|rice|flour|oil|spices?|sauce|drink|beverage|juice|protein\s*powder)\b/i],
-  ['an electronics product', /\b(phone|mobile|laptop|tablet|camera|charger|cable|adapter|headphones?|earbuds?|speaker|keyboard|mouse|monitor|television|tv)\b/i],
-  ['a home product', /\b(furniture|chair|table|mattress|bedsheet|curtain|lamp|bottle|mug|plate|cookware|utensils?|detergent|cleaner|toilet|kitchen|bathroom)\b/i],
-  ['a book or stationery product', /\b(books?|notebooks?|pens?|pencils?|markers?|stationery|diary|paper)\b/i],
-  ['medicine or a supplement', /\b(medicine|tablet|capsules?|syrup|vitamins?|supplements?|pain\s*relief|antiseptic)\b/i]
-];
-
-function styleBotCompatibility(value = '') {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  const blocked = styleBotBlockedPatterns.find(([, pattern]) => pattern.test(text));
-  if (blocked) {
-    return {
-      compatible: false,
-      reason: `This is not a compatible product type for AI try-on. Style Bot only supports wearable fashion items, and this looks like ${blocked[0]}.`
-    };
-  }
-  if (styleBotWearablePatterns.some((pattern) => pattern.test(text))) return { compatible: true };
-  return {
-    compatible: false,
-    reason: 'This is not a compatible product type for AI try-on. Try clothes, shoes, watches, bags, eyewear, or accessories.'
-  };
-}
-
-function styleBotProductCompatibility(product = {}, query = '') {
-  const productText = [
-    product.name,
-    product.brand,
-    product.category,
-    product.description,
-    Array.isArray(product.tags) ? product.tags.join(' ') : product.tags
-  ].filter(Boolean).join(' ');
-  const braIntent = /\b(bras?|bralettes?|sports?\s+bras?)\b/i.test(query);
-  const swimIntent = /\b(bikinis?|swimsuits?|swimwear|monokinis?|one\s*piece\s+swimsuits?)\b/i.test(query);
-
-  if (braIntent && !/\b(bras?|bralettes?|sports?\s+bras?|lingerie)\b/i.test(productText)) return { compatible: false };
-  if (swimIntent && !/\b(bikinis?|swimsuits?|swimwear|monokinis?|tankinis?|one\s*piece)\b/i.test(productText)) return { compatible: false };
-  return styleBotCompatibility([query, productText].filter(Boolean).join(' '));
-}
 
 function productGenderForPreference(value = '') {
   if (value === 'male') return 'men';
@@ -1474,13 +1419,6 @@ function useRecentSearchSuggestions(user, limit = 5) {
   return [recentSearches, rememberRecentSearch, clearRecentSearches];
 }
 
-function tryOnProfileBlockMessage(user) {
-  const status = user?.bodyPhotoStatus || 'uploaded';
-  if (!user?.bodyPhotoUrl && !user?.bodyPhotoOriginalUrl) return 'Upload a profile photo before starting an AI try-on.';
-  if (status === 'generating') return 'Your full-body try-on profile is still preparing. Try again in a minute.';
-  if (status === 'failed') return 'Could not prepare your full-body try-on profile. Upload a clearer photo from your profile page.';
-  return '';
-}
 
 function announce(message, tone = 'success') {
   if (typeof window === 'undefined' || !message) return;
@@ -3456,7 +3394,7 @@ function isFashionCatalogProduct(product) {
     Array.isArray(product?.tags) ? product.tags.join(' ') : product?.tags
   ].filter(Boolean).join(' ');
 
-  return styleBotCompatibility(catalogText).compatible || /\b(ethnic|apparel|fashion|clothing)\b/i.test(catalogText);
+  return styleBotWearablePatterns.some((pattern) => pattern.test(catalogText)) || /\b(ethnic|apparel|fashion|clothing)\b/i.test(catalogText);
 }
 
 function categoryLabel(value) {
@@ -4331,14 +4269,14 @@ function ProductCard({ product, user, locked = false, tryOn, canTryOn = false, d
       {!locked && (
         <div className="product-card-actions">
           {canTryOn && onTryOn ? (
-            <button type="button" onClick={() => onTryOn(product, { force: Boolean(tryOn?.imageUrl) })} disabled={tryOnLoading}>
+            <button type="button" onClick={() => onTryOn(product, { force: Boolean(tryOn?.imageUrl) })} disabled={tryOnLoading || Boolean(productTryOnBlockMessage(product, user))} title={productTryOnBlockMessage(product, user)}>
               {tryOnLoading ? 'Generating...' : hasUsableTryOn ? 'Generate Again' : tryOnImageFailed ? 'Try Again' : 'Try On'}
             </button>
           ) : (
-            <a href={user ? detailHref : '/signup'}>{hasUsableTryOn ? 'Generate Again' : 'Try On'}</a>
+            productTryOnBlockMessage(product, user) ? <button type="button" disabled title={productTryOnBlockMessage(product, user)}>Try On</button> : <a href={detailHref}>{hasUsableTryOn ? 'Generate Again' : 'Try On'}</a>
           )}
           {hasUsableTryOn && onTryOnVideo && (
-            <button className="video-action" type="button" onClick={() => onTryOnVideo(product, { force: Boolean(tryOn?.videoUrl) })} disabled={tryOnVideoLoading}>
+            <button className="video-action" type="button" onClick={() => onTryOnVideo(product, { force: Boolean(tryOn?.videoUrl) })} disabled={tryOnVideoLoading || Boolean(productTryOnBlockMessage(product, user))}>
               {tryOnVideoLoading ? 'Video...' : tryOn?.videoUrl ? 'New Video' : 'Video Try-On'}
             </button>
           )}
@@ -6390,7 +6328,7 @@ function SearchPage({ user, setUser, tryOnMode = false, demoEcommerceMode = fals
   const listingMode = tryOnMode ? 'AI Try-On Studio' : hasSearchIntent ? 'Search Results' : category ? 'Category View' : 'Product Listing';
 
   const generateTryOn = async (product, options = {}) => {
-    const profileBlockMessage = tryOnProfileBlockMessage(user);
+    const profileBlockMessage = productTryOnBlockMessage(product, user) || styleBotProductCompatibility(product).reason;
     if (profileBlockMessage) {
       setTryOnErrors((current) => ({ ...current, [product.id]: profileBlockMessage }));
       return;
@@ -6419,6 +6357,11 @@ function SearchPage({ user, setUser, tryOnMode = false, demoEcommerceMode = fals
   };
 
   const generateTryOnVideo = async (product, options = {}) => {
+    const blocked = productTryOnBlockMessage(product, user) || styleBotProductCompatibility(product).reason;
+    if (blocked) {
+      setTryOnVideoErrors((current) => ({ ...current, [product.id]: blocked }));
+      return;
+    }
     setTryOnVideoLoading((current) => ({ ...current, [product.id]: true }));
     setTryOnVideoErrors((current) => ({ ...current, [product.id]: '' }));
     try {
@@ -7254,6 +7197,9 @@ function StyleBotPage({ user, setUser }) {
   const [runs, setRuns] = useState([]);
   const [busy, setBusy] = useState(false);
   const conciergeScrollRef = useRef(null);
+  const generationInFlightRef = useRef(false);
+  const [generatingPreview, setGeneratingPreview] = useState(false);
+  const [fullscreenImage, setFullscreenImage] = useState(null);
   const promptIdeas = ['linen shirts under 1500', 'black party dress', 'gold sunglasses', 'oversized denim jacket'];
   const creditCount = Number(user?.tokens || 0);
 
@@ -7291,7 +7237,7 @@ function StyleBotPage({ user, setUser }) {
     const prompt = query.trim();
     if (!prompt || busy) return;
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const promptCompatibility = styleBotCompatibility(prompt);
+    const intent = styleBotChatIntent(prompt);
     const genderPreference = genderPreferenceForStyleQuery(prompt, user.genderPreference || 'other');
     const searchPrompt = genderedStyleBotQuery(prompt, genderPreference);
     setQuery('');
@@ -7303,9 +7249,9 @@ function StyleBotPage({ user, setUser }) {
     });
     setRuns((current) => [
       ...current,
-      { id, query: prompt, products: [], reply: '', conversationId: '', tryOns: {}, loading: promptCompatibility.compatible, generating: {}, errors: {}, searchError: promptCompatibility.compatible ? '' : promptCompatibility.reason }
+      { id, query: prompt, products: [], reply: '', conversationId: '', tryOns: {}, loading: !intent.error, generating: {}, errors: {}, searchError: intent.error }
     ]);
-    if (!promptCompatibility.compatible) {
+    if (intent.error) {
       setBusy(false);
       return;
     }
@@ -7317,36 +7263,22 @@ function StyleBotPage({ user, setUser }) {
           method: 'POST',
           body: JSON.stringify({
             message: prompt,
-            conversationId: sessionHistory[0]?.conversationId || undefined,
-            history: sessionHistory.slice(0, 6).reverse().map((run) => ({
-              role: 'user',
-              content: run.query
-            }))
+            conversationId: sessionHistory.find((run) => run.conversationId)?.conversationId || undefined,
+            history: sessionHistory.filter((run) => !run.searchError).slice(0, 6).reverse().flatMap((run) => [
+              { role: 'user', content: run.query },
+              ...(run.reply ? [{ role: 'assistant', content: run.reply }] : [])
+            ])
           })
         });
       } catch (recommendationError) {
-        if (![404, 405, 501].includes(Number(recommendationError.status || 0))) throw recommendationError;
+        if (!intent.productSearch || ![404, 405, 501].includes(Number(recommendationError.status || 0))) throw recommendationError;
         data = await api('/products/amazon-search', {
           method: 'POST',
           body: JSON.stringify({ query: searchPrompt, limit: 2, genderPreference })
         });
       }
-      const rawProducts = Array.isArray(data.products) ? data.products
-        : Array.isArray(data.recommendations) ? data.recommendations
-        : Array.isArray(data.items) ? data.items
-        : Array.isArray(data.suggestions) ? data.suggestions
-        : Array.isArray(data.suggestions?.products) ? data.suggestions.products
-        : [];
-      const normalizedProducts = (Array.isArray(rawProducts) ? rawProducts : []).filter((product) => (
-        styleBotProductCompatibility(product, prompt).compatible &&
-        styleBotGenderCompatibility(product, genderPreference).compatible
-      ));
-      const finalProducts = normalizedProducts;
-      if (finalProducts.length === 0) throw new Error('No matching recommendations were returned. Try a more specific clothing search.');
       updateRun(id, () => ({
-        products: finalProducts,
-        reply: data.message || data.reply || data.text || '',
-        conversationId: data.conversationId || '',
+        ...styleBotChatResponse(data),
         loading: false,
         generating: {}
       }));
@@ -7354,6 +7286,35 @@ function StyleBotPage({ user, setUser }) {
       updateRun(id, () => ({ loading: false, searchError: err.message }));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const generateSuggestionTryOn = async (run, product, key) => {
+    if (generationInFlightRef.current) return;
+    const blocked = productTryOnBlockMessage(product, user) || styleBotProductCompatibility(product).reason;
+    if (blocked) {
+      updateRun(run.id, (current) => ({ errors: { ...current.errors, [key]: blocked } }));
+      return;
+    }
+    generationInFlightRef.current = true;
+    setGeneratingPreview(true);
+    updateRun(run.id, (current) => ({ generating: { ...current.generating, [key]: true }, errors: { ...current.errors, [key]: '' } }));
+    try {
+      const productId = product.id || product._id;
+      const catalogProduct = /^[a-f0-9]{24}$/i.test(String(productId || ''));
+      const data = await generateQueuedTryOn(catalogProduct ? `/tryons/${productId}` : '/tryons/external', {
+        method: 'POST',
+        timeout: AI_IMAGE_TIMEOUT_MS,
+        body: catalogProduct ? undefined : JSON.stringify({ product })
+      });
+      updateRun(run.id, (current) => ({ tryOns: { ...current.tryOns, [key]: data.tryOn } }));
+      if (data.user) setUser((current) => ({ ...current, ...data.user, tokens: Math.min(Number(current?.tokens || 0), Number(data.user.tokens || 0)) }));
+    } catch (err) {
+      updateRun(run.id, (current) => ({ errors: { ...current.errors, [key]: err.message } }));
+    } finally {
+      generationInFlightRef.current = false;
+      setGeneratingPreview(false);
+      updateRun(run.id, (current) => ({ generating: { ...current.generating, [key]: false } }));
     }
   };
 
@@ -7370,11 +7331,11 @@ function StyleBotPage({ user, setUser }) {
         <div className="concierge-session-list">
           {sessionHistory.length ? sessionHistory.map((run, index) => (
             <button type="button" key={run.id} onClick={() => setQuery(run.query)}>
-              <span>{String(sessionHistory.length - index).padStart(2, '0')}</span><strong>{run.query}</strong><small>{run.loading ? 'Curating' : run.searchError ? 'Needs retry' : `${run.products.length} suggestions`}</small>
+              <span>{String(sessionHistory.length - index).padStart(2, '0')}</span><strong>{run.query}</strong><small>{run.loading ? 'Curating' : run.searchError ? 'Needs retry' : run.products.length ? `${run.products.length} suggestions` : 'Stylist reply'}</small>
             </button>
           )) : <div className="concierge-empty-session"><strong>New style session</strong><span>Your personal edit begins here.</span></div>}
         </div>
-        <button className="concierge-new-session" type="button" onClick={startNewSession}>+ New Session</button>
+        <button className="concierge-new-session" type="button" disabled={busy || generatingPreview} onClick={startNewSession}>+ New Session</button>
       </aside>
 
       <section className="concierge-workspace" aria-label="Lookmefy Concierge">
@@ -7390,9 +7351,14 @@ function StyleBotPage({ user, setUser }) {
               <div className="concierge-message assistant">
                 <p className="concierge-message-label">Lookmefy Concierge</p>
                 <div className="concierge-bubble concierge-response">
-                  {run.loading && <span className="concierge-loading">Curating your edit...</span>}
+                  {run.loading && <span className="concierge-loading" role="status">Curating suggestions...</span>}
                   {run.searchError && <p className="form-message error-message">{run.searchError}</p>}
-                  {!run.loading && !run.searchError && <div className="concierge-result-summary"><p className="concierge-result-copy">{run.reply || `I found ${run.products.length} matching piece${run.products.length === 1 ? '' : 's'} for this edit.`}</p><a href={`/categories?q=${encodeURIComponent(run.query)}`}>View matching products</a></div>}
+                  {run.replySource === 'basic' && <small>Basic styling tips</small>}
+                  {!run.loading && !run.searchError && <div className="concierge-result-summary"><p className="concierge-result-copy">{run.reply || `I found ${run.products.length} matching piece${run.products.length === 1 ? '' : 's'} for this edit.`}</p>{run.products.length > 0 && <a href={`/categories?q=${encodeURIComponent(run.query)}`}>View matching products</a>}</div>}
+                  {!run.loading && run.products.length > 0 && <div className="concierge-product-grid">{run.products.map((product, index) => {
+                    const key = String(product.id || product._id || index);
+                    return <StyleBotProduct key={key} product={product} user={user} tryOn={run.tryOns[key]} loading={Boolean(run.generating[key])} disabled={generatingPreview} error={run.errors[key]} onTryOn={() => generateSuggestionTryOn(run, product, key)} onFullscreen={setFullscreenImage} />;
+                  })}</div>}
                 </div>
               </div>
             </div>
@@ -7404,15 +7370,17 @@ function StyleBotPage({ user, setUser }) {
           <section aria-label="Prompt ideas">{promptIdeas.slice(0, 3).map((idea) => <button type="button" key={idea} onClick={() => setQuery(idea)}>{idea}</button>)}</section>
         </form>
       </section>
+      {fullscreenImage && <ImageLightbox image={fullscreenImage} onClose={() => setFullscreenImage(null)} />}
     </main>
   );
 }
 
-function StyleBotProduct({ product, tryOn, loading, error, onFullscreen }) {
+function StyleBotProduct({ product, user, tryOn, loading, disabled, error, onTryOn, onFullscreen }) {
   const [tryOnImageFailed, setTryOnImageFailed] = useState(false);
   const productImage = product.imageUrl || asset('hero2.png');
+  const tryOnBlockMessage = productTryOnBlockMessage(product, user);
   const hasUsableTryOn = Boolean(tryOn?.imageUrl) && !tryOnImageFailed;
-  const detailHref = `/product/${encodeURIComponent(product.id)}`;
+  const detailHref = product.id || product._id ? `/product/${encodeURIComponent(product.id || product._id)}` : product.sourceUrl || product.affiliateLink || '/categories';
 
   useEffect(() => {
     setTryOnImageFailed(false);
@@ -7425,7 +7393,9 @@ function StyleBotProduct({ product, tryOn, loading, error, onFullscreen }) {
       <p>{displayBrand(product)}</p>
       <h2>{product.name}</h2>
       <strong>{formatMoney(product.price, product.currency)}</strong>
-      {loading && <span className="concierge-product-state">Preparing preview</span>}
+      <button className="concierge-preview-action" type="button" disabled={disabled || Boolean(tryOnBlockMessage)} title={tryOnBlockMessage} onClick={onTryOn}>{loading ? 'Generating...' : 'AI Try-On'}</button>
+      {tryOnBlockMessage && <span className="concierge-product-state">{tryOnBlockMessage}</span>}
+      {loading && <span className="concierge-product-state" role="status">Preparing preview</span>}
       {hasUsableTryOn && <button className="concierge-preview-action" type="button" onClick={() => onFullscreen({ src: tryOn.imageUrl, alt: `AI try-on for ${product.name}`, title: product.name })}>View preview</button>}
       {tryOn?.imageUrl && !hasUsableTryOn && <span className="concierge-product-state">Preview unavailable</span>}
       {error && <span className="concierge-product-error">{error}</span>}
@@ -9066,7 +9036,7 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
 
   const generateProductTryOn = async () => {
     if (!product || tryOnLoading) return;
-    const profileBlockMessage = tryOnProfileBlockMessage(user);
+    const profileBlockMessage = productTryOnBlockMessage(product, user) || styleBotProductCompatibility(product).reason;
     if (profileBlockMessage) {
       setTryOnError(profileBlockMessage);
       return;
@@ -9101,6 +9071,11 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
 
   const generateProductTryOnVideo = async () => {
     if (!product || tryOnVideoLoading || tryOnLoading) return;
+    const blocked = productTryOnBlockMessage(product, user) || styleBotProductCompatibility(product).reason;
+    if (blocked) {
+      setTryOnVideoError(blocked);
+      return;
+    }
     const needsImageTryOn = !tryOn?.imageUrl || tryOnImageFailed;
     setTryOnVideoLoading(true);
     setTryOnVideoError('');
@@ -9250,12 +9225,12 @@ function ProductPage({ id, user, setUser, demoEcommerceMode = false }) {
                 <span>Balance: {creditBalance} credits</span>
               </div>
               {user ? (
-                <button className="product-editorial-tryon" type="button" onClick={generateProductTryOn} disabled={tryOnLoading}>
+                <button className="product-editorial-tryon" type="button" onClick={generateProductTryOn} disabled={tryOnLoading || Boolean(productTryOnBlockMessage(product, user))} title={productTryOnBlockMessage(product, user)}>
                   {tryOnLoading ? 'Creating your look...' : hasUsableTryOn ? 'Refresh try-on' : tryOnImageFailed ? 'Try Again' : 'Generate Try-On'}
                 </button>
               ) : <a className="product-editorial-tryon" href="/signup">AI try-on</a>}
               {user ? (
-                <button className="product-editorial-video" type="button" onClick={generateProductTryOnVideo} disabled={tryOnVideoLoading} title="Generate an AI try-on video">
+                <button className="product-editorial-video" type="button" onClick={generateProductTryOnVideo} disabled={tryOnVideoLoading || tryOnLoading || Boolean(productTryOnBlockMessage(product, user))} title={productTryOnBlockMessage(product, user) || "Generate an AI try-on video"}>
                   {tryOnVideoLoading ? 'Making video...' : hasTryOnVideo ? 'Refresh video' : 'Generate video'}
                 </button>
               ) : <a className="product-editorial-video" href="/signup">Generate video</a>}
