@@ -45284,7 +45284,7 @@ label,
   }
 }
 
-/* Generated wardrobe result should fill the preview card, not letterbox. */
+/* Keep the complete generated outfit visible without cropping head or feet. */
 @media (min-width: 761px) {
   .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview,
   .wardrobe-studio-page .wardrobe-flat-scene.is-outfit-preview .wardrobe-flat-model {
@@ -45299,7 +45299,7 @@ label,
     height: 100% !important;
     max-width: none !important;
     max-height: none !important;
-    object-fit: cover !important;
+    object-fit: contain !important;
     object-position: center center !important;
   }
 }
