@@ -2928,6 +2928,24 @@ function AtelierBestCategories({ categories = [] }) {
   );
 }
 
+function shopCategoryCards(counts = []) {
+  const cards = counts
+    .map(({ category, count }) => {
+      const slug = categorySlug(category);
+      return { category, count, slug, collectionVisual: collectionVisualForCategory(category) };
+    })
+    .filter(Boolean);
+  const pinnedSlugs = ['innerwear', 'ethnic wear', 'jeans', 'jackets', 'sweatshirts', 'pants', 'shoes', 'watches'];
+  const pinnedCards = pinnedSlugs
+    .map((slug) => cards.find((card) => card.slug === slug))
+    .filter(Boolean);
+  const pinnedSet = new Set(pinnedCards.map((card) => card.slug));
+  return [
+    ...pinnedCards,
+    ...cards.filter((card) => !pinnedSet.has(card.slug))
+  ].slice(0, 16);
+}
+
 function AtelierHome({ user, demoEcommerceMode = false }) {
   const state = useProducts({ limit: 96, sort: 'newest' });
   const recommendedState = useRecommendedProducts(user, 12, { surface: 'home', client: RECOMMENDATION_CLIENT });
@@ -3003,24 +3021,7 @@ function AtelierHome({ user, demoEcommerceMode = false }) {
     ].filter(Boolean);
     return sections.filter((section) => uniqueProducts(section.products).length >= 4);
   }, [catalogProducts, demoEcommerceMode, recommendedProducts]);
-  const categoryCards = useMemo(() => {
-    const counts = state.facets?.categoryCounts || [];
-    const cards = counts
-      .map(({ category, count }) => {
-        const slug = categorySlug(category);
-        return { category, count, slug, collectionVisual: collectionVisualForCategory(category) };
-      })
-      .filter(Boolean);
-    const pinnedSlugs = ['innerwear', 'ethnic wear', 'jeans', 'jackets', 'sweatshirts', 'pants', 'shoes', 'watches'];
-    const pinnedCards = pinnedSlugs
-      .map((slug) => cards.find((card) => card.slug === slug))
-      .filter(Boolean);
-    const pinnedSet = new Set(pinnedCards.map((card) => card.slug));
-    return [
-      ...pinnedCards,
-      ...cards.filter((card) => !pinnedSet.has(card.slug))
-    ].slice(0, 16);
-  }, [state.facets]);
+  const categoryCards = useMemo(() => shopCategoryCards(state.facets?.categoryCounts), [state.facets]);
   const heroSlide = atelierHeroSlides[heroSlideIndex] || atelierHeroSlides[0];
   const firstCommerceSections = commerceSections.slice(0, isMobileHome ? 2 : 4);
   const secondCommerceSections = commerceSections.slice(isMobileHome ? 2 : 4, isMobileHome ? 4 : 8);
@@ -3520,14 +3521,14 @@ function AtelierCategoriesPage() {
       audienceCards,
       fashionProductCount: fashionProducts.length,
       featuredProduct: selectedProducts[0] || null,
-      quickCategories: makeCategorySections(selectedProducts).slice(0, 20),
+      quickCategories: shopCategoryCards(state.facets?.categoryCounts),
       filterCategories,
       filterBrands,
       filteredProductCount: filteredProducts.length,
       categorySections,
       selectedAudience: audienceCards.find((audience) => audience.value === activeAudience) || null
     };
-  }, [activeAudience, brandFilter, categoryFilter, sortFilter, state.products]);
+  }, [activeAudience, brandFilter, categoryFilter, sortFilter, state.products, state.facets]);
 
   useEffect(() => {
     if (!audienceInitialized.current) {
@@ -3645,15 +3646,15 @@ function AtelierCategoriesPage() {
           </a>
         </section>}
 
-        {(catalog.quickCategories.length > 0 || catalog.audienceCards.length > 0) && <section className="atelier-category-wide atelier-category-discovery-section" aria-labelledby="category-quick-title">
-          <div className="atelier-category-quick-heading"><p>SHOP BY CATEGORY</p><h2 id="category-quick-title">Find your style</h2></div>
+        {(catalog.quickCategories.length > 0 || catalog.audienceCards.length > 0) && <section className="atelier-category-wide atelier-category-discovery-section" aria-label="Shop by category and audience">
           <div className="atelier-category-discovery-row">
-            {catalog.quickCategories.length > 0 && <div className="atelier-category-quick-section">
+            {catalog.quickCategories.length > 0 && <div className="atelier-category-quick-section atelier-category-section">
+              <div className="atelier-section-heading"><h2 id="category-quick-title">Shop by Category</h2><a className="atelier-text-link" href="/categories">View All Departments <span>→</span></a></div>
               <div className="atelier-category-rail-wrap">
                 <button className="atelier-category-scroll-button prev" type="button" aria-label="Previous fashion categories" onClick={() => scrollQuickCategoryRail(-1)}><AtelierIcon name="arrowLeft" /></button>
-                <nav className="atelier-category-quick-rail" aria-label="Fashion categories" ref={quickCategoryRailRef} tabIndex="0" onKeyDown={handleQuickCategoryKeyDown}>
-                  {catalog.quickCategories.map((category) => <a className={`category-icon-${categorySlug(category.category)}`} href={categoryHref(category.category)} key={category.category}>
-                    <span className="atelier-category-quick-image"><OptimizedImage src={asset(category.collectionVisual.image)} alt="" style={{ objectPosition: category.collectionVisual.position }} /></span><strong>{category.label}</strong><small>{category.count} items</small>
+                <nav className="atelier-category-grid" aria-labelledby="category-quick-title" ref={quickCategoryRailRef} tabIndex="0" onKeyDown={handleQuickCategoryKeyDown}>
+                  {catalog.quickCategories.map((category) => <a className={`atelier-category category-icon-${categorySlug(category.category)}`} href={categoryHref(category.category)} key={category.category}>
+                    <div className="atelier-category-image"><OptimizedImage src={asset(category.collectionVisual.image)} alt="" style={{ objectPosition: category.collectionVisual.position }} /></div><span>{displayCategory(category)} <small>{category.count}</small></span>
                   </a>)}
                 </nav>
                 <button className="atelier-category-scroll-button next" type="button" aria-label="Next fashion categories" onClick={() => scrollQuickCategoryRail(1)}><AtelierIcon name="arrowRight" /></button>

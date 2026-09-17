@@ -31212,11 +31212,11 @@ main,
   right: -12px;
 }
 
-.atelier-home .atelier-category-section .atelier-category-scroll-button {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-scroll-button {
   display: grid !important;
 }
 
-.atelier-home .atelier-category-section .atelier-category-grid {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-grid {
   display: grid !important;
   grid-auto-flow: column !important;
   grid-auto-columns: clamp(116px, 8vw, 148px) !important;
@@ -31238,24 +31238,24 @@ main,
   overscroll-behavior-inline: contain !important;
 }
 
-.atelier-home .atelier-category-section .atelier-category {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category {
   width: clamp(116px, 8vw, 148px) !important;
   min-width: clamp(116px, 8vw, 148px) !important;
   max-width: clamp(116px, 8vw, 148px) !important;
   scroll-snap-align: start !important;
 }
 
-.atelier-home .atelier-category-section .atelier-category-image {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-image {
   width: clamp(104px, 7.2vw, 132px) !important;
   height: clamp(104px, 7.2vw, 132px) !important;
 }
 
 @media (max-width: 700px) {
-  .atelier-home .atelier-category-section .atelier-section-heading {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-section-heading {
     gap: 18px !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category-grid {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-grid {
     grid-auto-columns: 104px !important;
     grid-template-columns: none !important;
     grid-template-rows: 1fr !important;
@@ -31277,13 +31277,13 @@ main,
     right: 4px !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category {
     width: 104px !important;
     min-width: 104px !important;
     max-width: 104px !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category-image {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-image {
     width: 92px !important;
     height: 92px !important;
   }
@@ -31469,18 +31469,18 @@ main,
     bottom: 98px !important;
   }
 
-  .atelier-home .atelier-category-section {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section {
     padding: 36px 0 42px !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-section-heading,
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-section-heading,
   .atelier-home .atelier-arrivals .atelier-section-heading,
   .atelier-product-strip .atelier-section-heading {
     align-items: center !important;
     margin-bottom: 22px !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-section-heading h2,
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-section-heading h2,
   .atelier-home .atelier-arrivals .atelier-section-heading h2,
   .atelier-product-strip .atelier-section-heading h2 {
     max-width: 58% !important;
@@ -31488,7 +31488,7 @@ main,
     line-height: 1.02 !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-text-link {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-text-link {
     max-width: 142px !important;
     min-height: 34px !important;
     align-items: center !important;
@@ -31497,7 +31497,7 @@ main,
     line-height: 1.35 !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category-grid,
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-grid,
   .atelier-arrivals-rail {
     -webkit-overflow-scrolling: touch !important;
   }
@@ -33684,41 +33684,43 @@ body:has(.network-status):has(.app-toast) .wishlist-undo-toast {
 }
 
 /* Content density pass: keep Lookmefy styling, show more live catalog content. */
-.atelier-home .atelier-category-section {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section {
   padding: clamp(42px, 4.8vw, 68px) 0 !important;
 }
 
 .atelier-home .atelier-section-heading,
+.atelier-category-page :where(.atelier-category-section) .atelier-section-heading,
 .atelier-home .atelier-arrivals .atelier-section-heading,
 .atelier-product-strip .atelier-section-heading {
   margin-bottom: clamp(20px, 2.5vw, 34px) !important;
 }
 
 .atelier-home .atelier-section-heading h2,
+.atelier-category-page :where(.atelier-category-section) .atelier-section-heading h2,
 .atelier-home .atelier-arrivals .atelier-section-heading h2,
 .atelier-product-strip .atelier-section-heading h2 {
   font-size: clamp(29px, 2.45vw, 38px) !important;
 }
 
-.atelier-home .atelier-category-section .atelier-category-grid {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-grid {
   grid-auto-columns: clamp(106px, 6.6vw, 132px) !important;
   gap: clamp(18px, 2.25vw, 38px) !important;
   padding-bottom: 12px !important;
 }
 
-.atelier-home .atelier-category-section .atelier-category {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category {
   width: clamp(106px, 6.6vw, 132px) !important;
   min-width: clamp(106px, 6.6vw, 132px) !important;
   max-width: clamp(106px, 6.6vw, 132px) !important;
 }
 
-.atelier-home .atelier-category-section .atelier-category-image {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-image {
   width: clamp(94px, 5.8vw, 116px) !important;
   height: clamp(94px, 5.8vw, 116px) !important;
   margin-bottom: 10px !important;
 }
 
-.atelier-home .atelier-category-section .atelier-category > span {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category > span {
   font-size: 12px !important;
   line-height: 1.2 !important;
 }
@@ -33910,11 +33912,11 @@ body:has(.network-status):has(.app-toast) .wishlist-undo-toast {
 }
 
 @media (max-width: 700px) {
-  .atelier-home .atelier-category-section {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section {
     padding: 30px 0 34px !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-section-heading,
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-section-heading,
   .atelier-home .atelier-arrivals .atelier-section-heading,
   .atelier-product-strip .atelier-section-heading,
   .atelier-commerce-heading {
@@ -33931,7 +33933,7 @@ body:has(.network-status):has(.app-toast) .wishlist-undo-toast {
     font-size: 10px !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category-grid {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-grid {
     grid-auto-columns: 92px !important;
     gap: 14px !important;
     margin: 0 -18px !important;
@@ -33939,19 +33941,19 @@ body:has(.network-status):has(.app-toast) .wishlist-undo-toast {
     padding-left: 44px !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category {
     width: 92px !important;
     min-width: 92px !important;
     max-width: 92px !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category-image {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-image {
     width: 78px !important;
     height: 78px !important;
     margin-bottom: 8px !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category > span {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category > span {
     font-size: 11px !important;
   }
 
@@ -34339,47 +34341,47 @@ body:has(.network-status):has(.app-toast) .wishlist-undo-toast {
 }
 
 /* Home category rail: match category-page arrow gutters so controls do not cover icons. */
-.atelier-home .atelier-category-section .atelier-category-rail-wrap {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-rail-wrap {
   padding-inline: 56px !important;
   overflow: visible !important;
 }
 
-.atelier-home .atelier-category-section .atelier-category-grid {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-grid {
   padding-right: 0 !important;
   padding-left: 0 !important;
 }
 
-.atelier-home .atelier-category-section .atelier-category-scroll-button.prev {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-scroll-button.prev {
   left: 6px !important;
 }
 
-.atelier-home .atelier-category-section .atelier-category-scroll-button.next {
+:is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-scroll-button.next {
   right: 6px !important;
 }
 
 @media (max-width: 700px) {
-  .atelier-home .atelier-category-section .atelier-category-rail-wrap {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-rail-wrap {
     margin: 0 -14px !important;
     padding-inline: 52px !important;
     overflow: visible !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category-grid {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-grid {
     margin: 0 !important;
     padding-right: 0 !important;
     padding-left: 0 !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category-scroll-button {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-scroll-button {
     top: 44px !important;
     z-index: 5 !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category-scroll-button.prev {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-scroll-button.prev {
     left: 8px !important;
   }
 
-  .atelier-home .atelier-category-section .atelier-category-scroll-button.next {
+  :is(.atelier-home, .atelier-category-page) .atelier-category-section .atelier-category-scroll-button.next {
     right: 8px !important;
   }
 }
@@ -45408,4 +45410,16 @@ label,
   .download-showcase-bottom-nav small {
     font-size: 5px !important;
   }
+}
+
+/* Explore uses the same category cards and responsive rail as Home. */
+.atelier-category-page .atelier-category-discovery-row .atelier-category-section {
+  padding: 0 !important;
+  margin-bottom: 0 !important;
+  background: transparent;
+}
+
+.atelier-category-page .atelier-category-section .atelier-category-rail-wrap::before,
+.atelier-category-page .atelier-category-section .atelier-category-rail-wrap::after {
+  content: none !important;
 }
