@@ -40,6 +40,8 @@ import {
   videoPrunaCostUsd,
   waitForPrunaPrediction
 } from '../utils/prunaClient.js';
+import { generateVerifiedProductOutfit, productOutfitEditRequest } from '../utils/productOutfitTryOn.js';
+import { requireQualityConfiguration } from '../utils/tryOnQuality.js';
 import { isWatchProduct, promptForKey, promptForProduct, promptKeyForProduct } from '../utils/tryOnPrompts.js';
 import { falModelCostEstimate } from '../services/providerIntegrations.js';
 
@@ -872,7 +874,7 @@ function customTryOnPrompt() {
   ].join(' ');
 }
 
-async function callPrunaTryOn({ user, product = {}, garmentFile, promptKey, fallbackPromptKey = 'upper', timer }) {
+async function callPrunaTryOn({ user, product = {}, garmentFile, promptKey, fallbackPromptKey = 'upper', preparedOutfit = false, feedback = null, referenceContext = null, timer }) {
   const personPart = await filePartFromUpload(user.bodyPhoto, 'person', timer);
   const garmentPart = garmentFile
     ? await filePartFromMemoryFile(garmentFile, 'garment', timer)
@@ -894,7 +896,7 @@ async function callPrunaTryOn({ user, product = {}, garmentFile, promptKey, fall
   const promptInfo = promptKey
     ? { key: promptKey, prompt: promptForKey(promptKey, product) }
     : promptForProduct(product, fallbackPromptKey);
-  const turbo = prunaTryOnTurbo(product);
+  const turbo = preparedOutfit ? false : prunaTryOnTurbo(product);
   const input = {
     person_image: personUpload.url,
     garment_images: [garmentUpload.url],
@@ -905,16 +907,20 @@ async function callPrunaTryOn({ user, product = {}, garmentFile, promptKey, fall
     preserve_input_size: prunaPreserveInputSize()
   };
 
+  const request = preparedOutfit
+    ? productOutfitEditRequest({ personUrl: personUpload.url, garmentUrl: garmentUpload.url, feedback, ...referenceContext })
+    : { model: prunaTryOnModel(), input };
+
   timer?.mark('pruna try-on submit attempt', {
-    model: prunaTryOnModel(),
+    model: request.model,
     promptKey: promptInfo.key,
     turbo,
-    standardReason: isWatchProduct(product) ? 'watch' : ''
+    standardReason: preparedOutfit ? 'catalog outfit fidelity' : isWatchProduct(product) ? 'watch' : ''
   });
 
   const prediction = await createPrunaPrediction({
-    model: prunaTryOnModel(),
-    input,
+    model: request.model,
+    input: request.input,
     trySync: prunaImageTrySync()
   });
   timer?.mark('pruna try-on submitted', { predictionId: prediction.id || '', status: prediction.status });
@@ -930,14 +936,14 @@ async function callPrunaTryOn({ user, product = {}, garmentFile, promptKey, fall
   return {
     bytes: downloaded.bytes,
     mimetype,
-    prompt: promptInfo.prompt,
+    prompt: request.input.prompt,
     promptKey: promptInfo.key,
     provider: 'pruna',
-    model: prunaTryOnModel(),
-    quality: turbo ? 'turbo' : 'standard',
+    model: request.model,
+    quality: preparedOutfit ? 'verified outfit / standard' : turbo ? 'turbo' : 'standard',
     turbo,
     garmentCount: 1,
-    providerCostUsd: imagePrunaCostUsd({ turbo, garmentCount: 1 }),
+    providerCostUsd: preparedOutfit ? 0.01 : imagePrunaCostUsd({ turbo, garmentCount: 1 }),
     providerPredictionId: result.id || prediction.id || '',
     providerOutputUrl: outputUrl
   };
@@ -1562,6 +1568,22 @@ async function generateProductTryOnImage({ user, product, tryOnModel, timer }) {
   const selectedModel = tryOnModel || tryOnModelForProduct(product);
   timer?.mark('image generator selected', { tryOnModel: selectedModel });
   if (usePrunaProvider()) {
+    if (promptKeyForProduct(product) === 'full_outfit') {
+      requireQualityConfiguration();
+      const [garment, person] = await Promise.all([
+        filePartFromProduct(product, timer),
+        filePartFromUpload(user.bodyPhoto, 'person', timer)
+      ]);
+      return generateVerifiedProductOutfit({
+        product, garment: garment.bytes, person: person.bytes,
+        generate: ({ garment: bytes, garmentDescription, promptKey, feedback }) => callPrunaTryOn({
+          user, product, timer, promptKey, feedback, preparedOutfit: true,
+          garmentFile: { buffer: bytes, originalname: garment.filename || 'outfit.jpg', mimetype: garment.mimetype },
+          referenceContext: { garmentDescription }
+        }),
+        onRejected: (attempt, feedback) => timer?.mark('product outfit rejected', { attempt, failedChecks: feedback.failedChecks })
+      });
+    }
     return callPrunaTryOn({ user, product, timer });
   }
   if (selectedModel === 'fitroom/tryon-v2') {
