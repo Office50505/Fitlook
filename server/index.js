@@ -57,7 +57,9 @@ const globalApiLimiter = createRateLimiter({
   max: Number(process.env.RATE_LIMIT_GLOBAL_MAX || 300),
   keyGenerator: rateLimitKeys.clientIp,
   message: 'Too many requests from this network. Please pause for a few minutes and try again.',
-  skip: (req) => req.path.startsWith('/health') || isAdminPanelApiPath(req)
+  skip: (req) => req.path.startsWith('/health')
+    || isAdminPanelApiPath(req)
+    || (req.method === 'POST' && ['/recommendations/studio-chat', '/closet/outfits/generate'].includes(req.path))
 });
 const requireSystemAdmin = requireAdminSection(ADMIN_SECTIONS.SYSTEM_MANAGEMENT);
 

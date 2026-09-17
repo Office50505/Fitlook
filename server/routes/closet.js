@@ -42,13 +42,7 @@ const closetChatLimiter = createRateLimiter({
   keyGenerator: rateLimitKeys.user,
   message: 'Too many stylist requests. Please slow down for a moment.'
 });
-const closetOutfitLimiter = createRateLimiter({
-  name: 'closet:outfit-generate',
-  windowMs: 10 * 60 * 1000,
-  max: 5,
-  keyGenerator: rateLimitKeys.user,
-  message: 'Too many outfit generations. Please wait before creating another look.'
-});
+
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -143,6 +137,12 @@ function isFullSetClosetItem(item) {
   return /\b(dress|gown|jumpsuit|romper|saree|sari|lehenga|sherwani|kurta set|co-ord|coord|one[-\s]?piece)\b/i.test(textForClosetItem(item));
 }
 
+function isOuterwearClosetItem(item) {
+  return item?.category === 'outerwear' || /\b(jacket|coat|blazer|cardigan|shrug)\b/i.test([
+    item?.name, item?.visualProfile?.subcategory, item?.visualProfile?.nameSuggestion
+  ].filter(Boolean).join(' '));
+}
+
 function isUpperClosetItem(item) {
   return !isFullSetClosetItem(item) && fitRoomUpperCategories.has(item?.category);
 }
@@ -162,7 +162,7 @@ function fitRoomPlanWithSelectedItems(plan, selected) {
     ...plan,
     items: selected,
     ignoredItems,
-    requiresWan: selected.length > 1 || ignoredItems.length > 0
+    requiresWan: selected.length > 1 || ignoredItems.length > 0 || selected.some(isOuterwearClosetItem)
   };
 }
 
@@ -325,15 +325,19 @@ function closetWanPrompt(plan) {
           : 'selected garment areas';
   const selectedItems = Array.isArray(plan?.items) ? plan.items : [];
   const itemSummary = selectedItems
-    .map((item) => `${cleanWord(item.name || item.category || 'wardrobe item')} (${cleanWord(item.category || 'item')})`)
+    .map((item, index) => `Reference ${index + 1}: ${cleanWord(item.name || item.category || 'wardrobe item')} (${isOuterwearClosetItem(item) ? 'outerwear, outermost layer' : cleanWord(item.category || 'item')})`)
     .join(', ');
   return [
     'Create one photorealistic virtual try-on image for an ecommerce wardrobe preview.',
     'Image 1 is the shopper and must remain the identity, face, hair, skin tone, body shape, hands, legs, natural proportions, and expression reference.',
     itemSummary ? `Selected wardrobe pieces: ${itemSummary}.` : '',
     `Image 2 is the wardrobe reference. Transfer every visible selected clothing, footwear, and accessory item from image 2 onto the shopper's ${target}.`,
-    'For tops, replace upper-body clothing. For bottoms, replace lower-body clothing. For dresses, suits, and co-ords, replace the full outfit. For shoes, replace the footwear on both feet. For hats/caps, place the item on the head. For sunglasses/eyewear, place the item on the eyes. For bags, belts, scarves, and jewelry, place the item naturally in the corresponding area.',
-    'If image 2 contains multiple wardrobe pieces arranged on a plain canvas, treat them as separate references and apply all selected pieces together in one complete outfit.',
+    'For tops, replace the base upper-body clothing; outerwear is a separate outer layer. For bottoms, replace lower-body clothing. For dresses, suits, and co-ords, replace the full outfit. For shoes, replace the footwear on both feet. For hats/caps, place the item on the head. For sunglasses/eyewear, place the item on the eyes. For bags, belts, scarves, and jewelry, place the item naturally in the corresponding area.',
+    'If image 2 contains multiple wardrobe pieces arranged on a plain canvas, references are ordered left to right, then top to bottom. Match each reference to its selected item description and apply each selected item once.',
+    'Reference photos may show a model wearing other clothes. Transfer only the named selected item from each reference, not the reference model, pose, background, or incidental clothing.',
+    selectedItems.some(isOuterwearClosetItem)
+      ? 'Dress the shopper fully in the selected outerwear: seat the jacket collar at the base of the neck, align both shoulder seams with the shoulders, and put both arms completely through the sleeves with cuffs at the wrists for long sleeves. The jacket must cover both shoulders and the upper torso, with natural armhole placement and fabric drape. Never style it hanging off the shoulders, around the elbows, carried, or tied at the waist. Layer it over the selected top or dress; if no base top is selected, keep the shopper base top beneath it. Replace any existing jacket instead of stacking jackets. Preserve the reference jacket length, cut, material, and closure design.'
+      : '',
     'If image 2 is swimwear or innerwear, render it as a non-sexualized retail catalog try-on with accurate coverage and no nudity.',
     'Do not ignore image 2 and do not keep the original garment in the target area when it conflicts with the clothing reference.',
     'Preserve non-target clothing and body regions from image 1 unless they must be naturally covered or replaced by the uploaded garment.',
@@ -348,6 +352,7 @@ function wanNegativePrompt() {
   return [
     'low resolution, blurry, distorted face, changed identity, changed pose, changed body, changed skin tone',
     'extra limbs, extra fingers, missing head, missing hands, missing feet',
+    'jacket slipping off shoulders, jacket hanging around elbows, empty sleeves, arms outside sleeves, floating garments, duplicated garments',
     'cropped face, cropped head, cropped body, cropped legs, cropped feet, cropped ankles, cropped knees',
     'half body, waist-up, bust shot, close-up crop, portrait crop',
     'copied product model, mannequin identity bleed',
@@ -816,17 +821,25 @@ async function combinedGarmentFromItems(items, timer) {
   const width = 1024;
   const height = 1280;
   const slots = items.slice(0, 5);
-  const slotHeight = Math.floor(height / slots.length);
+  const columns = 2;
+  const rows = Math.ceil(slots.length / columns);
+  const cellWidth = Math.floor(width / columns);
+  const cellHeight = Math.floor(height / rows);
+  const padding = 20;
   const composites = [];
   for (let index = 0; index < slots.length; index += 1) {
     const item = slots[index];
     const { buffer: bytes } = await readStoredFile(item.image, 'closet item');
     const thumb = await sharp(bytes)
       .rotate()
-      .resize({ width: 820, height: Math.max(160, slotHeight - 44), fit: 'contain', background: '#fffdf8' })
+      .resize({ width: cellWidth - padding * 2, height: cellHeight - padding * 2, fit: 'contain', background: '#fffdf8' })
       .jpeg({ quality: 92 })
       .toBuffer();
-    composites.push({ input: thumb, top: index * slotHeight + 22, left: 102 });
+    composites.push({
+      input: thumb,
+      top: Math.floor(index / columns) * cellHeight + padding,
+      left: (index % columns) * cellWidth + padding
+    });
   }
 
   const canvas = await sharp({
@@ -1259,7 +1272,7 @@ router.post('/chat', requireUser, closetChatLimiter, async (req, res) => {
   res.json({ reply: reply || fallbackStylistReply(message, items, suggestions), suggestions });
 });
 
-router.post('/outfits/generate', requireUser, closetOutfitLimiter, async (req, res) => {
+router.post('/outfits/generate', requireUser, async (req, res) => {
   const analyticsStartedAt = Date.now();
   const itemIds = [...new Set((Array.isArray(req.body?.itemIds) ? req.body.itemIds : []).map((id) => String(id || '').trim()).filter(Boolean))].slice(0, 5);
   const timer = createTimer('generate-outfit', { userId: req.user._id.toString(), itemCount: itemIds.length });
@@ -1345,5 +1358,5 @@ router.patch('/outfits/:id', requireUser, async (req, res) => {
   res.json({ outfit: outfitToClient(outfit, items) });
 });
 
-export { imageMimeTypeFromBytes, selectFitRoomClosetPlan };
+export { closetWanPrompt, imageMimeTypeFromBytes, selectFitRoomClosetPlan };
 export default router;

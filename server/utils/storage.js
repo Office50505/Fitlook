@@ -187,6 +187,7 @@ async function readRemoteBuffer(url, label = 'image') {
       'user-agent': `Mozilla/5.0 Lookmefy ${label} fetcher`
     }
   });
+  if (response.status === 404) throw new Error(`The ${label} file was not found in storage. Please upload it again.`);
   if (!response.ok) throw new Error(`Could not fetch ${label} (${response.status})`);
   return {
     buffer,
@@ -205,7 +206,7 @@ async function readStoredFile(file, label = 'image') {
         mimetype: ''
       };
     } catch (error) {
-      if (!useBunny()) throw error;
+      if (error.code !== 'ENOENT' || !useBunny() || !bunnyCdnBaseUrl()) throw error;
       return readRemoteBuffer(publicUrlForKey(file), label);
     }
   }
@@ -217,10 +218,17 @@ async function readStoredFile(file, label = 'image') {
   }
 
   if (!file.path) throw new Error(`${label} path is missing`);
-  return {
-    buffer: await fs.readFile(localPathForKey(file.path)),
-    mimetype: file.mimetype || ''
-  };
+  try {
+    return {
+      buffer: await fs.readFile(localPathForKey(file.path)),
+      mimetype: file.mimetype || ''
+    };
+  } catch (error) {
+    // Older records can still say "local" after their files move to Bunny.
+    if (error.code !== 'ENOENT' || !useBunny() || !bunnyCdnBaseUrl()) throw error;
+    const remote = await readRemoteBuffer(publicUrlForKey(file.path), label);
+    return { buffer: remote.buffer, mimetype: file.mimetype || remote.mimetype };
+  }
 }
 
 async function deleteStoredFile(file) {

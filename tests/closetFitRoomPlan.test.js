@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { imageMimeTypeFromBytes, selectFitRoomClosetPlan } from '../server/routes/closet.js';
+import { closetWanPrompt, imageMimeTypeFromBytes, selectFitRoomClosetPlan } from '../server/routes/closet.js';
 
 function closetItem(overrides = {}) {
   const id = overrides.id || `${overrides.category || 'item'}-1`;
@@ -83,4 +83,38 @@ test('selectFitRoomClosetPlan tracks extra pieces while routing through Wan', ()
 test('imageMimeTypeFromBytes detects WebP even when provider headers are wrong', () => {
   const webpHeader = Buffer.from('52494646000000005745425056503820', 'hex');
   assert.equal(imageMimeTypeFromBytes(webpHeader), 'image/webp');
+});
+
+for (const category of ['outerwear', 'tops']) {
+  test(`jacket categorized as ${category} uses prompted generation with proper sleeve placement`, () => {
+    const plan = selectFitRoomClosetPlan([
+      closetItem({ id: 'jacket-1', name: 'Black leather jacket', category })
+    ]);
+    assert.equal(plan.requiresWan, true);
+    const prompt = closetWanPrompt(plan);
+    assert.match(prompt, /outerwear, outermost layer/);
+    assert.match(prompt, /both arms completely through the sleeves/);
+    assert.match(prompt, /keep the shopper base top beneath it/);
+  });
+}
+
+test('ordinary top remains on FitRoom and does not get jacket instructions', () => {
+  const plan = selectFitRoomClosetPlan([closetItem({ name: 'Cotton tee' })]);
+  assert.equal(plan.requiresWan, false);
+  assert.doesNotMatch(closetWanPrompt(plan), /Dress the shopper fully in the selected outerwear/);
+});
+
+test('layered outfit references preserve selection order and distinguish the jacket from the base top', () => {
+  const plan = selectFitRoomClosetPlan([
+    closetItem({ id: 'top-1', name: 'White tee', category: 'tops' }),
+    closetItem({ id: 'bottom-1', name: 'Green trousers', category: 'bottoms' }),
+    closetItem({ id: 'jacket-1', name: 'Leather jacket', category: 'outerwear' })
+  ]);
+  const prompt = closetWanPrompt(plan);
+  assert.match(prompt, /Reference 1: White tee \(tops\)/);
+  assert.match(prompt, /Reference 2: Green trousers \(bottoms\)/);
+  assert.match(prompt, /Reference 3: Leather jacket \(outerwear, outermost layer\)/);
+  assert.match(prompt, /left to right, then top to bottom/);
+  assert.match(prompt, /Transfer only the named selected item/);
+  assert.match(prompt, /Layer it over the selected top or dress/);
 });

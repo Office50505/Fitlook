@@ -39747,9 +39747,10 @@ label,
   height: 100% !important;
   min-height: 0 !important;
   grid-template-columns:
-    minmax(340px, 1fr)
-    minmax(500px, calc((100svh - 80px) * var(--wardrobe-model-aspect, .74)))
-    clamp(460px, 34vw, 650px) !important;
+    clamp(560px, 32vw, 660px)
+    clamp(480px, calc((100svh - 82px) * var(--wardrobe-model-aspect, .74)), 620px)
+    clamp(440px, 30vw, 620px) !important;
+  justify-content: center !important;
   overflow: hidden !important;
   background: var(--wardrobe-main) !important;
   background-image: none !important;
@@ -40957,6 +40958,13 @@ label,
 .wardrobe-saved-empty p {
   margin: 0 !important;
   font-size: 12px !important;
+}
+
+@media (max-width: 1500px) {
+  .wardrobe-studio-page .wardrobe-studio-shell {
+    grid-template-columns: minmax(420px, 32vw) minmax(400px, calc((100svh - 82px) * var(--wardrobe-model-aspect, .74))) minmax(360px, 30vw) !important;
+    justify-content: center !important;
+  }
 }
 
 @media (max-width: 1240px) {

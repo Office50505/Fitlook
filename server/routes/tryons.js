@@ -40,9 +40,12 @@ import {
   videoPrunaCostUsd,
   waitForPrunaPrediction
 } from '../utils/prunaClient.js';
+import { generateVerifiedTryOn, requireQualityConfiguration, verifyTryOn } from '../utils/tryOnQuality.js';
+import { prepareCustomTryOnReferences } from '../utils/customTryOnPreparation.js';
+import { fabricRefinementRequest, refineWithFallback } from '../utils/fabricRefinement.js';
+import { customTryOnRequest } from '../utils/customTryOnRequest.js';
 import { generateVerifiedProductOutfit, productOutfitEditRequest } from '../utils/productOutfitTryOn.js';
-import { requireQualityConfiguration } from '../utils/tryOnQuality.js';
-import { isWatchProduct, promptForKey, promptForProduct, promptKeyForProduct } from '../utils/tryOnPrompts.js';
+import { customTryOnSettings, isWatchProduct, promptForKey, promptForProduct, promptKeyForProduct } from '../utils/tryOnPrompts.js';
 import { falModelCostEstimate } from '../services/providerIntegrations.js';
 
 const router = express.Router();
@@ -874,7 +877,7 @@ function customTryOnPrompt() {
   ].join(' ');
 }
 
-async function callPrunaTryOn({ user, product = {}, garmentFile, promptKey, fallbackPromptKey = 'upper', preparedOutfit = false, feedback = null, referenceContext = null, timer }) {
+async function callPrunaTryOn({ user, product = {}, garmentFile, promptKey, fallbackPromptKey = 'upper', customUpload = false, preparedOutfit = false, feedback = null, referenceContext = null, timer }) {
   const personPart = await filePartFromUpload(user.bodyPhoto, 'person', timer);
   const garmentPart = garmentFile
     ? await filePartFromMemoryFile(garmentFile, 'garment', timer)
@@ -893,10 +896,12 @@ async function callPrunaTryOn({ user, product = {}, garmentFile, promptKey, fall
     })
   ]);
 
-  const promptInfo = promptKey
+  const promptInfo = customUpload
+    ? customTryOnSettings({ promptKey, category: product.category })
+    : promptKey
     ? { key: promptKey, prompt: promptForKey(promptKey, product) }
     : promptForProduct(product, fallbackPromptKey);
-  const turbo = preparedOutfit ? false : prunaTryOnTurbo(product);
+  const turbo = customUpload || preparedOutfit ? false : prunaTryOnTurbo(product);
   const input = {
     person_image: personUpload.url,
     garment_images: [garmentUpload.url],
@@ -909,13 +914,15 @@ async function callPrunaTryOn({ user, product = {}, garmentFile, promptKey, fall
 
   const request = preparedOutfit
     ? productOutfitEditRequest({ personUrl: personUpload.url, garmentUrl: garmentUpload.url, feedback, ...referenceContext })
+    : customUpload
+    ? customTryOnRequest({ personUrl: personUpload.url, garmentUrl: garmentUpload.url, promptKey, category: product.category, feedback, ...referenceContext })
     : { model: prunaTryOnModel(), input };
 
   timer?.mark('pruna try-on submit attempt', {
     model: request.model,
     promptKey: promptInfo.key,
     turbo,
-    standardReason: preparedOutfit ? 'catalog outfit fidelity' : isWatchProduct(product) ? 'watch' : ''
+    standardReason: preparedOutfit ? 'catalog outfit fidelity' : customUpload ? 'custom garment fidelity' : isWatchProduct(product) ? 'watch' : ''
   });
 
   const prediction = await createPrunaPrediction({
@@ -940,7 +947,7 @@ async function callPrunaTryOn({ user, product = {}, garmentFile, promptKey, fall
     promptKey: promptInfo.key,
     provider: 'pruna',
     model: request.model,
-    quality: preparedOutfit ? 'verified outfit / standard' : turbo ? 'turbo' : 'standard',
+    quality: preparedOutfit ? 'verified outfit / standard' : customUpload ? 'prepared garment / standard' : turbo ? 'turbo' : 'standard',
     turbo,
     garmentCount: 1,
     providerCostUsd: preparedOutfit ? 0.01 : imagePrunaCostUsd({ turbo, garmentCount: 1 }),
@@ -1762,27 +1769,68 @@ async function saveUploadFile(file, prefix, user) {
   });
 }
 
+async function refineCustomFabric(base, garmentDescription, timer) {
+  const upload = await uploadPrunaFile({bytes:base.bytes,mimetype:base.mimetype,filename:`tryon-refinement${extensionFor(base.mimetype)}`});
+  const request = fabricRefinementRequest({imageUrl:upload.url,garmentDescription});
+  const prediction = await createPrunaPrediction({...request,trySync:prunaImageTrySync()});
+  const result = await waitForPrunaPrediction(prediction,prunaImagePollOptions(timer));
+  const url = firstPrunaGenerationUrl(result);
+  if (!url) throw new Error('Fabric refinement returned no image');
+  const output = await downloadPrunaOutput(url,'image/*,*/*;q=0.8');
+  return {
+    bytes:output.bytes,
+    mimetype:imageMimeTypeFromBuffer(output.bytes) || output.mimetype || 'image/png',
+    model:request.model,
+    prompt:request.input.prompt,
+    provider:'pruna',
+    providerPredictionId:result.id || prediction.id || '',
+    providerCostUsd:0.01,
+    providerOutputUrl:url
+  };
+}
+
 async function saveGeneratedCustomTryOn({ user, garmentFile, promptKey, category, timer }) {
   const customProduct = {
     name: garmentFile?.originalname || 'Custom uploaded garment',
     brand: 'Custom',
-    category: category || promptKey || garmentFile?.originalname || 'full outfit'
+    category: category || ''
   };
-  let generated;
-  if (usePrunaProvider()) {
-    const selectedPromptKey = promptKey || promptKeyForProduct(customProduct, 'full_outfit');
-    generated = await callPrunaTryOn({
-      user,
-      product: customProduct,
-      garmentFile,
-      promptKey: selectedPromptKey,
-      fallbackPromptKey: 'full_outfit',
-      timer
+  requireQualityConfiguration();
+  const person = await filePartFromUpload(user.bodyPhoto, 'person', timer);
+  const reference = usePrunaProvider() ? await prepareCustomTryOnReferences({garment:garmentFile.buffer}) : null;
+  let generated = await generateVerifiedTryOn({
+    generate: async ({ feedback }) => {
+      if (usePrunaProvider()) {
+        return callPrunaTryOn({
+          user,
+          product: customProduct,
+          garmentFile: {...garmentFile, buffer:reference.garmentBytes, mimetype:'image/jpeg', originalname:'prepared-garment.jpg'},
+          referenceContext: {garmentDescription:reference.garmentDescription},
+          promptKey,
+          customUpload: true,
+          feedback,
+          timer
+        });
+      } else {
+        const clothType = fitRoomDefaultClothType();
+        timer?.mark('custom fitroom cloth type selected', { clothType });
+        return callFitRoomTryOn({ user, garmentFile, clothType, timer });
+      }
+    },
+    verify: (result) => verifyTryOn({ garment: garmentFile.buffer, person: person.bytes, result: result.bytes }),
+    onRejected: (attempt, feedback) => {
+      timer?.mark('custom garment mismatch rejected', { attempt, failedChecks: feedback.failedChecks });
+      console.info(JSON.stringify({ event: 'custom_tryon_quality_rejected', attempt, failedChecks: feedback.failedChecks }));
+    }
+  });
+  const refineFabric = !['0','false','no','off'].includes(String(process.env.CUSTOM_TRYON_FABRIC_REFINEMENT ?? 'false').toLowerCase());
+  if (reference && refineFabric) {
+    generated = await refineWithFallback({
+      base:generated,
+      refine:(base) => refineCustomFabric(base,reference.garmentDescription,timer),
+      verify:(candidate) => verifyTryOn({garment:garmentFile.buffer,person:person.bytes,result:candidate.bytes}),
+      onFallback:(reason) => timer?.mark('fabric refinement kept base result',{reason})
     });
-  } else {
-    const clothType = fitRoomDefaultClothType();
-    timer?.mark('custom fitroom cloth type selected', { clothType });
-    generated = await callFitRoomTryOn({ user, garmentFile, clothType, timer });
   }
   const filename = `tryon-custom-${Date.now()}-${Math.round(Math.random() * 1e9)}${extensionFor(generated.mimetype)}`;
   const image = await saveUserCacheFile({ user, bytes: generated.bytes, filename, mimetype: generated.mimetype });
@@ -2100,6 +2148,7 @@ router.post('/custom', requireUser, tryOnImageBurstLimiter, tryOnImageHourlyLimi
       return res.status(400).json({ message: 'Upload a clothing image first' });
     }
     ensureTryOnProfileReady(req.user);
+    requireQualityConfiguration();
     const garmentFile = await normalizeMemoryImageFile(req.file, 'garment', timer);
     const chargedUser = await reserveToken(req.user, timer);
     if (!chargedUser) {

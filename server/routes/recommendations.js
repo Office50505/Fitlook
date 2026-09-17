@@ -34,13 +34,7 @@ const recommendationReadLimiter = createRateLimiter({
   message: 'Recommendations are temporarily limited. Please try again shortly.'
 });
 
-const studioChatLimiter = createRateLimiter({
-  name: 'recommendations:studio-chat', windowMs: 60_000, max: 20,
-  keyGenerator: rateLimitKeys.user,
-  message: 'Please wait a moment before sending another message.'
-});
-
-router.post('/studio-chat', requireUser, studioChatLimiter, createStudioChatHandler({
+router.post('/studio-chat', requireUser, createStudioChatHandler({
   searchProducts: async ({ terms, maxPrice }) => {
     if (!terms.length) return [];
     const filter = catalogFilter({

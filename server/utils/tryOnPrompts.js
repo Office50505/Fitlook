@@ -290,7 +290,31 @@ function promptForProduct(product = {}, fallback = 'upper') {
   };
 }
 
+// Custom uploads have no catalog metadata. Filenames must not determine which
+// body regions are replaced, especially when the reference photo is cropped.
+function customTryOnSettings({ promptKey = '', category = '' } = {}) {
+  const explicitKey = String(promptKey).trim();
+  const knownKeys = new Set([...Object.keys(TRY_ON_PROMPTS), ...Object.keys(FALLBACK_PROMPTS)]);
+  const key = knownKeys.has(explicitKey)
+    ? explicitKey
+    : promptKeyForProduct({ category }, 'custom_auto');
+  const fidelity = [
+    'Use the uploaded garment reference as the sole source of garment design. The person image supplies identity, body, pose, and background only.',
+    'Reproduce the same garment, not a similar item or a redesigned version. Preserve its exact silhouette, neckline, cup and panel shapes, coverage, hemline, seams, cutouts, straps, fastenings, rings, ties, trim, print placement, colors, and material.',
+    'A strapless or bandeau design must stay strapless; do not add shoulder or halter straps, change it into triangle cups, or replace its center fastening. Preserve any existing straps exactly as shown. Apply the same construction fidelity to all garment types.',
+    'Change only scale, perspective, folds, and occlusion needed to fit the existing body and pose. Do not simplify, restyle, substitute, or invent garment details.',
+    'If the reference is cropped or part of an item is hidden, do not invent additional matching garments outside the visible reference. Keep unrelated clothing on the person unchanged.',
+    'Do not copy the reference model, skin, face, body, pose, or background. Keep the person identity, body proportions, pose, framing, and background unchanged.',
+    'Produce one photorealistic retail try-on image with natural fit and no text or comparison layout.'
+  ].join(' ');
+  const scope = key === 'custom_auto'
+    ? 'Identify the visible garment in the uploaded reference and replace only the corresponding clothing on the person. A single top is not a complete outfit. Transfer a one-piece dress as one garment; transfer multiple pieces only when each piece is clearly shown. Preserve clothing outside those garment regions.'
+    : promptForKey(key, { name: 'Custom uploaded garment' });
+  return { key, prompt: `${scope}\n\n${fidelity}`, turbo: false };
+}
+
 export {
+  customTryOnSettings,
   isWatchProduct,
   promptForKey,
   promptForProduct,

@@ -7021,7 +7021,7 @@ function CustomClothingTryOn({ user, setUser }) {
     } catch (err) {
       if (generationRunRef.current !== generationRun) return;
       if (err.name === 'AbortError') setMessage('Generation canceled. Your garment photo is ready to try again.');
-      else setMessage('We couldn\'t create this try-on. Try a clearer garment-only photo.');
+      else setMessage(err?.message || 'Could not create the try-on. Please try again.');
     } finally {
       if (generationControllerRef.current === controller) {
         generationControllerRef.current = null;
